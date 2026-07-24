@@ -1461,8 +1461,7 @@ MESSAGE_HANDLERS: Dict[str, MessageHandler] = {
     # The legacy ``validate_maps_key`` / ``validate_apify_key`` WS message
     # types are no longer needed — the frontend already uses
     # ``validate_api_key`` for all providers.
-    # WhatsApp operations
-    # Telegram operations live in nodes/telegram/_handlers.py and
+    # WhatsApp and Telegram operations live in nodes/<plugin>/_handlers.py and
     # self-register via services.ws_handler_registry. Dispatch hits them
     # via _resolve_handler() defined above.
     # Workflow storage operations — extracted to services/workflow_storage/handlers.py

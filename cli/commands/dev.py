@@ -118,10 +118,12 @@ def dev_command(
             f"Client:   built SPA served by the backend at http://localhost:{cfg.backend_port}"
         )
     console.print(f"Backend:  http://localhost:{cfg.backend_port}")
-    console.print(
-        "Backend-spawned on demand: WhatsApp "
-        f"(:{cfg.whatsapp_port}), Temporal (:{cfg.temporal_port} gRPC, :{cfg.temporal_ui_port} UI, when TEMPORAL_ENABLED)"
-    )
+    if cfg.temporal_enabled:
+        console.print(
+            f"Temporal: backend-managed (gRPC :{cfg.temporal_port}, UI http://localhost:{cfg.temporal_ui_port})"
+        )
+    # Plugin daemons (WhatsApp, ...) are backend-owned and start only on
+    # demand — nothing to announce here.
     if force:
         console.print("Vite:     forced dependency re-bundle (--force)")
     console.print()

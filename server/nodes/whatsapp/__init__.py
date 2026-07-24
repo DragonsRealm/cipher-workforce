@@ -21,6 +21,7 @@ Two self-registrations happen on package import:
 from services._supervisor import register_supervisor
 from services.deployment.canary_registry import register_canary_trigger_type
 from services.event_waiter import register_filter_builder
+from services.node_output_schemas import register_output_schema
 from services.plugin.social_provider_registry import register_social_send_handler
 from services.status_broadcaster import register_service_refresh
 from services.ws_handler_registry import (
@@ -81,6 +82,16 @@ register_canary_trigger_type("whatsappReceive", "com.opencompany.whatsapp.messag
 # instead of cross-importing _service.handle_whatsapp_send. See
 # services/plugin/social_provider_registry.py.
 register_social_send_handler("whatsapp", handle_whatsapp_send)
+
+# Output schemas for the FE variable panel — self-registered so all
+# whatsapp code stays in this folder (same pattern as telegram).
+from .whatsapp_db import WhatsAppDbOutput
+from .whatsapp_receive import WhatsAppReceiveOutput
+from .whatsapp_send import WhatsAppSendOutput
+
+register_output_schema("whatsappReceive", WhatsAppReceiveOutput)
+register_output_schema("whatsappSend", WhatsAppSendOutput)
+register_output_schema("whatsappDb", WhatsAppDbOutput)
 
 __all__ = [
     "WhatsAppRuntime",

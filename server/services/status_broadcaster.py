@@ -46,7 +46,9 @@ class StatusBroadcaster:
                 "qr_data": None,
                 "session_token": None,
             },
-            "whatsapp": {"connected": False, "has_session": False, "running": False, "pairing": False, "device_id": None, "qr": None},
+            # No "whatsapp" seed: the plugin owns its slot outright
+            # (nodes/whatsapp/_events.py writes the full dict) and the FE
+            # guards on key presence — absent means disconnected.
             "twitter": {"connected": False, "username": None, "user_id": None, "name": None, "profile_image_url": None},
             "google": {
                 "connected": False,

@@ -365,12 +365,32 @@ class WhatsAppDbParams(BaseModel):
 
 
 class WhatsAppDbOutput(BaseModel):
+    """Composite — different operations surface different subsets of these
+    fields. All optional so the variable panel shows the union."""
+
     operation: Optional[str] = None
     messages: Optional[list] = None
-    contacts: Optional[list] = None
-    groups: Optional[list] = None
-    channels: Optional[list] = None
     total: Optional[int] = None
+    has_more: Optional[bool] = None
+    count: Optional[int] = None
+    chat_type: Optional[str] = None
+    groups: Optional[list] = None
+    contacts: Optional[list] = None
+    participants: Optional[list] = None
+    jid: Optional[str] = None
+    phone: Optional[str] = None
+    name: Optional[str] = None
+    push_name: Optional[str] = None
+    business_name: Optional[str] = None
+    is_business: Optional[bool] = None
+    is_contact: Optional[bool] = None
+    profile_pic: Optional[str] = None
+    channels: Optional[list] = None
+    channel_jid: Optional[str] = None
+    timestamp: Optional[str] = None
+    muted: Optional[bool] = None
+    server_ids: Optional[str] = None
+    status: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 

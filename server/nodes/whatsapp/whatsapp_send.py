@@ -253,8 +253,12 @@ class WhatsAppSendParams(BaseModel):
 
 
 class WhatsAppSendOutput(BaseModel):
+    success: Optional[bool] = None
     message_id: Optional[str] = None
     sent: Optional[bool] = None
+    chat_id: Optional[str] = None
+    timestamp: Optional[str] = None
+    message_type: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 

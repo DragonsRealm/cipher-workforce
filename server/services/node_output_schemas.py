@@ -131,40 +131,9 @@ class HttpRequestOutput(_OutputBase):
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp
+# WhatsApp schemas live in nodes/whatsapp/ and self-register via
+# ``register_output_schema`` (same pattern as telegram).
 # ---------------------------------------------------------------------------
-
-
-class WhatsAppGroupInfo(BaseModel):
-    group_jid: Optional[str] = None
-    sender_jid: Optional[str] = None
-    sender_phone: Optional[str] = None
-    sender_name: Optional[str] = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-class WhatsAppReceiveOutput(_OutputBase):
-    message_id: Optional[str] = None
-    sender: Optional[str] = None
-    sender_phone: Optional[str] = None
-    chat_id: Optional[str] = None
-    message_type: Optional[str] = None
-    text: Optional[str] = None
-    timestamp: Optional[str] = None
-    is_group: Optional[bool] = None
-    is_from_me: Optional[bool] = None
-    push_name: Optional[str] = None
-    media: Optional[dict] = None
-    group_info: Optional[WhatsAppGroupInfo] = None
-
-
-class WhatsAppSendOutput(_OutputBase):
-    success: Optional[bool] = None
-    message_id: Optional[str] = None
-    chat_id: Optional[str] = None
-    timestamp: Optional[str] = None
-    message_type: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -376,39 +345,10 @@ class ContactsOutput(_OutputBase):
 
 
 # ---------------------------------------------------------------------------
-# Messaging: WhatsApp DB, Social
-# (Telegram schemas moved to nodes/telegram/, registered via
-# ``register_output_schema``.)
+# Messaging: Social
+# (Telegram and WhatsApp schemas moved to their plugin folders,
+# registered via ``register_output_schema``.)
 # ---------------------------------------------------------------------------
-
-
-class WhatsAppDbOutput(_OutputBase):
-    """Composite — different operations surface different subsets of these
-    fields. We keep them all optional so the variable panel shows the union."""
-
-    operation: Optional[str] = None
-    messages: Optional[list] = None
-    total: Optional[int] = None
-    has_more: Optional[bool] = None
-    count: Optional[int] = None
-    chat_type: Optional[str] = None
-    groups: Optional[list] = None
-    contacts: Optional[list] = None
-    participants: Optional[list] = None
-    jid: Optional[str] = None
-    phone: Optional[str] = None
-    name: Optional[str] = None
-    push_name: Optional[str] = None
-    business_name: Optional[str] = None
-    is_business: Optional[bool] = None
-    is_contact: Optional[bool] = None
-    profile_pic: Optional[str] = None
-    channels: Optional[list] = None
-    channel_jid: Optional[str] = None
-    timestamp: Optional[str] = None
-    muted: Optional[bool] = None
-    server_ids: Optional[str] = None
-    status: Optional[str] = None
 
 
 class SocialReceiveOutput(_OutputBase):
@@ -766,10 +706,6 @@ NODE_OUTPUT_SCHEMAS: dict[str, type[BaseModel]] = {
     **{t: CodeExecutorOutput for t in _CODE_EXECUTOR_TYPES},
     # network
     "httpRequest": HttpRequestOutput,
-    # whatsapp
-    "whatsappReceive": WhatsAppReceiveOutput,
-    "whatsappSend": WhatsAppSendOutput,
-    "whatsappDb": WhatsAppDbOutput,
     # telegram entries are registered by nodes/telegram/__init__.py via
     # register_output_schema() to keep all telegram code self-contained.
     # twitter

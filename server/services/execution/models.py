@@ -127,11 +127,11 @@ class RetryPolicy:
         )
 
 
-# Default retry policies for different node types
+# Default retry policies for different node types. Trigger nodes are
+# handled generically in get_retry_policy (never retried) — no per-plugin
+# trigger entries here.
 DEFAULT_RETRY_POLICIES: Dict[str, RetryPolicy] = {
     "httpRequest": RetryPolicy(max_attempts=3, initial_delay=2.0),
-    "webhookTrigger": RetryPolicy(max_attempts=1),  # Don't retry triggers
-    "whatsappReceive": RetryPolicy(max_attempts=1),  # Don't retry triggers
     "aiAgent": RetryPolicy(max_attempts=2, initial_delay=5.0, max_delay=30.0),
     "openaiChatModel": RetryPolicy(max_attempts=2, initial_delay=5.0),
     "anthropicChatModel": RetryPolicy(max_attempts=2, initial_delay=5.0),
@@ -151,7 +151,17 @@ def get_retry_policy(node_type: str, custom_policy: Dict = None) -> RetryPolicy:
     """
     if custom_policy:
         return RetryPolicy.from_dict(custom_policy)
-    return DEFAULT_RETRY_POLICIES.get(node_type, RetryPolicy())
+    policy = DEFAULT_RETRY_POLICIES.get(node_type)
+    if policy is not None:
+        return policy
+    # Triggers are never retried: a fired event is consumed, so a retry
+    # would block as a fresh event-waiter. Generic check instead of
+    # per-plugin entries in DEFAULT_RETRY_POLICIES.
+    from constants import WORKFLOW_TRIGGER_TYPES
+
+    if node_type in WORKFLOW_TRIGGER_TYPES:
+        return RetryPolicy(max_attempts=1)
+    return RetryPolicy()
 
 
 @dataclass

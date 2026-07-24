@@ -2074,32 +2074,8 @@ whatsappReceive: {
 }
 ```
 
-#### Output Schema (backend, `server/services/node_output_schemas.py`)
-Runtime output shapes live on the backend and are fetched lazy by InputSection per the Wave 3 source-of-truth decision. The WhatsApp Receive schema:
-```python
-class WhatsAppGroupInfo(BaseModel):
-    group_jid: Optional[str] = None
-    sender_jid: Optional[str] = None
-    sender_phone: Optional[str] = None   # Resolved phone number (Go RPC resolves LIDs before sending event)
-    sender_name: Optional[str] = None
-
-class WhatsAppReceiveOutput(_OutputBase):
-    message_id: Optional[str] = None
-    sender: Optional[str] = None
-    sender_phone: Optional[str] = None
-    chat_id: Optional[str] = None
-    message_type: Optional[str] = None
-    text: Optional[str] = None
-    timestamp: Optional[str] = None
-    is_group: Optional[bool] = None
-    is_from_me: Optional[bool] = None
-    push_name: Optional[str] = None
-    media: Optional[dict] = None
-    group_info: Optional[WhatsAppGroupInfo] = None
-    newsletter_meta: Optional[dict] = None
-
-NODE_OUTPUT_SCHEMAS["whatsappReceive"] = WhatsAppReceiveOutput
-```
+#### Output Schema (plugin-owned, `server/nodes/whatsapp/whatsapp_receive.py`)
+Runtime output shapes are fetched lazily by InputSection per the Wave 3 source-of-truth decision. WhatsApp's schemas live in the plugin folder (the node's `Output` Pydantic classes — `WhatsAppGroupInfo` / `WhatsAppReceiveOutput` / `WhatsAppSendOutput` / `WhatsAppDbOutput`) and self-register from `nodes/whatsapp/__init__.py` via `register_output_schema(...)` — same pattern as telegram; `services/node_output_schemas.py` carries no whatsapp code.
 Served via `GET /api/schemas/nodes/whatsappReceive.json` + `get_node_output_schema` WS handler. See [docs-internal/schema_source_of_truth_rfc.md](./docs-internal/schema_source_of_truth_rfc.md).
 
 ### Task Trigger Node

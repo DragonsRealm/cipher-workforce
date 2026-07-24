@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     # Service Ports (used by start.js, vite, and docker-compose, not hardcoded here)
     vite_client_port: Optional[int] = Field(default=None, env="VITE_CLIENT_PORT")
     python_backend_port: Optional[int] = Field(default=None, env="PYTHON_BACKEND_PORT")
-    whatsapp_rpc_port: Optional[int] = Field(default=None, env="WHATSAPP_RPC_PORT")
     redis_port: Optional[int] = Field(default=None, env="REDIS_PORT")
 
     # Server Configuration
@@ -343,15 +342,8 @@ class Settings(BaseSettings):
     # Workspace base -- relative to data_dir unless absolute
     workspace_base_dir: str = Field(default="workspaces", env="WORKSPACE_BASE_DIR")
 
-    # WhatsApp runtime (edgymeow Go binary supervised by the backend so the
-    # session DB lives under data_dir, surviving pnpm install / version bumps)
-    whatsapp_runtime_enabled: bool = Field(default=True, env="WHATSAPP_RUNTIME_ENABLED")
-    whatsapp_data_subdir: str = Field(default="whatsapp", env="WHATSAPP_DATA_SUBDIR")
-    whatsapp_port: int = Field(default=5681, env="WHATSAPP_RPC_PORT", ge=1024, le=65535)
-    whatsapp_binary_path: Optional[str] = Field(default=None, env="WHATSAPP_BINARY_PATH")
-    # `localhost` is the only bind that Windows Firewall's loopback exception
-    # silently allows. Override to "0.0.0.0" for container deployments.
-    whatsapp_bind_host: str = Field(default="localhost", env="WHATSAPP_BIND_HOST")
+    # WhatsApp runtime settings live in the plugin: nodes/whatsapp/_runtime.py
+    # reads the WHATSAPP_* env vars directly (plugin-owned config).
 
     # Browser automation (agent-browser CLI). Canonical values live in
     # .env.template (same pattern as COMPACTION_RATIO — the code default

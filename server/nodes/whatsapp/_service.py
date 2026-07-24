@@ -33,7 +33,9 @@ def qr_code_to_base64(code: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-WHATSAPP_RPC_URL = os.getenv("WHATSAPP_RPC_URL", "ws://localhost:5681/ws/rpc")
+WHATSAPP_RPC_URL = os.getenv("WHATSAPP_RPC_URL") or (
+    f"ws://localhost:{os.getenv('WHATSAPP_RPC_PORT') or 5681}/ws/rpc"
+)
 
 
 def extract_phone_from_jid(jid: str | None) -> str | None:

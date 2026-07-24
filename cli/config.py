@@ -77,7 +77,6 @@ class Config:
 
     client_port: int
     backend_port: int
-    whatsapp_port: int
     nodejs_port: int
     temporal_address: str
     temporal_enabled: bool
@@ -94,10 +93,14 @@ class Config:
         # ``temporal_ui_port`` are bound by the same ``temporal server
         # start-dev`` process, so killing one kills both — listing both
         # only matters when cleaning up stale orphans on either port.
+        # Plugin-owned daemons (e.g. WhatsApp's edgymeow on
+        # WHATSAPP_RPC_PORT) are NOT listed: the backend supervises them
+        # (tree-kill on shutdown), and the CLI carries no plugin
+        # knowledge. A crashed-backend orphan surfaces as a bind error
+        # on the plugin's next start, which the plugin reports.
         return [
             self.client_port,
             self.backend_port,
-            self.whatsapp_port,
             self.nodejs_port,
             self.temporal_port,
             self.temporal_ui_port,
@@ -163,7 +166,6 @@ def load_config(root: Path | None = None) -> Config:
     return Config(
         client_port=_int(env, "VITE_CLIENT_PORT"),
         backend_port=_int(env, "PYTHON_BACKEND_PORT"),
-        whatsapp_port=_int(env, "WHATSAPP_RPC_PORT"),
         nodejs_port=_int(env, "NODEJS_EXECUTOR_PORT"),
         temporal_address=_require(env, "TEMPORAL_SERVER_ADDRESS"),
         temporal_enabled=_bool(env, "TEMPORAL_ENABLED"),

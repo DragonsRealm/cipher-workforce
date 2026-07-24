@@ -265,11 +265,10 @@ try {
     console.log('  It will be fetched automatically on first `company start`.');
   }
 
-  // WhatsApp RPC is now an npm dependency - binary downloaded via postinstall
+  // Plugin daemons (WhatsApp's edgymeow, Stripe CLI, ...) are installed
+  // lazily by their own plugin code on first use - nothing to do here.
   console.log('');
   console.log('Done!');
-  console.log('');
-  console.log('WhatsApp RPC installed as npm dependency (edgymeow)');
 
 } catch (err) {
   console.log('');

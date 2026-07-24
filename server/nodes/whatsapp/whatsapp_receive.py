@@ -97,9 +97,19 @@ class WhatsAppReceiveParams(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class WhatsAppGroupInfo(BaseModel):
+    group_jid: Optional[str] = None
+    sender_jid: Optional[str] = None
+    sender_phone: Optional[str] = None
+    sender_name: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class WhatsAppReceiveOutput(BaseModel):
     message_id: Optional[str] = None
     sender: Optional[str] = None
+    sender_phone: Optional[str] = None
     chat_id: Optional[str] = None
     message_type: Optional[str] = None
     text: Optional[str] = None
@@ -108,7 +118,7 @@ class WhatsAppReceiveOutput(BaseModel):
     is_from_me: Optional[bool] = None
     push_name: Optional[str] = None
     media: Optional[dict] = None
-    group_info: Optional[dict] = None
+    group_info: Optional[WhatsAppGroupInfo] = None
 
     model_config = ConfigDict(extra="allow")
 

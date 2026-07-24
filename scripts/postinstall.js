@@ -3,7 +3,8 @@
  * Postinstall script for OpenCompany.
  *
  * Runs install.js to check deps, install npm/Python packages, build.
- * WhatsApp RPC is now an npm dependency - binary downloaded by its own postinstall.
+ * Plugin daemons (WhatsApp, Stripe, ...) install lazily via their own
+ * plugin code on first use.
  */
 import { spawn, execSync } from 'child_process';
 import { resolve, dirname } from 'path';

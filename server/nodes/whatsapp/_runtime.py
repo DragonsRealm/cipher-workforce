@@ -53,6 +53,9 @@ class WhatsAppRuntime(BaseProcessSupervisor):
         self.settings = settings
 
     # ---- public read-only properties -------------------------------------
+    # Config is plugin-owned: the WHATSAPP_* env vars are read here
+    # directly (pushed into os.environ from .env by the CLI) — core
+    # ``Settings`` carries no whatsapp fields.
 
     @property
     def data_root(self) -> Path:
@@ -62,19 +65,20 @@ class WhatsAppRuntime(BaseProcessSupervisor):
         # ``<repo>/server/.opencompany/...``,
         # which the old ad-hoc ``_PROJECT_ROOT / "server" / data_dir``
         # logic produced when ``DATA_DIR`` was relative).
-        return Path(self.settings._resolve_under_data(self.settings.whatsapp_data_subdir))
+        subdir = os.environ.get("WHATSAPP_DATA_SUBDIR") or "whatsapp"
+        return Path(self.settings._resolve_under_data(subdir))
 
     @property
     def port(self) -> int:
-        return int(getattr(self.settings, "whatsapp_port", 5681))
+        return int(os.environ.get("WHATSAPP_RPC_PORT") or 5681)
 
     @property
     def bind_host(self) -> str:
         # `localhost` is the only bind that Windows Firewall's loopback
         # exception silently allows; 127.0.0.1 / 0.0.0.0 trigger Defender
         # prompts and TLS interception that surfaces as a misleading
-        # `Client outdated (405)`. See aarol.dev/posts/go-windows-firewall.
-        return getattr(self.settings, "whatsapp_bind_host", "localhost")
+        # `Client outdated (405)`. Override to "0.0.0.0" for containers.
+        return os.environ.get("WHATSAPP_BIND_HOST") or "localhost"
 
     @property
     def _package_dir(self) -> Path:
@@ -88,7 +92,7 @@ class WhatsAppRuntime(BaseProcessSupervisor):
     # ---- BaseProcessSupervisor overrides ---------------------------------
 
     def binary_path(self) -> Path:
-        override = getattr(self.settings, "whatsapp_binary_path", None)
+        override = os.environ.get("WHATSAPP_BINARY_PATH")
         if override:
             return Path(override).resolve()
         name = "edgymeow-server.exe" if sys.platform == "win32" else "edgymeow-server"
@@ -104,7 +108,8 @@ class WhatsAppRuntime(BaseProcessSupervisor):
         return {**os.environ, "WA_SERVER_PORT": str(self.port)}
 
     async def _pre_spawn(self) -> None:
-        if not getattr(self.settings, "whatsapp_runtime_enabled", True):
+        enabled = (os.environ.get("WHATSAPP_RUNTIME_ENABLED") or "true").lower()
+        if enabled not in ("1", "true", "yes"):
             raise RuntimeError("WhatsApp runtime disabled via WHATSAPP_RUNTIME_ENABLED")
         # Run the (potentially long) ``npm install edgymeow`` off the
         # asyncio event loop. ``edgymeow_binary_path`` is sync and
