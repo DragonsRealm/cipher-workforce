@@ -1832,19 +1832,13 @@ Wave 11: renamed from `routers/whatsapp.py` (was misnamed — never an APIRouter
 #### 1. Missing Dependency Injection Wiring
 **Problem**: `main.py` was missing `"routers.whatsapp"` in `container.wire()` modules list
 **Impact**: Uvicorn reloader child process crashed with exit code 1, triggering SIGTERM
-**Fix**: Added `"routers.whatsapp"` to wiring list in `server/main.py:38`
-```python
-container.wire(modules=[
-    "routers.auth",
-    "routers.ai",
-    "routers.workflow",
-    "routers.database",
-    "routers.maps",
-    "routers.nodejs_compat",
-    "routers.whatsapp",  # CRITICAL: This was missing
-    "routers.android"
-])
-```
+**Fix**: Added `"routers.whatsapp"` to wiring list in `server/main.py`
+
+(Historical snippet — the router set has since changed: `routers.whatsapp` /
+`routers.maps` / `routers.android` moved into plugin folders (Wave 11.I) and
+`routers.nodejs_compat` was deleted (July 2026). The live wire list is in
+`server/main.py`. The lesson stands: every wired module must be listed or the
+reloader child crashes.)
 
 #### 2. Unhandled JSON Parse Errors
 **Problem**: `.json()` calls without error handling raised `JSONDecodeError` when Flask returned HTML errors

@@ -130,7 +130,7 @@ flowchart TD
 ## External Dependencies
 
 - **Credentials**: none.
-- **Services**: `whatsapp-rpc` Go service (default `ws://localhost:9400/ws/rpc`).
+- **Services**: `whatsapp-rpc` Go service (default `ws://localhost:5681/ws/rpc`).
 - **Python packages**: `asyncio`.
 - **Environment variables**: `WHATSAPP_RPC_URL`.
 

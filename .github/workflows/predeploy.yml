@@ -75,7 +75,7 @@ jobs:
           pnpm run start &
           PID=$!
           for i in {1..15}; do
-            curl -sf http://localhost:3010/health > /dev/null 2>&1 && break
+            curl -sf http://localhost:5678/health > /dev/null 2>&1 && break
             sleep 2
           done
           kill -0 $PID 2>/dev/null && pnpm run stop || (echo FAILED; exit 1)

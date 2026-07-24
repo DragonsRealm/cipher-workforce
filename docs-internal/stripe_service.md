@@ -289,7 +289,7 @@ plus the per-line callback subscription via `ProcessService`'s
 | `credential = StripeCredential` | Resolved by the framework before `build_command` is called. |
 | `start()` (override) | `await ensure_stripe_cli()` then `super().start()`. Caches the resolved binary path so `build_command` (sync) can pick it up. |
 | `build_command(secrets)` | Returns `<shlex.quote'd-binary> listen --forward-to … --print-secret`. The binary path is `shlex.quote`d so it round-trips through `ProcessService`'s POSIX-mode `shlex.split` unchanged. No `--api-key`: CLI reads its own config file. |
-| `has_credential()` (override) | Returns `is_logged_in()` — a filesystem check on `~/.config/stripe/config.toml`. Consulted by `DaemonEventSource.start` (the credential gate) and by `make_status_refresh` on every WS-client connect (auto-reconnect). |
+| `has_credential()` (override) | Returns `is_logged_in()` — a filesystem check on `~/.config/stripe/config.toml`. Consulted by `DaemonEventSource.start` (the credential gate) and by `StripeReceiveNode._check_precondition` at deploy time (the demand-driven start; the status refresh is a passive probe since July 2026). |
 | `parse_line(stream, line)` | Invoked once per decoded stdout/stderr line via `ProcessService`'s `line_handler` callback. On `whsec_…` match, persists the secret via `auth_service.store_api_key("stripe_webhook_secret", …)`. The Stripe daemon doesn't emit workflow events itself — they arrive via the webhook receiver. |
 
 ### `StripeWebhookSource(WebhookSource)`
@@ -425,8 +425,8 @@ resources work without code changes.
 
 The lifecycle factory `make_lifecycle_handlers(prefix="stripe",
 source=…)` auto-generates `stripe_connect/disconnect/reconnect`
-from the source's `start/stop/restart` methods (used internally by
-the auto-reconnect path). The plugin-specific handlers wired into
+from the source's `start/stop/restart` methods (user-initiated
+daemon lifecycle). The plugin-specific handlers wired into
 the modal's Connect button are `stripe_login` and `stripe_logout`:
 
 | Type | Handler | Purpose |
@@ -435,7 +435,7 @@ the modal's Connect button are `stripe_login` and `stripe_logout`:
 | `stripe_logout` | stops daemon → `stripe logout --all` → `_mark_logged_out()` → `_broadcast_catalogue_updated()` | **Modal Disconnect button** |
 | `stripe_status` | returns `{logged_in, running, pid, webhook_secret_captured, connected = running ∧ logged_in}` | Optional read-only poll for diagnostics; the modal flips reactively from the catalogue refetch, not from this handler |
 | `stripe_trigger` | passes `["trigger", event]` to `run_cli_command` (after `ensure_stripe_cli`) | Synthetic test event |
-| `stripe_connect/disconnect/reconnect` | `source.start/stop/restart()` from the lifecycle factory | Daemon-only lifecycle; used by the auto-reconnect path on WS-client connect |
+| `stripe_connect/disconnect/reconnect` | `source.start/stop/restart()` from the lifecycle factory | Daemon-only lifecycle, user-initiated |
 
 Background `_complete_login(binary, next_step, pre_mtime)` flow:
 
@@ -623,16 +623,17 @@ on the TanStack Query client; the catalogue refetches; the modal
 sees the new `provider.stored` value and re-renders. **No
 stripe-specific code anywhere on the frontend.**
 
-### 3. `make_status_refresh` (auto-reconnect on WS-client connect)
+### 3. `make_status_refresh` (passive status mirror)
 
-The plugin still registers `make_status_refresh` so that on every
-WebSocket-client connect:
-
-1. `has_credential()` (= `is_logged_in()`) is consulted. If true and
-   the daemon isn't running, `start()` is called — covers the
-   "OpenCompany restarted while user was logged in" path.
-2. `source.status()` is mirrored into `broadcaster._status["stripe"]`
-   for any consumers that read it directly. (The modal does not.)
+The plugin registers `make_status_refresh` so that on every
+WebSocket-client connect `source.status()` is mirrored into
+`broadcaster._status["stripe"]` for any consumers that read it
+directly. (The modal does not.) Since July 2026 the refresh **never
+starts the daemon** — a stored credential alone is not a reason to
+run `stripe listen`. The demand signals own the starts instead:
+`_complete_login` after a successful login, the user-initiated
+`stripe_connect` command, and `StripeReceiveNode._check_precondition`
+when a workflow with a Stripe trigger deploys.
 
 ### Frontend `connected` derivation (single generic line)
 
@@ -815,7 +816,7 @@ End-to-end smoke (requires Stripe CLI installed and a Stripe account):
    Dashboard, click Authorise. Within a few seconds the modal flips
    to "Connected" and `stripe_status` broadcasts
    `{logged_in: true, running: true, webhook_secret_captured: true}`.
-2. **Daemon auto-start.** After login, confirm:
+2. **Daemon start on login.** After login, confirm:
    - `process_service.list_processes("_stripe_global")` shows
      `stripe-listen` running.
    - Within ~3 s the stderr.log contains `whsec_…`.

@@ -315,7 +315,7 @@ main() {
   echo "    company start"
   echo ""
   echo "  Open in browser:"
-  echo "    http://localhost:3000"
+  echo "    http://localhost:5678"
   echo ""
   echo "  Optional: Enable JS-rendered web scraping:"
   echo "    playwright install chromium"

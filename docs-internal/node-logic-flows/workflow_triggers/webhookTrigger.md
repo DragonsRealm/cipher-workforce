@@ -29,7 +29,7 @@ via Temporal Signal and spawns a child `MachinaWorkflow` per matching event
 
 | Name | Type | Default | Required | displayOptions.show | Description |
 |------|------|---------|----------|---------------------|-------------|
-| `path` | string | `""` | no | - | URL path segment - full URL is `http://host:3010/webhook/{path}`. Must match the incoming request's `path` for the filter to accept it. Empty path = wildcard (matches any). |
+| `path` | string | `""` | no | - | URL path segment - full URL is `http://host:5678/webhook/{path}`. Must match the incoming request's `path` for the filter to accept it. Empty path = wildcard (matches any). |
 | `method` | options | `POST` | no | - | Filter for HTTP method at the router layer (not the plugin filter). Values: `GET` / `POST` / `PUT` / `DELETE` / `ALL`. |
 | `response_mode` | options | `immediate` | no | - | `immediate` returns 200 OK right away; `responseNode` waits for a downstream `webhookResponse` node (see [`webhookResponse`](./webhookResponse.md)). |
 | `authentication` | options | `none` | no | - | `none` or `header`. |

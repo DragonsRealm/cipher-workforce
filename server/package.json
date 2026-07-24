@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "scripts": {
     "start": "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-5678}",
-    "dev": "python -m uvicorn main:app --host 127.0.0.1 --port ${PORT:-3010} --reload --reload-dir . --reload-exclude \"*.pyc\" --reload-exclude \"__pycache__\" --log-level warning"
+    "dev": "python -m uvicorn main:app --host 127.0.0.1 --port ${PORT:-5678} --reload --reload-dir . --reload-exclude \"*.pyc\" --reload-exclude \"__pycache__\" --log-level warning"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

@@ -13,7 +13,7 @@
 
 Runs user JavaScript through the persistent Node.js executor server (Express +
 tsx) that the Python backend spawns on startup. The plugin does **not** spawn
-`node` per call - it POSTs the code to `http://localhost:3020/execute` via the
+`node` per call - it POSTs the code to `http://localhost:5680/execute` via the
 shared `get_nodejs_client()` singleton (an async `aiohttp` client). The Node.js
 server evaluates the script and returns `{success, output, console_output, ...}`.
 
@@ -40,7 +40,7 @@ into an `input_data` object, injects the workflow's `workspace_dir`
 ## Node.js client singleton
 
 `get_nodejs_client()` in [`_nodejs.py`](../../../server/nodes/code/_nodejs.py) lazily
-constructs one `NodeJSClient(base_url="http://localhost:3020", timeout=30)` shared
+constructs one `NodeJSClient(base_url="http://localhost:5680", timeout=30)` shared
 across the JS + TS plugins. The defaults are hard-coded in the helper signature
 (no per-call kwargs from the plugin).
 
@@ -91,13 +91,13 @@ flowchart TD
   plugin raises `NodeUserError(result["error"] or "JavaScript executor failed")`.
 - **Sidecar down**: `aiohttp.ClientConnectorError` is caught and re-raised as a
   `NodeUserError` telling the LLM the Node executor is unreachable on
-  localhost:3020 and to fall back to `python_executor`.
+  localhost:5680 and to fall back to `python_executor`.
 
 ## Side Effects
 
 - **Database writes**: none.
 - **Broadcasts**: none from this handler.
-- **External API calls**: `POST http://localhost:3020/execute`
+- **External API calls**: `POST http://localhost:5680/execute`
   (configurable via `NODEJS_EXECUTOR_URL`). Body:
   `{code, input_data, language: "javascript", timeout}`.
 - **File I/O**: none from Python; the Node.js server may read/write user
@@ -110,7 +110,7 @@ flowchart TD
 ## External Dependencies
 
 - **Credentials**: none.
-- **Services**: Persistent Node.js executor at `http://localhost:3020`.
+- **Services**: Persistent Node.js executor at `http://localhost:5680`.
   Must be running - the backend start script boots it alongside uvicorn.
 - **Python packages**: `aiohttp`.
 - **Environment variables**: `NODEJS_EXECUTOR_URL`,
@@ -123,7 +123,7 @@ flowchart TD
   first call at the hard-coded `base_url`/`timeout`. Reset by setting
   `services.code._nodejs._client = None` (or `nodes.code._nodejs._client`).
 - **Node server down**: connection refused surfaces as
-  `error="Cannot connect to host localhost:3020 ssl:default [Connect call
+  `error="Cannot connect to host localhost:5680 ssl:default [Connect call
   failed]"` or similar aiohttp message. No automatic retry.
 - **`workspace_dir` key collision**: user code cannot read an upstream
   `workspace_dir` from `input_data` - the handler always overwrites it.

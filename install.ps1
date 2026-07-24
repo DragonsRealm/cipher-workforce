@@ -209,7 +209,7 @@ function Main {
     Write-Host "    company start"
     Write-Host ""
     Write-Host "  Open in browser:"
-    Write-Host "    http://localhost:3000"
+    Write-Host "    http://localhost:5678"
     Write-Host ""
     Write-Host "  For development from source, install pnpm:"
     Write-Host "    npm install -g pnpm"
