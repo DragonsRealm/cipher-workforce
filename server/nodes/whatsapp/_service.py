@@ -303,20 +303,28 @@ async def reset_client():
             _client = None
 
 
-async def get_client(force_reconnect: bool = False) -> RPCClient:
-    """Get or create RPC client. Use force_reconnect=True to ensure fresh connection."""
+async def get_client(force_reconnect: bool = False, *, spawn: bool = True) -> RPCClient:
+    """Get or create RPC client. Use force_reconnect=True to ensure fresh connection.
+
+    ``spawn=False`` is for passive status probes (broadcaster refresh, the
+    ``whatsapp_status`` / ``whatsapp_connected_phone`` WS commands): they must
+    never boot the optional edgymeow runtime just to report on it. Connection
+    still proceeds, so an externally managed RPC service is reported correctly;
+    if nothing listens the connect raises and callers surface "not running".
+    """
     global _client
     # Lazy-spawn the edgymeow binary on first use so its session DB lives
     # under <data_dir>/whatsapp/ instead of the pnpm package directory.
     # Idempotent: no-op if already running or disabled via settings.
-    from nodes.whatsapp import get_whatsapp_runtime
+    if spawn:
+        from nodes.whatsapp import get_whatsapp_runtime
 
-    try:
-        # `start()` is idempotent (BaseSupervisor takes a lock and no-ops
-        # if already running) so calling it from every get_client() is safe.
-        await get_whatsapp_runtime().start()
-    except Exception as e:
-        logger.warning(f"[WhatsApp RPC] Runtime start failed (will try connecting anyway): {e}")
+        try:
+            # `start()` is idempotent (BaseSupervisor takes a lock and no-ops
+            # if already running) so calling it from every get_client() is safe.
+            await get_whatsapp_runtime().start()
+        except Exception as e:
+            logger.warning(f"[WhatsApp RPC] Runtime start failed (will try connecting anyway): {e}")
 
     async with _lock:
         # Force reconnect if requested or if client is stale
@@ -357,7 +365,7 @@ async def get_client(force_reconnect: bool = False) -> RPCClient:
 async def handle_whatsapp_status() -> dict:
     """Get WhatsApp connection status via direct RPC and broadcast to all clients."""
     try:
-        client = await get_client()
+        client = await get_client(spawn=False)
         status_data = await client.call("status")
 
         # Broadcast status via the plugin's canonical wrapper (Wave 12 B2).
@@ -397,7 +405,7 @@ async def handle_whatsapp_connected_phone() -> dict:
     extracted from the device JID.
     """
     try:
-        client = await get_client()
+        client = await get_client(spawn=False)
         status_data = await client.call("status")
 
         if not status_data.get("connected"):

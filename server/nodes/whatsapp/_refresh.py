@@ -36,7 +36,10 @@ async def refresh_whatsapp_status(broadcaster: "StatusBroadcaster") -> None:
             from ._events import broadcast_whatsapp_status
             from ._service import get_client
 
-            client = await get_client()
+            # Passive probe: never boot the optional WhatsApp runtime just to
+            # report its status. Nodes and explicit start/QR commands spawn it
+            # on demand via get_client(spawn=True).
+            client = await get_client(spawn=False)
             status_data = await client.call("status")
 
             await broadcast_whatsapp_status(
