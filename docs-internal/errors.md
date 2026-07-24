@@ -139,7 +139,7 @@ construction paths.
 
 ## 3. Temporal Activity `CancelledError` on Long-Running Nodes
 
-**Symptom**: Nodes that run for more than ~2 minutes (Deep Agent, browser automation, AI multi-tool loops) fail with:
+**Symptom**: Nodes that run for more than ~2 minutes (Coding Agent, browser automation, AI multi-tool loops) fail with:
 ```
 asyncio.exceptions.CancelledError
 ```

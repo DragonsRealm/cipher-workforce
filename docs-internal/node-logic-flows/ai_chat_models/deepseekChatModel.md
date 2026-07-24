@@ -65,7 +65,7 @@ flowchart TD
   C --> D{valid key + prompt?}
   D -- no --> X[error envelope]
   D -- yes --> E[detect_ai_provider -> 'deepseek']
-  E --> F[Strip 'owner/' prefix]
+  E --> F[Preserve opaque provider model ID]
   F --> G[ChatUnifier.chat -> registry.get_provider deepseek<br/>OpenAI SDK w/ DeepSeek base_url]
   G --> H[provider.chat]
   H --> I[success envelope]
@@ -76,7 +76,8 @@ flowchart TD
 
 - **Validation**: missing api_key / empty prompt -> error envelope.
 - **Provider routing**: `detect_ai_provider` matches `'deepseek' in node_type.lower()` **first** (before kimi/mistral/cerebras/groq/openrouter/anthropic/gemini), so routing is unambiguous.
-- **Native path**: uses the OpenAI SDK with DeepSeek's base URL from `llm_defaults.json`. OpenAI-compatible `max_tokens` is passed via `extra_body` to bypass LangChain's `max_completion_tokens` translation (not relevant on the native path but documented for the LangChain-agent path).
+- **Native path**: uses the OpenAI SDK with DeepSeek's base URL from `llm_defaults.json`. The compatible provider sends `max_tokens` directly in the Chat Completions request; there is no LangChain parameter translation on current chat or agent executions.
+- **Model ID handling**: only the UI-only `[FREE] ` decoration is stripped. The remaining model ID is preserved.
 - **`deepseek-reasoner` always-on CoT**: reasoning_content is ALWAYS produced, regardless of `thinkingEnabled`. The native provider extracts it into `LLMResponse.thinking`.
 
 ## Side Effects
@@ -98,9 +99,9 @@ flowchart TD
 
 - **`deepseek-reasoner` always thinks**: `thinkingEnabled=false` does NOT disable the reasoning trace; it just means the UI won't highlight it. The response still contains `reasoning_content`.
 - **`thinkingBudget` has no effect**: DeepSeek reasoning is not budget-configurable; the field is silently ignored.
-- **128K context, up to 64K output**.
+- **Context and output**: the curated V4 models use a 1,048,576-token context window and a 65,536-token output ceiling; legacy `deepseek-chat` and `deepseek-reasoner` remain 131,072-context aliases.
 - **OpenAI-compatible but not OpenAI**: features like `response_format: json_object` have subtly different behavior.
-- **Errors swallowed into envelope**.
+- **Error boundary**: typed OpenAI SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

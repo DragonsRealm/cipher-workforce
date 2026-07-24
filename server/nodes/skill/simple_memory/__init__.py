@@ -1,10 +1,15 @@
 """Simple Memory — Wave 11.E.3 inlined.
 
-Markdown-based conversation memory, optionally backed by a vector
-store for semantic recall. Connects upward to an agent's input-memory
-handle. The plugin queries the in-memory ``MessageStore`` directly;
-agents read the ``memory_content`` parameter (the editable markdown)
-plus the live message log returned here.
+The node exposes two distinct memory surfaces. ``memory_content`` is the
+passive, DB-backed markdown transcript connected agents read and update
+through :mod:`services.memory.runtime`; executing this node does not populate
+that transcript. The ``read`` operation separately queries the process-local
+``services.memory_store`` log and returns timestamped message dictionaries.
+That direct log is currently written by the RLM service and does not survive
+a process restart.
+
+Long-term embedding settings are passive configuration consumed by agent
+paths; they do not make the ``read`` operation query the vector store.
 
 Field shape mirrors the pre-Wave-11 nodeDefinitions (camelCase on main)
 but with snake_case names, since plugin Pydantic params are the source

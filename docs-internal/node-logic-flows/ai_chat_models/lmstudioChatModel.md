@@ -99,7 +99,7 @@ flowchart TD
 - **Server must be running with a model loaded**: LM Studio reports loaded models via `list_loaded()`; if nothing is loaded the probe returns no models.
 - **Provider routing dependency**: `lmstudio` must be present in `detect_ai_provider` AND in each agent's `provider` Literal, or the node silently falls back to OpenAI cloud.
 - **Max output default**: ctx ÷ 4, capped at 4096, unless the user overrides `max_tokens`. Typed `LlmInstanceInfo.context_length` drives this.
-- **Errors swallowed into envelope** on the chat path.
+- **Error boundary**: typed OpenAI SDK connection/API failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

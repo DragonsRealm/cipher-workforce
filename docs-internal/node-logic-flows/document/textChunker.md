@@ -11,9 +11,13 @@
 ## Purpose
 
 Split documents into overlapping text chunks suitable for embedding. The
-dependency-free local splitter preserves the former recursive-character and
-Markdown separator/overlap semantics. Typically sits between
-`documentParser` and `embeddingGenerator` in a RAG pipeline.
+dependency-free local splitter preserves the tested recursive-character
+chunk-size and overlap behavior. Its Markdown mode reuses the historical
+separator list, but the local implementation escapes every separator before
+matching it. Regex-shaped entries such as `\n#{1,6} ` are therefore literal,
+not regular expressions; this is not full regex parity with the former
+LangChain Markdown splitter. Typically sits between `documentParser` and
+`embeddingGenerator` in a RAG pipeline.
 
 ## Inputs (handles)
 
@@ -99,6 +103,9 @@ flowchart TD
 ## Edge cases & known limits
 
 - `token` strategy is mentioned in the frontend options/description but there is no branch for it; it currently falls through to recursive. Documented gotcha.
+- Markdown separators are matched literally. Paragraph/newline separators
+  still split ordinary Markdown, but regex-style heading and horizontal-rule
+  patterns do not receive special regex treatment.
 - `chunkSize`/`chunkOverlap` are cast via `int(...)`; the local splitter raises
   if `overlap > chunkSize`.
 - Pure function, no randomness - deterministic given the same inputs.

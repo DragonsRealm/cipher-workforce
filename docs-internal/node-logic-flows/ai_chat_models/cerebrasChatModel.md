@@ -11,8 +11,9 @@
 
 ## Purpose
 
-Ultra-fast inference on Cerebras' custom AI hardware. Models include Llama
-3.1, GPT-OSS-120b, Qwen-3-235b. The `ChatModelBase.chat` operation calls
+Ultra-fast inference on Cerebras' custom AI hardware. The current curated
+models are GPT-OSS-120b plus preview Z.ai GLM 4.7 and Gemma 4 tiers. The
+`ChatModelBase.chat` operation calls
 `AIService.execute_chat`, which routes through `ChatUnifier`. Like Groq,
 Cerebras is one of the eight OpenAI-compatible providers registered in
 `providers/_compat.py`; bare chat and current agent executions share this
@@ -71,7 +72,7 @@ flowchart TD
   C --> D{valid key + prompt?}
   D -- no --> X[error envelope]
   D -- yes --> E[detect_ai_provider -> 'cerebras']
-  E --> F[Strip 'owner/' prefix]
+  E --> F[Preserve opaque provider model ID]
   F --> G[ChatUnifier.chat provider='cerebras']
   G --> H[registry.get_provider cerebras<br/>_compat.py spec: OpenAIProvider + base_url=api.cerebras.ai/v1]
   H --> I[await provider.chat -> LLMResponse]
@@ -86,7 +87,7 @@ flowchart TD
 - **Native OpenAI-compatible path**: `ChatUnifier` resolves the `cerebras`
   spec registered in `providers/_compat.py` (reuses `OpenAIProvider` with the
   Cerebras `base_url`) for both chat and agent requests.
-- **Reasoning**: same parsed/hidden mechanism as Groq Qwen - only the Qwen-3-235b variant honors it.
+- **Reasoning**: the curated reasoning-capable model is `zai-glm-4.7`; other current Cerebras models ignore the shared thinking controls.
 - **Temperature range**: narrower (0-1.5 clamp) than OpenAI/Groq. `_resolve_temperature` applies the clamp.
 
 ## Side Effects
@@ -107,9 +108,9 @@ flowchart TD
 ## Edge cases & known limits
 
 - **Temperature capped at 1.5**, not 2.
-- **Reasoning only on Qwen-3-235b**.
-- **Small max output**: 8K for most models; exceeding this surfaces as a provider-side error in the envelope.
-- **Errors swallowed into envelope**.
+- **Reasoning only on the configured GLM preview tier**.
+- **Output ceiling**: current curated Cerebras models allow up to 40,960 output tokens; unknown models use the configured 8K fallback.
+- **Error boundary**: typed OpenAI SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

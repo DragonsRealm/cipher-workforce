@@ -18,7 +18,7 @@ See [SETUP.md](docs-internal/SETUP.md) for environment setup and [SCRIPTS.md](do
 At a glance:
 
 - **115+ workflow nodes** across ~30 palette groups (live count: glob `server/nodes/**/__init__.py`; group list: `server/nodes/groups.py`; one self-contained plugin folder per node under `server/nodes/<group>/`)
-- **12 LLM providers** via a hybrid native SDK + LangChain architecture (11 chat-model nodes; xAI native-chat-only)
+- **12 native LLM providers** (10 cloud providers plus Ollama and LM Studio; 11 standalone chat-model nodes because xAI is selected directly by agent nodes)
 - **Specialized AI agents** with the Agent Teams delegation pattern — SSOT is the `AI_AGENT_TYPES` frozenset in `server/constants.py`, which spans the base/specialized/team-lead agents plus the CLI-backed (`claude_code_agent`, `rlm_agent`) and Vertex-hosted (`vertex_managed_agent`) variants; `codex_agent` is a sibling CLI-agent plugin
 - **WebSocket-first API** replacing most REST endpoints (live handler count = `MESSAGE_HANDLERS` + plugin registries)
 - **65+ built-in skills**, editable in-UI with SKILL.md defaults on disk (live count: glob `server/skills/**/SKILL.md`)
@@ -36,7 +36,7 @@ Deep dives: [DESIGN.md](docs-internal/DESIGN.md) - [TEMPORAL_ARCHITECTURE.md](do
 
 [![AI Agent Routing](docs/diagrams/ai-agent-routing.svg)](https://raw.githubusercontent.com/zeenie-ai/OpenCompany/main/docs/diagrams/ai-agent-routing.svg)
 
-AI execution splits into two paths. `execute_chat()` for direct chat completions delegates every provider to the native SDK layer in [services/llm/](server/services/llm/) via `ChatUnifier` (12 providers, lazy imports, normalized `LLMResponse`; Groq, Cerebras, and the local servers ride the OpenAI-compatible client with a custom `base_url` — the old chat-path LangChain fallback is retired). `execute_agent()` and `execute_chat_agent()` build a LangChain chat model (`ChatOpenAI` / `ChatAnthropic` / etc.) and drive it through `_run_agent_loop`. Team leads (`orchestrator_agent`, `ai_employee`) receive an intrinsic Task Manager and may assign only agents connected to their `input-teammates` handle. Delegate descriptors stay internal. `task_manager(assign_task)` persists and returns `queued`; Temporal hands work to a detached `DelegatedTaskWorkflow`, while legacy execution reuses the same durable task record. Completion emits `taskTrigger` with owning execution context for a separate lead review. The RLM Agent uses a REPL-based recursive language model pattern. Long-running activities remain alive through activity heartbeats.
+Direct chat completions and every new agent execution use the native SDK layer in [services/llm/](server/services/llm/) through `ChatUnifier`. The shared `run_native_agent_loop` consumes lossless native messages and provider-neutral `AgentToolSpec` definitions; Groq, Cerebras, xAI, DeepSeek, Kimi, Mistral, and the local servers ride the OpenAI-compatible client with provider-specific `base_url` values. LangChain remains only in the frozen compatibility branch for pre-cutover or explicitly legacy-pinned Temporal histories. Team leads (`orchestrator_agent`, `ai_employee`) receive an intrinsic Task Manager and may assign only agents connected to their `input-teammates` handle. Delegate descriptors stay internal. `task_manager(assign_task)` persists and returns `queued`; Temporal hands work to a detached `DelegatedTaskWorkflow`, while legacy execution reuses the same durable task record. Completion emits `taskTrigger` with owning execution context for a separate lead review. The RLM Agent uses a REPL-based recursive language model pattern. Long-running activities remain alive through activity heartbeats.
 
 Deep dives: [agent_architecture.md](docs-internal/agent_architecture.md) - [native_llm_sdk.md](docs-internal/native_llm_sdk.md) - [agent_teams.md](docs-internal/agent_teams.md) - [memory_compaction.md](docs-internal/memory_compaction.md) - [cli_agent_framework.md](docs-internal/cli_agent_framework.md)
 
@@ -73,7 +73,7 @@ The diagram above shows the full lifecycle of a workflow node: one self-containe
 
 **Add an LLM provider**
 - Guide: [native_llm_sdk.md](docs-internal/native_llm_sdk.md) → "Adding a New Provider"
-- OpenAI-compatible (DeepSeek, Kimi, Mistral pattern): config-only in `server/config/llm_defaults.json` + the compat list in `services/llm/providers/_compat.py`
+- OpenAI-compatible (DeepSeek, Kimi, Mistral pattern): add the provider configuration to `server/config/llm_defaults.json` and its name to `services/llm/providers/_compat.py::_COMPAT_PROVIDERS`
 - Custom-SDK provider: new file in `server/services/llm/providers/` that calls `register_provider(ProviderSpec(...))` at module bottom (lazy factory + `sdk_exception_refs`; the legacy `factory.py` was removed — `register_provider` is the only entry point)
 - Chat-model node plugin: `server/nodes/model/<provider>_chat_model/__init__.py`; for agent-dropdown exposure also extend the `provider` Literal in `nodes/agent/{ai_agent,chat_agent,_specialized}` and `detect_ai_provider` in `server/constants.py`
 

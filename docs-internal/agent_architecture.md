@@ -170,7 +170,11 @@ Resolved per-execution by `execute_agent` / `execute_chat_agent` (and `prepare_a
 3. **Env** `Settings.agent_recursion_limit` from `AGENT_RECURSION_LIMIT` (default 200).
 4. **JSON** `llm_defaults.json:agent.recursion_limit` — last-resort fallback when Settings can't load.
 
-This is a backstop, not the load-bearing signal — compaction (token-based, post-turn) is the actual termination control. See [memory_compaction.md](memory_compaction.md).
+The iteration limit is the termination backstop. Compaction is a post-turn
+context-pressure control for agents with connected memory; it summarizes active
+history so a loop can continue within the model's context window, but it does
+not decide when the loop terminates. See
+[memory_compaction.md](memory_compaction.md).
 
 ### Hot rebind after canvas mutation
 
@@ -507,10 +511,14 @@ Two settings flags route agent execution through different Temporal paths (see [
 Both flags default to `true` in `.env.template`.
 
 New `AgentWorkflow` executions record `llm_engine="native"` and
-`message_wire_version=2` in the `agent.prepare_payload.v1` result. Only
-recorded histories whose prepare result predates those markers replay the
-frozen LangChain / `StructuredTool` branch; marker-bearing native executions
-never fall back after a provider request starts.
+`message_wire_version=2` in the `agent.prepare_payload.v1` result by default.
+Recorded histories whose prepare result predates those markers replay the
+frozen LangChain / `StructuredTool` branch. The temporary
+`AGENT_LLM_ENGINE=langchain` emergency setting can also create a marker-bearing
+prepare result explicitly pinned to that compatibility branch. Marker-bearing
+native executions never fall back after a provider request starts, and changing
+the environment does not alter an execution whose prepare result is already in
+history.
 
 **Team leads** (`orchestrator_agent`, `ai_employee`) run the same
 `execute_chat_agent` path as the other specialized agents but add an

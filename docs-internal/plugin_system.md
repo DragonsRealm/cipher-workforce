@@ -360,7 +360,7 @@ on a plugin resolves to a registered class.
 | `nodes/twitter/_credentials.py` | `TwitterCredential` | oauth2 | twitterSend / twitterSearch / twitterUser / twitterReceive |
 | `nodes/telegram/_credentials.py` | `TelegramCredential` | api_key | telegramSend / telegramReceive |
 | `nodes/scraper/_credentials.py` | `ApifyCredential` | api_key (bearer) | apifyActor |
-| `nodes/model/_credentials.py` | `OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / Xai / Ollama / LMStudio` | api_key | 11 chat-model nodes (Ollama / LM Studio store a local server URL; the Xai credential is native-chat-only — no node) |
+| `nodes/model/_credentials.py` | `OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / Xai / Ollama / LMStudio` | api_key | 12 native providers and 11 standalone chat-model nodes. Ollama / LM Studio store a local server URL; xAI is agent-selectable but has no standalone node. |
 | `nodes/search/*.py` (inline) | `BraveSearch / Serper / Perplexity` | api_key | single-use search nodes |
 
 `GoogleCredential` exposes a `build_credentials()` classmethod that
@@ -400,7 +400,7 @@ Every `BaseNode` subclass exposes `cls.as_activity()`, a Temporal
 `@activity.defn`-decorated callable with name
 `node.{type}.v{version}`. As of F4.A (commit `8261b05`) these
 activities are **wired into the orchestrator** behind
-`TEMPORAL_PER_TYPE_DISPATCH` (default off):
+`TEMPORAL_PER_TYPE_DISPATCH` (default on; set it to `false` for rollback):
 
 - Flag OFF: orchestrator schedules legacy `execute_node_activity`
   (status quo since Wave 11; WS round-trip back to FastAPI).
@@ -411,10 +411,12 @@ activities are **wired into the orchestrator** behind
   because the worker shares the FastAPI process.
 
 `TemporalWorkerManager._worker` registers BOTH the legacy activity AND
-every per-type activity (~1.6s startup cost). Per-queue routing
-(`task_queue=cls.task_queue`) waits for `TemporalWorkerPool` to be
-wired in `main.py`; the orchestrator currently passes `task_queue=None`
-so per-type activities still poll the single default queue.
+every per-type activity. With the default-on
+`TEMPORAL_WORKER_POOL_ENABLED`, `main.py` also starts a
+`TemporalWorkerPool`, and `MachinaWorkflow._resolve_activity()` routes each
+per-type activity to its plugin-declared `cls.task_queue`. Setting
+`TEMPORAL_WORKER_POOL_ENABLED=false` stops the pool and routes activities back
+to the manager's single default queue.
 
 ```python
 # Worker collection patterns (both supported).
@@ -423,11 +425,11 @@ so per-type activities still poll the single default queue.
 from services.temporal.plugin_activities import collect_plugin_activities
 activities = collect_plugin_activities()
 
-# Filter by declared queue (for future TemporalWorkerPool):
+# Filter by declared queue (what each TemporalWorkerPool worker uses):
 ai_heavy = collect_plugin_activities(task_queue="ai-heavy")
 worker = Worker(client, task_queue="ai-heavy", activities=ai_heavy, ...)
 
-# Multi-queue pool (future enhancement — class exists, not started yet):
+# Multi-queue pool (started by main.py when TEMPORAL_WORKER_POOL_ENABLED=true):
 from services.temporal.worker import TemporalWorkerPool
 pool = TemporalWorkerPool(client)  # defaults to all declared queues
 await pool.start()
@@ -435,7 +437,7 @@ await pool.start()
 
 ### Temporal agent workflows (F4.B)
 
-`TEMPORAL_AGENT_WORKFLOW_ENABLED` (default off, commit `a4d009e`)
+`TEMPORAL_AGENT_WORKFLOW_ENABLED` (default on; set it to `false` for rollback)
 flips agent dispatch from activity to **child workflow**. The
 `AgentWorkflow` class in `services/temporal/agent_workflow.py` orchestrates the agent loop:
 
@@ -449,9 +451,10 @@ AgentWorkflow.run(payload):
     4. if compaction threshold: execute_activity("agent.compact_memory.v1")
 ```
 
-Three new activities (`agent.execute_llm_step.v1`,
-`agent.persist_turn.v1`, `agent.compact_memory.v1`) registered
-alongside the per-type activities.
+The worker registers 16 `agent.*.v1` activities alongside the per-type
+activities. The three shown above are the core model/persistence/compaction
+steps; the remainder cover payload preparation, progress and output
+persistence, tool/skill refresh, delegation lifecycle, and team finalization.
 
 **Agents that migrate** (15): `aiAgent`, `chatAgent`, 11 specialized
 agents (`android_agent`, `coding_agent`, `web_agent`, `task_agent`,

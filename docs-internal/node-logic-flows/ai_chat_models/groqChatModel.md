@@ -69,7 +69,7 @@ flowchart TD
   C --> D{valid key + prompt?}
   D -- no --> X[error envelope]
   D -- yes --> E[detect_ai_provider -> 'groq']
-  E --> F[Strip 'owner/' prefix from model<br/>non-OpenRouter]
+  E --> F[Preserve opaque provider model ID]
   F --> G[ChatUnifier.chat provider='groq']
   G --> H[registry.get_provider groq<br/>_compat.py spec: OpenAIProvider + Groq base_url]
   H --> I[await provider.chat -> LLMResponse]
@@ -85,7 +85,7 @@ flowchart TD
   registered in `providers/_compat.py` (reuses `OpenAIProvider` with the
   `base_url` from `llm_defaults.json`) for both chat and agent requests.
 - **Reasoning**: only Qwen3-32b actually honors `reasoningFormat`. Non-Qwen models ignore the flag.
-- **Model string scrubbing**: `[FREE] ` prefix stripped; `owner/` prefix stripped (non-OpenRouter).
+- **Model ID handling**: only the UI-only `[FREE] ` decoration is stripped. Owner-qualified IDs such as `openai/gpt-oss-120b` and `qwen/qwen3-32b` are preserved because Groq requires them.
 
 ## Side Effects
 
@@ -107,7 +107,7 @@ flowchart TD
 - **Reasoning only on Qwen3-32b**: QwQ has been removed from Groq. Other models ignore `reasoningFormat`.
 - **`reasoningFormat=hidden` suppresses `thinking`**: response contains only the final answer.
 - **Finish reason**: passed through from the API response (`"stop"` fallback when absent).
-- **Errors swallowed into envelope**.
+- **Error boundary**: typed OpenAI SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

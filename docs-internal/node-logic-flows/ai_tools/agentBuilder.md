@@ -100,7 +100,7 @@ flowchart TD
 - **Idempotency**: `add_tool` / `add_subagent` / `add_skill` are no-ops (empty `operations`) when the target is already wired/enabled, surfacing the existing node id in the summary.
 - **add_subagent gate**: only team leads (`orchestrator_agent`, `ai_employee`) may spawn delegates; cannot spawn another team lead.
 - **create_workflow disabled**: `_CREATE_WORKFLOW_ENABLED = False` short-circuits with a "temporarily disabled" summary; the implementation body is intact for one-line re-enable.
-- **Summary suffix**: depends on `ctx.raw["auto_rebind_tools"]` (UserSettings) — "Available immediately" when auto-rebind is on, else "Available on your next turn" (the agent loop binds tools at turn start, so a mid-run mutation is callable next turn unless auto-rebind rebinds it in place).
+- **Summary suffix**: depends on `ctx.raw["auto_rebind_tools"]` (UserSettings) — "Available immediately" when auto-rebind is on, else "Available on your next turn" (the native agent loop compiles its tool list at turn start, so a mid-run mutation is callable next turn unless auto-rebind refreshes that list in place).
 
 ## Side Effects
 

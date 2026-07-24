@@ -63,7 +63,7 @@ flowchart TD
   C --> D{valid key + prompt?}
   D -- no --> X[error envelope]
   D -- yes --> E[detect_ai_provider -> 'mistral']
-  E --> F[Strip 'owner/' prefix]
+  E --> F[Preserve opaque provider model ID]
   F --> G[ChatUnifier.chat -> registry.get_provider mistral<br/>OpenAI SDK w/ Mistral base_url]
   G --> H[provider.chat - thinking ignored]
   H --> I[success envelope, thinking=null]
@@ -77,6 +77,7 @@ flowchart TD
 - **Temperature clamp**: 0-1.5 (narrower than OpenAI).
 - **No thinking**: `thinkingEnabled` is silently ignored (Mistral API has no equivalent parameter). `thinking` always returns null.
 - **Native path**: uses OpenAI SDK with Mistral base_url from `llm_defaults.json`.
+- **Model ID handling**: only the UI-only `[FREE] ` decoration is stripped. The remaining model ID is preserved.
 
 ## Side Effects
 
@@ -98,7 +99,7 @@ flowchart TD
 - **No reasoning support**: `thinkingEnabled` / `thinkingBudget` / `reasoningEffort` / `reasoningFormat` are all silently ignored. The UI may still surface these fields because the parameter factory is shared.
 - **Temperature capped at 1.5** (not 2).
 - **Codestral is code-specialized**: prompts that assume chat behavior may produce different output patterns.
-- **Errors swallowed into envelope**.
+- **Error boundary**: typed OpenAI SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

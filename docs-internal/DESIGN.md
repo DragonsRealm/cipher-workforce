@@ -64,7 +64,10 @@ No shipped configuration sets `REDIS_ENABLED=true`, so this branch is unreachabl
 
 ## RLM Agent Execution
 
-`rlm_agent` is the only agent node type that does not go through `handle_chat_agent`. It has a dedicated handler `handle_rlm_agent` that routes to `RLMService` in `services/rlm_service.py`.
+`rlm_agent` is the agent type that does not use the shared native tool-calling
+loop. Its `RLMAgentNode.execute_op` plugin collects the usual connections and
+routes to `RLMService` in `services/rlm/`, which owns the recursive REPL
+runtime.
 
 The Recursive Language Model pattern replaces the standard tool-calling loop with a Python REPL (`exec()`) where the agent writes code that can call:
 

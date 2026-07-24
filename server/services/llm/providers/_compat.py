@@ -25,8 +25,8 @@ logger = get_logger(__name__)
 
 # Names match the ``providers.<name>`` keys in ``llm_defaults.json``.
 # The compat providers' ``base_url`` is pulled lazily from the JSON
-# config so adding a new compat endpoint costs zero code — just append
-# the name here after the JSON entry lands.
+# config. Adding a new compat endpoint requires its JSON entry plus one
+# explicit name in this tuple; no provider subclass is required.
 #
 # Groq + Cerebras moved here in Phase D (May 2026). Both expose
 # OpenAI-compatible `/v1` endpoints (``api.groq.com/openai/v1`` /

@@ -1,5 +1,12 @@
 # Claude Code Agent Architecture
 
+> **Current implementation note:** The production `claude_code_agent` is an
+> interactive Claude Code CLI/PTY integration implemented under
+> `server/nodes/agent/claude_code_agent/`. It does not use LangGraph or
+> LangChain. The LangGraph diagrams and dependency snapshot below are retained
+> only as historical design material and must not be used as implementation
+> guidance.
+
 ## Table of Contents
 1. [Memory & Context Compaction Architecture](#1-memory--context-compaction-architecture)
 2. [Sub-Agent Creation & Handling](#2-sub-agent-creation--handling)
@@ -352,7 +359,11 @@
 
 # 2. Sub-Agent Creation & Handling
 
-## 2.1 LangGraph Sub-Agent Architecture Overview
+## 2.1 Historical LangGraph Sub-Agent Architecture (non-production)
+
+> Historical design snapshot only. Production sub-agent execution uses the
+> CLI-backed agent framework and Temporal delegation workflows; no production
+> import or dependency on LangGraph is implied by this section.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1212,7 +1223,10 @@
 
 ---
 
-## Version Information
+## Historical Dependency Snapshot (non-production)
+
+These were the versions considered by the superseded LangGraph design. They
+are not dependencies of the current server runtime.
 
 | Package | Version |
 |---------|---------|

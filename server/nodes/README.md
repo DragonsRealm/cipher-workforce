@@ -173,7 +173,7 @@ the sibling file via relative path:
 from ._credentials import GoogleCredential               # shared with 6 siblings
 
 # inside server/nodes/model/openai_chat_model.py
-from ._credentials import OpenAICredential               # one of 10 LLM creds
+from ._credentials import OpenAICredential               # one of 10 cloud LLM creds
 
 # inside server/nodes/twitter/twitter_send.py
 from ._credentials import TwitterCredential              # shared with 3 siblings
@@ -186,7 +186,7 @@ from ._credentials import TwitterCredential              # shared with 3 sibling
 | `nodes/twitter/` | `TwitterCredential` (OAuth2 + PKCE) | twitter_send / _search / _user / _receive |
 | `nodes/telegram/` | `TelegramCredential` (bot token + owner chat id) | telegram_send / _receive |
 | `nodes/scraper/` | `ApifyCredential` (Bearer) | apify_actor |
-| `nodes/model/` | 12 LLM classes (`OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / Xai / Ollama / LMStudio`) | 11 chat models |
+| `nodes/model/` | 12 LLM credential classes: 10 cloud (`OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / xAI`) plus Ollama / LM Studio | 11 chat models (xAI has no standalone chat-model node) |
 | `nodes/search/` | `BraveSearch / Serper / Perplexity` inlined in each plugin file | single-use per plugin |
 
 Declare inline only when genuinely single-use (see
@@ -296,7 +296,7 @@ The credential-validator dispatch is a sibling concern, handled by the
 existing `services/plugin/credential.py:Credential` base class. Your
 `Credential` subclass overrides `_probe(api_key) -> ProbeResult` (or,
 in rare cases like local-LLM 2-storage, the whole `validate(data)
--> dict` classmethod). Maps, Apify, all 9 cloud LLM providers, and
+-> dict` classmethod). Maps, Apify, all 10 cloud LLM providers, and
 both local-LLM providers (Ollama / LM Studio) all dispatch through the
 same scaffold — no `_SPECIAL_PROVIDER_VALIDATORS` dict in
 `routers/websocket.py`.

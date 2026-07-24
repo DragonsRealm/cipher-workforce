@@ -23,7 +23,7 @@ Files:
 - [client/src/components/parameterPanel/InputSection.tsx](../client/src/components/parameterPanel/InputSection.tsx)
 - [client/src/components/parameterPanel/MiddleSection.tsx](../client/src/components/parameterPanel/MiddleSection.tsx)
 - [client/src/components/parameterPanel/OutputSection.tsx](../client/src/components/parameterPanel/OutputSection.tsx)
-- [client/src/components/OutputPanel.tsx](../client/src/components/OutputPanel.tsx) — drag source for connected outputs
+- [client/src/components/output/OutputPanel.tsx](../client/src/components/output/OutputPanel.tsx) — drag source for connected outputs
 - [client/src/components/ParameterRenderer.tsx](../client/src/components/ParameterRenderer.tsx) — universal widget
 - [client/src/hooks/useParameterPanel.ts](../client/src/hooks/useParameterPanel.ts)
 - [client/src/hooks/useDragVariable.ts](../client/src/hooks/useDragVariable.ts)

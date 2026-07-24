@@ -126,15 +126,15 @@ Skills are short markdown files that teach an agent how to do something well —
 
 ### Memory that scales with your context window
 
-Agents track token usage and automatically compact long conversations as you approach your model's context limit (80% by default, configurable). Compaction summarizes in five sections — Task Overview, Current State, Important Discoveries, Next Steps, Context to Preserve — so the agent picks up exactly where it left off. Anthropic and OpenAI use native API compaction; everywhere else, the agent summarizes itself.
+Agents connected to a memory node can track normalized token usage and compact long conversations as they approach the model's context limit (80% by default). Compaction is a context-pressure control, not an agent termination rule: the shared native LLM layer asks the selected model for a five-section summary — Task Overview, Current State, Important Discoveries, Next Steps, Context to Preserve — and continues from that summary. Provider-reported usage is aggregated across an agent loop; session token and cost metrics are persisted on the memory-connected in-process path, while durable Temporal runs return their aggregate usage in the execution result.
 
 ### Cost tracking, built in
 
-Every LLM call and API request is tracked with USD cost. See per-provider spend in the API Credentials panel. Configure your own pricing in `pricing.json` if you switch providers mid-flight.
+Memory-connected agent runs calculate USD cost from provider-reported usage when that usage is available. See tracked spend in the API Credentials panel, and configure pricing in `pricing.json` for custom model pricing. This is not a universal audit log of every LLM or third-party API request.
 
 ## Built Like Production Infrastructure
 
-- **Durable execution via Temporal.** Every node runs as an independent Temporal activity with automatic retries; cron schedules have a 24-hour catch-up window so missed ticks backfill; per-queue worker pools scale horizontally. Falls back to a local executor when disabled.
+- **Durable execution via Temporal.** Ordinary node and agent-support activities retry transient failures with bounded backoff; billed `AgentWorkflow` LLM-step activities run once to avoid automatic double billing after ambiguous failures. Cron schedules have a 24-hour catch-up window so missed ticks backfill, and per-queue worker pools scale horizontally. Falls back to a local executor when disabled.
 - **Credentials encrypted at rest.** API keys and OAuth tokens live in a separate `credentials.db`, encrypted with Fernet (AES-128-CBC + HMAC-SHA256) and a PBKDF2-SHA256 key at 600,000 iterations. Nothing leaves your machine.
 - **Login-gated by choice.** Runs open on localhost by default; flip on single-owner JWT auth (or multi-user mode) for shared and cloud deployments — `company deploy` enables it automatically.
 

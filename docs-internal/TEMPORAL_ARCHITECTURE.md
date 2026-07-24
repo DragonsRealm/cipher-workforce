@@ -414,8 +414,11 @@ native provider SDKs for every turn. Histories whose recorded prepare result
 has no engine marker are pre-cutover histories and follow the frozen LangChain
 path with their historical payload, activity commands, and message shape. The
 temporary `AGENT_LLM_ENGINE=langchain` emergency switch can also pin a newly
-prepared execution to that compatibility path without changing an execution
-after it starts. A native run never falls back after a provider request starts.
+prepared execution to that compatibility path. Those emergency executions are
+marker-bearing histories whose recorded `llm_engine` is `langchain`; they
+continue replaying the compatibility branch just like markerless pre-cutover
+histories. Changing the environment cannot change an execution after it starts,
+and a native run never falls back after a provider request starts.
 
 `emit_phase(phase, status?)` is a thin helper that schedules `agent.broadcast_progress.v1`. The activity emits `WorkflowEvent.agent_progress` (CloudEvents v1.0, `type="com.opencompany.agent.progress"`) for FE consumers; when `status` is supplied it also drives a raw-dict `update_node_status` for the canvas-glow color (executing / success / error). Same dual-channel pattern F4.A's `_node_activity` uses. When this workflow is itself a delegated child (`context["parent_node_id"]` set), every `emit_phase` call ALSO schedules a second broadcast against the parent's `node_id` with `phase="delegating"` — the parent's canvas badge then advances in real time while the child loops, instead of freezing at "executing" glow until the child completes.
 
@@ -427,7 +430,8 @@ Durable event listeners retain their deployment graph as a fallback, but each fi
 
 **Canvas-aware tools** opt into receiving the parent workflow's `nodes`/`edges` by declaring `needs_canvas: ClassVar[bool] = True` on their `BaseNode` subclass. The F4.B tool dispatch reads this via `services.node_registry.get_node_class(node_type).needs_canvas` and forwards `context.get("nodes")` / `context.get("edges")` into `tool_payload`; default plugins keep the empty-canvas optimisation. Today only `agentBuilder` opts in (it walks edges to resolve its calling agent and mutates the canvas). Operations inside agentBuilder reload via `database.get_workflow(workflow_id)` so in-run duplicate detection sees mutations from earlier calls in the same workflow run — see [agent_builder section in CLAUDE.md](../CLAUDE.md).
 
-**Seven agent activities** are registered by `collect_agent_activities()` for `AgentWorkflow` to schedule by name:
+`collect_agent_activities()` registers **16 agent activities**. Seven are the
+core loop activities:
 
 | Activity | Purpose |
 |---|---|
@@ -435,9 +439,28 @@ Durable event listeners retain their deployment graph as a fallback, but each fi
 | `agent.execute_llm_step.v1` | One LLM turn. The native branch decodes Message Wire V2, rebuilds `ToolDef` values, calls `run_native_llm_step(ChatUnifier, ...)` with SDK retries disabled, heartbeats while awaiting the provider, and returns the exact assistant message + tool calls + normalized usage. Guards against un-invokable payloads: post-filter system-only message lists raise `ApplicationError(type="EmptyAgentPrompt", non_retryable=True)`. |
 | `agent.refresh_tools.v1` | Translates `workflow_ops` add_node ops (`component_kind="tool"` OR `usable_as_tool=True`) into fresh `AgentToolSpec`-derived `tool_payload` entries via `_build_tool_from_node`. Workflow extends `tools` + `tool_index` from the result. |
 | `agent.persist_turn.v1` | Appends the latest human/assistant exchange to memory markdown, trims the window, broadcasts `node.parameters.updated`. |
-| `agent.compact_memory.v1` | Token-budget compaction when cumulative tokens hit the threshold. Best-effort: continues with un-compacted history on failure. |
+| `agent.compact_memory.v1` | Context-pressure compaction when cumulative active-context tokens hit the threshold. Best-effort: continues with un-compacted history on failure; it is not an agent termination control. |
 | `agent.store_output.v1` | Writes `output_main` / `output_top` / `output_0` so downstream nodes resolve `{{aiAgent.response}}` via `ParameterResolver`. |
 | `agent.broadcast_progress.v1` | Emits `WorkflowEvent.agent_progress` (CloudEvents v1.0) + optional raw-dict `update_node_status` for canvas-glow color. Single helper drives every phase emit. |
+
+The other nine support skills and durable delegation:
+
+| Activity | Purpose |
+|---|---|
+| `agent.skill.invoke.v1` | Executes one progressive skill action with a history-recorded, retry-safe result. |
+| `agent.skill.clear.v1` | Clears the agent's turn-scoped skill state. |
+| `agent.begin_delegation.v1` | Idempotently persists and claims a direct delegation before child startup. |
+| `agent.queue_delegation.v1` | Persists a team task before it waits for a root-wide concurrency permit. |
+| `agent.acquire_subagent_permit.v1` | Heartbeats while polling the durable root coordinator for a subagent permit. |
+| `agent.release_subagent_permit.v1` | Idempotently releases a root-wide subagent permit. |
+| `agent.register_task_execution.v1` | Persists the runner and child Temporal identities for trace inspection. |
+| `agent.finish_delegation.v1` | Idempotently records a delegated child's terminal result and usage. |
+| `agent.finalize_team.v1` | Finalizes a team after its required tasks reach accepted or terminal states. |
+
+The F4.B compaction threshold is prepared from the model context length and
+the ratio configuration. It currently does not read
+`SessionTokenState.custom_threshold` or `compaction_enabled`; those stored
+per-session controls are therefore not authoritative for this path.
 
 **Broadcasts inside the loop** wrap `WorkflowEvent` (CloudEvents v1.0) per RFC §6.4: `agent_progress` events (`com.opencompany.agent.progress`) and `node_parameters_updated` events (`com.opencompany.node.parameters.updated`) flow through the `StatusBroadcaster.broadcast_agent_progress` and `StatusBroadcaster.broadcast_node_parameters_updated` wrappers respectively. The latter is reused by the legacy `routers/websocket.py:handle_save_node_parameters` (user-source) and `services/cli_agent/service.py:_persist_memory` (cli-source) — all three emission sites share the same envelope, distinguished by `source_hint` (`"user"` / `"cli"` / `"agent"`).
 
@@ -481,9 +504,10 @@ Trigger nodes that aren't the firing trigger are:
 
 | Scenario | Behavior |
 |----------|----------|
-| Node WebSocket call fails | Temporal retries (up to 3 attempts with backoff) |
+| Ordinary node or agent-support activity fails transiently | Temporal retries up to 3 attempts with backoff unless the error type is non-retryable. |
+| `AgentWorkflow` LLM-step activity fails | `LLM_STEP_RETRY` allows one attempt. Provider SDK retries are also disabled so an ambiguous failure is not silently billed again. |
 | Worker crashes mid-execution | Temporal reschedules on another worker |
-| Node times out (10 min) | Temporal retries with backoff |
+| Ordinary node times out | Temporal applies that activity's retry policy; plugin timeouts vary by node type. |
 | All retries exhausted | Workflow receives failure, stops execution |
 
 ## File Structure
@@ -496,7 +520,7 @@ server/services/temporal/
 │   └── _execute_via_websocket()  # WebSocket execution
 ├── plugin_activities.py # collect_plugin_activities() -> per-type node.{type}.v{ver} activities (F4.A)
 ├── agent_workflow.py    # AgentWorkflow loop + detached DelegatedTaskWorkflow
-├── agent_activities.py  # collect_agent_activities() -> the 7 agent.*.v1 activities (F4.B)
+├── agent_activities.py  # collect_agent_activities() -> 16 agent.*.v1 activities (F4.B)
 ├── workflow.py          # MachinaWorkflow class
 │   ├── run()                     # Main orchestrator
 │   ├── _filter_executable_graph() # Config node filtering
@@ -590,6 +614,13 @@ One supervisor-build-time env var (read inside `_temporal_specs.py`, not in `Set
 | Env var | `.env.template` default | Purpose |
 |---|---|---|
 | `TEMPORAL_SERVER_READY_TIMEOUT_SECONDS` | `120` | How long the supervisor waits for Temporal's gRPC port to come up. Covers the first-run binary download (~114 MB) if `company build` didn't pre-cache. |
+
+One temporary agent-engine cutover variable is also read directly rather than
+through `Settings`:
+
+| Env var | `.env.template` default | Purpose |
+|---|---|---|
+| `AGENT_LLM_ENGINE` | `native` | `agent.prepare_payload.v1` reads this with `os.getenv` and records `native` or `langchain` in each new execution's prepare result. It affects only executions prepared after the environment changes; recorded histories keep their selected engine. `langchain` is the emergency compatibility setting and is removed with the legacy replay branch in Stage 2. |
 
 ## Debugging
 

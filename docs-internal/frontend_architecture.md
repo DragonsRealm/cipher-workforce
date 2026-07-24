@@ -173,8 +173,8 @@ client/src/
 │
 ├── services/
 │   ├── executionService.ts         # ExecutionResult shape + node-execution plumbing
-│   ├── apiKeyManager.ts            # LangChain API key utilities
-│   └── dynamicParameterService.ts  # Remote options loaders for ParameterRenderer
+│   ├── dynamicParameterService.ts  # Remote options loaders for ParameterRenderer
+│   └── workflowApi.ts              # Workflow REST helpers
 │
 ├── adapters/
 │   └── nodeSpecToDescription.ts    # Backend NodeSpec -> legacy INodeTypeDescription shape

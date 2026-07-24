@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Single-turn chat completion against the OpenAI REST API. Used either as a standalone workflow node (user enters a prompt, the node produces a response), wired into an AI Agent via the `input-model` handle, or connected as an advisor tool (`usable_as_tool = True`). Every chat-model node runs through the shared `ChatModelBase.chat` operation (in `_base.py`), which calls `AIService.execute_chat`; per-provider differences live inside `execute_chat` (native SDK for OpenAI) and in the clamp / temperature helpers.
+Single-turn chat completion against the OpenAI API. Used either as a standalone workflow node (user enters a prompt, the node produces a response), wired into an AI Agent via the `input-model` handle, or connected as an advisor tool (`usable_as_tool = True`). Every chat-model node runs through the shared `ChatModelBase.chat` operation (in `_base.py`), which calls provider-neutral `AIService.execute_chat`; OpenAI-specific request policy lives in the native provider and shared model-policy helpers.
 
 ## Inputs (handles)
 
@@ -87,17 +87,17 @@ flowchart TD
 
 - **Validation**: missing `api_key` -> ValueError; empty/whitespace `prompt` (via `is_valid_message_content`) -> ValueError. Both produce a `success=false` envelope.
 - **Provider routing**: `detect_ai_provider(node_type)` returns `'openai'` for this node; falls through the else branch in `constants.detect_ai_provider`.
-- **Native path**: `ChatUnifier` resolves the self-registered `openai` spec, so the native `openai` SDK is used via `spec.factory(api_key, proxy_url=...)`. (LangChain is agent-path only.)
-- **Model string scrubbing**: strips `[FREE] ` prefix if present. For non-OpenRouter providers (like this one), any `provider/model` slash prefix is stripped so the OpenAI API sees a flat ID.
+- **Native path**: `ChatUnifier` resolves the self-registered `openai` spec, so the native `openai` SDK serves both current chat and agent executions. LangChain remains isolated to eligible Temporal-history replay.
+- **Model ID handling**: strips only the UI-only `[FREE] ` decoration. Provider model IDs are otherwise opaque and preserved.
 - **Thinking config**: only built when `thinkingEnabled` is truthy; passed through to the provider's `chat()` method.
-- **System prompt**: accepts `system_prompt`, `systemMessage`, or `systemPrompt`. Only prepended as a `SystemMessage` when non-empty (`is_valid_message_content`).
-- **Error path**: any exception in the chat flow is caught, logged, and returned as `success=false` with `error: <str>`.
+- **System prompt**: reads the schema-canonical `system_prompt` field and prepends a native `Message(role="system")` when it is non-empty.
+- **Error path**: typed SDK failures are translated by `ChatUnifier` into `NodeUserError` and re-raised to `BaseNode.execute()`; unexpected exceptions are logged and returned as `success=false`.
 
 ## Side Effects
 
 - **Database writes**: none directly in the happy path. `_track_token_usage` (invoked elsewhere in the AI service when memory is attached) writes `TokenUsageMetric` rows; for a bare chat model node with no memory this path is typically not exercised from `execute_chat`.
 - **Broadcasts**: none from `execute_chat` itself.
-- **External API calls**: one HTTPS call to `https://api.openai.com/v1/chat/completions` via the `openai` Python SDK (base URL configured in `server/config/llm_defaults.json`; overridable via `{provider}_proxy` credential for Ollama-style routing).
+- **External API calls**: the standalone chat node uses OpenAI Chat Completions through the native SDK. Native agent turns that need reasoning continuation state use the Responses API; ordinary agent turns use Chat Completions. An `openai_proxy` credential can override the SDK endpoint.
 - **File I/O**: none.
 - **Subprocess**: none.
 
@@ -110,11 +110,11 @@ flowchart TD
 
 ## Edge cases & known limits
 
-- **O-series fixed temperature**: `o1`, `o3`, `o3-mini`, `o4-mini` accept only `temperature=1`; `_resolve_temperature` (and its native counterpart) clamps regardless of input.
+- **Reasoning-model temperature**: the native provider omits `temperature` for configured OpenAI reasoning models instead of forwarding an unsupported value.
 - **GPT-5 hybrid reasoning**: `reasoningEffort` (`minimal` / `low` / `medium` / `high`) is consumed via `NativeThinkingConfig.effort` and forwarded to the provider SDK. Without `thinkingEnabled=true` the effort value is ignored.
 - **Reasoning summary availability**: the content of `thinking` for o-series models is gated on OpenAI org verification - unverified orgs get `thinking=null` even with `reasoningEffort` set.
 - **`maxTokens` clamp**: clamped to the model's actual output ceiling by `native_resolve_max_tokens`. Exceeding the limit silently caps without error.
-- **All errors are swallowed into the envelope**: any exception (HTTP, timeout, auth, JSON parse) becomes `success=false, error=str(e)`. The handler never raises.
+- **Error boundary**: typed OpenAI SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 - **No streaming**: `execute_chat` is single-shot; the full response is awaited before returning.
 - **Pricing / token tracking**: standalone chat model nodes do NOT trigger `_track_token_usage` - that lives on the agent code paths. Cost attribution for bare chat-model executions is therefore not recorded.
 

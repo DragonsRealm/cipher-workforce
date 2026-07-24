@@ -1,121 +1,79 @@
-# Memory Compaction, Token Tracking, and Cost Calculation Service
+# Memory Compaction, Session Token Tracking, and Cost Calculation
 
-> **Related docs:** [memory_lifecycle.md](./memory_lifecycle.md) for the markdown / vector-store / state-clear surface. This doc is the SSOT for the **service** (CompactionService API, thresholds, native-API integration, pricing). memory_lifecycle.md is the SSOT for the **flow** (how the markdown moves through an agent turn).
+> **Related docs:** [memory_lifecycle.md](./memory_lifecycle.md) for the markdown / vector-store / state-clear surface. This doc is the SSOT for the **service** (`CompactionService`, thresholds, shared native summarization, and pricing). `memory_lifecycle.md` is the SSOT for the **flow** (how the markdown moves through an agent turn).
 
 ## Overview
 
-The compaction service enables automatic memory compaction, token tracking, and **cost calculation** for OpenCompany specialized agents. It uses a hybrid approach leveraging native provider APIs (Anthropic, OpenAI) when available, with comprehensive token and cost tracking for all providers.
+`CompactionService` provides session token tracking, cost calculation, and
+automatic memory compaction for agent executions that have a connected memory
+session. Every provider normalizes reported usage into `services.llm.protocol.Usage`,
+but only execution paths that call `CompactionService.track()` persist that
+usage to the session metric tables. Standalone chat-model calls and arbitrary
+third-party API requests are not part of this accounting surface.
 
-**Inspired by:** Claude Code's compaction pattern from the Anthropic SDK
-**Threshold Strategy:** per-session `custom_threshold` > per-user `UserSettings.compaction_ratio` > env `Settings.compaction_ratio` (default **0.8** = 80% of context window) > JSON `llm_defaults.json:agent.compaction.ratio` fallback
-**Cost Calculation:** Official pricing from each provider (per 1M tokens)
+All providers use the same client-side summarization path:
+`CompactionService.compact_context()` calls
+`run_native_llm_step(ChatUnifier, ...)`, then replaces the active memory
+history with a structured five-section summary. The current agent runtime does
+not enable Anthropic or OpenAI provider-managed compaction. Compaction reduces
+active context pressure; it does not terminate an agent loop.
+
+**Inspired by:** Claude Code's structured compaction pattern
+
+**Default threshold:** per-user `UserSettings.compaction_ratio` > env
+`Settings.compaction_ratio` (default **0.8** of the context window) > JSON
+`llm_defaults.json:agent.compaction.ratio` fallback
+
+**Cost calculation:** configured per-model pricing applied to usage the provider
+reports; missing usage cannot be inferred
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AI Agent Execution                            │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              CompactionService.track()                           │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │ 1. Save TokenUsageMetric to database                       │ │
-│  │ 2. Update SessionTokenState cumulative counters            │ │
-│  │ 3. Check if cumulative_total >= threshold                  │ │
-│  │ 4. Return {total, threshold, needs_compaction}             │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ (if needs_compaction)
-┌─────────────────────────────────────────────────────────────────┐
-│              Native Provider Compaction                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │  Anthropic  │  │   OpenAI    │  │      Others             │ │
-│  │ context_    │  │ compact_    │  │ Client-side             │ │
-│  │ management  │  │ threshold   │  │ summarization           │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              CompactionService.record()                          │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │ 1. Save CompactionEvent to database                        │ │
-│  │ 2. Reset SessionTokenState cumulative counters             │ │
-│  │ 3. Increment compaction_count                              │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+native agent loop
+  └─ aggregates Usage across all LLM iterations
+       ├─ in-process + connected memory
+       │    └─ CompactionService.track()
+       │         ├─ persist TokenUsageMetric + calculated cost
+       │         ├─ update SessionTokenState
+       │         └─ if threshold reached and memory/key available:
+       │              compact_context()
+       └─ Temporal AgentWorkflow
+            ├─ returns aggregate usage in the workflow result
+            └─ when its context counter reaches the prepared threshold:
+                 agent.compact_memory.v1 → compact_context()
+
+compact_context()
+  └─ run_native_llm_step(ChatUnifier, selected provider/model)
+       └─ five-section summary → CompactionService.record()
+            ├─ persist CompactionEvent
+            ├─ reset the active-context counter
+            └─ increment compaction_count
 ```
 
-## Native Provider APIs
+## Runtime Compaction Path
 
-### Anthropic SDK (tool_runner)
+`compact_context()` uses the same native provider boundary as ordinary agent
+turns. It sends one user message containing the current memory markdown through
+`run_native_llm_step`, with SDK-internal retries disabled. The in-process path
+allows the native step helper's bounded explicit retry policy; the Temporal
+activity passes `explicit_max_retries=0` because Temporal owns activity
+delivery and a repeated summarizer request can be billed twice.
 
-When using Anthropic's SDK with `tool_runner`, pass the compaction control config:
-
-```python
-from services.compaction import get_compaction_service
-
-svc = get_compaction_service()
-
-# Model-aware threshold (80% of context window by default)
-compaction_config = svc.anthropic_config(model="claude-opus-4.6", provider="anthropic")
-# Returns: {"enabled": True, "context_token_threshold": 800000}  (80% of 1M context)
-
-# Or override with explicit threshold
-compaction_config = svc.anthropic_config(threshold=100000)
-# Returns: {"enabled": True, "context_token_threshold": 100000}
-
-# Use with tool_runner
-result = await tool_runner(
-    model="claude-opus-4.6",
-    messages=messages,
-    tools=tools,
-    compaction_control=compaction_config
-)
-```
-
-### Anthropic Messages API
-
-For direct Messages API usage with the compaction beta:
-
-```python
-# Model-aware threshold
-api_config = svc.anthropic_api_config(model="claude-sonnet-4.5", provider="anthropic")
-# Threshold auto-computed from model's context window (80% of 1M = 800000)
-
-# Or override with explicit threshold
-api_config = svc.anthropic_api_config(threshold=100000)
-
-# Use with Messages API
-response = await client.messages.create(
-    model="claude-sonnet-4.5",
-    messages=messages,
-    **api_config
-)
-```
-
-### OpenAI
-
-For OpenAI models (including GPT-4 and o-series):
-
-```python
-# Model-aware threshold
-openai_config = svc.openai_config(model="gpt-5.2", provider="openai")
-# Returns: {"context_management": {"compact_threshold": 320000}}  (80% of 400K)
-
-# Or override with explicit threshold
-openai_config = svc.openai_config(threshold=100000)
-# Returns: {"context_management": {"compact_threshold": 100000}}
-```
+`anthropic_config()`, `anthropic_api_config()`, and `openai_config()` remain
+configuration helpers on `CompactionService`. The current chat and agent
+execution paths do not pass those provider-managed compaction controls to the
+SDK. `AgentWorkflow` currently calls `anthropic_config()` only as a
+provider-agnostic way to calculate its numeric threshold.
 
 ## Database Schema
 
 ### TokenUsageMetric
 
-Tracks token usage per agent execution:
+Stores one metric whenever `CompactionService.track()` or the compaction
+summarizer's internal metric writer is invoked. A memory-connected in-process
+agent normally writes its loop aggregate as one row; the summarizer uses
+`iteration=0`. This table is not populated by every LLM request in the system.
 
 ```python
 class TokenUsageMetric(SQLModel, table=True):
@@ -165,8 +123,8 @@ class SessionTokenState(SQLModel, table=True):
     last_compaction_at: Optional[datetime]
     compaction_count: int = 0
 
-    # Per-session configuration
-    custom_threshold: Optional[int]   # Overrides global setting
+    # Stored per-session configuration (see the runtime caveat below)
+    custom_threshold: Optional[int]
     compaction_enabled: bool = True
 
     updated_at: Optional[datetime]
@@ -219,7 +177,8 @@ svc = get_compaction_service()
 
 ### Track Token Usage
 
-Call after each AI agent execution:
+The in-process agent path calls this after a memory-connected native agent loop
+returns aggregate usage:
 
 ```python
 result = await svc.track(
@@ -245,12 +204,14 @@ result = await svc.track(
 #     "needs_compaction": False
 # }
 #
-# Threshold priority: custom_threshold > per-user UserSettings.compaction_ratio > env Settings.compaction_ratio (80%) > JSON fallback
+# In-process threshold priority:
+# custom_threshold > per-user UserSettings.compaction_ratio
+# > env Settings.compaction_ratio (80%) > JSON fallback
 ```
 
 ### Record Compaction Event
 
-Call after native provider handles compaction:
+`compact_context()` calls this after the shared client-side summarizer succeeds:
 
 ```python
 await svc.record(
@@ -294,6 +255,21 @@ await svc.configure("user-session-123", enabled=False)
 await svc.configure("user-session-123", threshold=75000, enabled=True)
 ```
 
+These calls persist the fields, but their runtime effect is currently
+path-dependent:
+
+- `custom_threshold` is honored by `track()` and `stats()` on the in-process
+  path.
+- `AgentWorkflow` (F4.B) calculates a ratio-based threshold during
+  `agent.prepare_payload.v1`; it does not read `custom_threshold`.
+- `compaction_enabled` is stored but is not consulted by `track()` or F4.B.
+  Only the global `COMPACTION_ENABLED` value controls `track()` today, and F4.B
+  does not currently honor that global enabled flag when it extracts the
+  numeric threshold.
+
+Treat the WebSocket settings as persistence/UI controls until those execution
+paths are unified; do not promise that they disable or override every run.
+
 ## WebSocket Handlers
 
 ### get_compaction_stats
@@ -320,7 +296,9 @@ ws.send(JSON.stringify({
 
 ### configure_compaction
 
-Update compaction settings for a session:
+Persist compaction settings for a session. See the path-dependent runtime
+caveat under `Configure Per-Session Settings`; a successful response confirms
+storage, not that every execution path consumed the setting.
 
 ```javascript
 // Client request
@@ -350,18 +328,22 @@ COMPACTION_RATIO=0.8          # Fraction of context window that triggers compact
                               # Read by core.config.Settings.compaction_ratio.
 ```
 
-**Threshold priority chain** (highest → lowest):
+**In-process `track()` threshold priority chain** (highest → lowest):
 
 1. **Per-session** `SessionTokenState.custom_threshold` (set via `configure()` or WebSocket).
 2. **Per-user** `UserSettings.compaction_ratio` × model's context_length — DB-backed override exposed in the Settings tab.
 3. **Env** `Settings.compaction_ratio` × model's context_length — `COMPACTION_RATIO` × `model_registry.get_context_length(provider, model)`.
 4. **JSON fallback** `llm_defaults.json:agent.compaction.ratio` × context_length — when Settings can't load (one-off CLI scripts).
 
-Effective threshold computed by `model_registry.get_agent_defaults()["compaction"]["ratio"]` (which now reads from `Settings` first) — e.g. claude-sonnet-4-6 with 1M context × 0.8 = 800K trigger.
+The ratio-based threshold is computed from
+`model_registry.get_agent_defaults()["compaction"]["ratio"]` and the model
+context length — for example, a 1M-token model at 0.8 gets an 800K trigger.
+F4.B uses this ratio-based calculation and does not apply the first
+per-session step.
 
-### Per-Session Override
+### Stored Per-Session Override
 
-Sessions can override the global threshold:
+Sessions can store a custom threshold:
 
 ```python
 # Via service API
@@ -375,6 +357,9 @@ ws.send(JSON.stringify({
 }));
 ```
 
+The custom threshold currently overrides the in-process `track()` and `stats()`
+paths only; it is not read by F4.B `AgentWorkflow`.
+
 ## Integration with AI Service
 
 ### Token Extraction from Native Agent Responses
@@ -382,7 +367,8 @@ ws.send(JSON.stringify({
 Every provider normalizes token accounting into
 `services.llm.protocol.Usage`. The shared native agent loop adds usage from
 every iteration, including cache and reasoning tokens, and returns the
-aggregate in `final_state["usage"]`:
+aggregate in `final_state["usage"]`. Aggregation does not itself imply database
+persistence:
 
 ```python
 final_state = await run_native_agent_loop(...)
@@ -398,9 +384,10 @@ usage = final_state["usage"]
 # )
 ```
 
-### Integration Point
+### In-Process Persistence Point
 
-In `server/services/ai.py`, after agent execution:
+In `server/services/ai.py`, the in-process path calls the service only when a
+memory session is connected:
 
 ```python
 # After native agent-loop execution, before memory save
@@ -422,7 +409,7 @@ if memory_data and memory_data.get('session_id'):
 
 | File | Description |
 |------|-------------|
-| `server/services/compaction.py` | CompactionService class with model-aware thresholds and provider configs |
+| `server/services/compaction.py` | `CompactionService` with session metrics, model-aware thresholds, and shared client-side summarization |
 | `server/services/model_registry.py` | ModelRegistryService providing context_length for threshold computation |
 | `server/models/database.py` | SQLModel tables for token tracking |
 | `server/core/database.py` | CRUD methods for metrics and events |
@@ -433,21 +420,32 @@ if memory_data and memory_data.get('session_id'):
 
 ## Design Decisions
 
-1. **Hybrid Approach**: Leverage native provider APIs (Anthropic, OpenAI) for compaction instead of reimplementing. Track tokens for all providers.
+1. **One Native Summarization Path**: Every provider compacts through
+   `run_native_llm_step(ChatUnifier, ...)`; the runtime does not enable
+   provider-managed compaction.
 
 2. **Pydantic BaseModel**: Use Pydantic for configuration validation to reduce boilerplate code.
 
-3. **Per-Session State**: Each memory session has independent token tracking and thresholds. This allows different agents to have different compaction settings.
+3. **Per-Session State**: Each tracked memory session has independent
+   counters. Stored per-session controls are not yet honored uniformly; see
+   `Configure Per-Session Settings`.
 
-4. **Model-Aware Threshold**: Threshold is `compaction_ratio` x the model's context window (default ratio **0.8** = 80%). For example, Claude Opus 4.8 (1M context) gets an 800K threshold, GPT-5.2 (400K) gets 320K, Groq models (131K) get ~105K. Ratio precedence: per-session `custom_threshold` > per-user `UserSettings.compaction_ratio` > env `Settings.compaction_ratio` (`COMPACTION_RATIO`, default 0.8) > JSON `llm_defaults.json:agent.compaction.ratio` fallback.
+4. **Model-Aware Threshold**: The ratio-based threshold is
+   `compaction_ratio × context_window` (default **0.8**). The in-process
+   `track()` path additionally lets `custom_threshold` override that value;
+   F4.B currently does not.
 
 5. **Singleton Pattern**: Service accessible via `get_compaction_service()` for easy integration anywhere in the codebase.
 
 6. **Lazy Initialization**: Service is lazily initialized via container on first access, not blocking app startup.
 
-## Client-Side Compaction
+## Shared Client-Side Compaction
 
-For all providers (not just Anthropic/OpenAI), the service performs automatic client-side compaction when the model-aware threshold is exceeded. This uses the AI service to generate a structured summary following Claude Code's 5-section pattern. The summary max_tokens is capped at `min(4096, model's max output tokens)`.
+For every provider, the service can perform client-side compaction when a
+memory-connected execution reaches its applicable threshold. It uses
+`ChatUnifier` through `run_native_llm_step` to generate a structured summary
+following the five-section pattern. Summary `max_tokens` is capped at
+`min(4096, model's max output tokens)`.
 
 ### compact_context() Method
 
@@ -496,7 +494,8 @@ Details that must be retained for continuity.
 
 ### Automatic Triggering
 
-Compaction is automatically triggered in `_track_token_usage()` when:
+On the in-process path, compaction is automatically triggered in
+`_track_token_usage()` when:
 1. `needs_compaction` returns true (cumulative tokens >= threshold)
 2. Memory content is available (connected memory node)
 3. API key is available for summarization
@@ -518,6 +517,11 @@ if tracking.get('needs_compaction') and memory_content and api_key:
         memory_data['memory_content'] = result['summary']
 ```
 
+F4.B performs a parallel check inside `AgentWorkflow` using the workflow's
+active-context usage counter and the ratio-based threshold recorded by
+`agent.prepare_payload.v1`. It invokes the same `compact_context()` method
+through `agent.compact_memory.v1`.
+
 ### AI Service Wiring
 
 The compaction service requires the AI service to generate summaries. This is wired during app startup:
@@ -532,11 +536,12 @@ compaction_svc.set_ai_service(container.ai_service())
 
 ## WebSocket Broadcasts
 
-The service broadcasts real-time updates to the frontend:
+The in-process integration can broadcast real-time updates to the frontend:
 
 ### token_usage_update
 
-Broadcast after each AI execution with token tracking:
+Broadcast after a memory-connected in-process execution successfully tracks
+usage:
 
 ```json
 {

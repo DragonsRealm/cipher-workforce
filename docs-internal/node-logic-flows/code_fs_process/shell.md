@@ -16,18 +16,16 @@ Runs a short-lived shell command inside the per-workflow workspace. The native
 like `npm`, `node`, `python`, and `git` ARE reachable on PATH. It uses Nushell
 when `nu` is installed and otherwise uses the host shell (`sh` or `cmd.exe`).
 When Nushell is selected, `&&` / `||` / `$VAR` / backticks / `>` do not use
-bash semantics; see `shell-skill/SKILL.md` for the Nu equivalents. For
+bash semantics; see `shell-skill/SKILL.md` for conditional Nu guidance. When
+Nushell is absent, all other syntax is interpreted by the host shell. For
 long-running processes (dev servers, watchers), users are directed to
 [`processManager`](./processManager.md); this node kills the command at
-`timeout`.
-
-NOTE: the node's `description` metadata still reads "sandboxed; no system PATH",
-which no longer matches the `inherit_env=True` backend — a code-side copy
-mismatch (out of scope for this card).
+`timeout`. Node metadata describes this as short-lived execution from the
+workflow workspace and marks the tool as open-world.
 
 A pre-flight regex (`_BASH_CHAIN_RE`) rejects bash chain operators (` && ` / ` || `)
-up-front with a corrective message before Nushell's parser would emit a cryptic
-`shell_andand` / `shell_oror` error.
+up-front with a corrective message before runner selection. They are therefore
+rejected even when the fallback host shell would otherwise support them.
 
 Runs synchronously under `asyncio.to_thread()` so the event loop keeps
 servicing other requests while the command executes.
@@ -42,7 +40,7 @@ servicing other requests while the command executes.
 
 | Name | Type | Default | Required | displayOptions.show | Description |
 |------|------|---------|----------|---------------------|-------------|
-| `command` | string | (required, `min_length=1`) | yes | - | Nushell command |
+| `command` | string | (required, `min_length=1`) | yes | - | Nushell command when `nu` is installed; otherwise a host-shell command |
 | `cwd` | string | `""` | no | - | Declared param, but `get_backend` resolves the working dir from `working_directory` (not exposed) / `ctx.workspace_dir`, so `cwd` does NOT change the backend root |
 | `timeout` | number | `30` (ge=1, le=600) | no | - | Max seconds |
 
@@ -88,8 +86,13 @@ flowchart TD
 ## Decision Logic
 
 - **Validation**: empty `command` is rejected by Pydantic `min_length=1` (no
-  manual check). A ` && ` / ` || ` in the command -> `raise NodeUserError` with
-  a Nushell-equivalent hint (`;` or `try { … } catch { … }`).
+  manual check). A ` && ` / ` || ` in the command -> `raise NodeUserError`
+  before runner selection, with a Nushell-oriented hint (`;` or
+  `try { … } catch { … }`).
+- **Runner selection**: `_find_nu()` caches `shutil.which("nu")`. A match runs
+  `[nu, "-n", "--no-history", "-c", command]`; otherwise
+  `subprocess.run(command, shell=True, ...)` delegates syntax to the host
+  shell.
 - **Inherited PATH**: `WorkspaceBackend(inherit_env=True)` — external tools
   (`npm`, `node`, `python`, `git`, …) ARE reachable. The previous "scrubbed
   PATH" framing no longer holds. AI agents are still steered toward
@@ -101,8 +104,10 @@ flowchart TD
   reflects whether the handler itself finished, not whether the command
   succeeded. Users must inspect `exit_code` in the payload.
 - **Truncation**: the native backend caps output at 100,000 characters by
-  default; when capped, `truncated=true` and a trailing marker surface to the
-  caller.
+  default; when capped, `truncated=true` and the returned `stdout` contains
+  `... Output truncated at 100000 bytes.` after the retained prefix. For a
+  non-zero process exit, the subsequently appended `Exit code: N` line follows
+  that marker.
 - **ANSI stripping**: `result.output` is run through `core.ansi.strip_ansi`
   (a wrapper over **`click.unstyle`**) before being returned as `stdout` (and
   before the operator-log line), so colour/cursor codes from tools like
@@ -128,21 +133,28 @@ flowchart TD
 
 - **Python packages**: standard library plus `core.ansi`.
 - **Environment variables**: `WORKSPACE_BASE_DIR`.
-- **OS utilities**: `nu` (Nushell) on PATH for the primary path; whatever the
-  command references is reachable because PATH is inherited.
+- **OS utilities**: optional `nu` (Nushell) on PATH; otherwise the platform
+  host shell. Whatever the command references is reachable because PATH is
+  inherited.
 
 ## Edge cases & known limits
 
-- **Nushell grammar, not bash**: `&&` / `||` are pre-flight-rejected; `$VAR`,
-  backticks, and `>` redirection differ from bash. See `shell-skill/SKILL.md`.
+- **Conditional shell grammar**: space-delimited `&&` / `||` are
+  pre-flight-rejected.
+  Other variables, substitutions, redirection, pipelines, and builtins follow
+  Nushell grammar only when `nu` is installed; otherwise they follow the host
+  shell. See `shell-skill/SKILL.md`.
 - **Truncation corrupts JSON output**: if a command prints JSON and the
-  backend truncates, the `stdout` string becomes invalid JSON with no
-  trailing marker beyond `truncated=true`.
+  backend truncates, the `stdout` string becomes invalid JSON because the
+  backend appends its human-readable truncation marker; `truncated=true`
+  provides the machine-readable signal.
 - **`exit_code=124` is exit-code polysemy**: real programs can legitimately
-  exit 124; the handler does not distinguish those from a backend-side
-  SIGTERM-on-timeout.
-- **`timeout` is best-effort**: the backend uses `subprocess.run(..., timeout=)`.
-  A child process that ignores SIGTERM may keep running until SIGKILL.
+  exit 124; the handler does not distinguish those from the backend's timeout
+  result.
+- **`timeout` covers the direct subprocess**: the backend uses
+  `subprocess.run(..., timeout=)` and kills the direct child on expiry.
+  Descendant processes started by that shell may not be terminated as a
+  process group.
 - **Stdin is empty**: the node exposes no way to pipe data into the
   command - `input_data` from upstream nodes does not reach it.
 - **No environment variable override**: users cannot inject env vars via

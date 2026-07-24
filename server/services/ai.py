@@ -1251,7 +1251,7 @@ class AIService:
             options = parameters.get("options", {})
             flattened = {**parameters, **options}
 
-            # Extract parameters with camelCase/snake_case support for LangChain
+            # Extract the schema-canonical chat-model parameters.
             api_key = flattened.get("api_key")
             model = flattened.get("model", "gpt-3.5-turbo")
             # Strip [FREE] prefix if present (added by OpenRouter model list for display)

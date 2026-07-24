@@ -4,7 +4,7 @@
 
 ## Overview
 
-The RLM (Recursive Language Models) service integrates the `rlms` library into OpenCompany as a specialized agent node (`rlm_agent`). Unlike other specialized agents that route to `handle_chat_agent` and use the standard agent loop, the RLM agent uses its own REPL-based code execution loop where the LM writes Python code blocks that are `exec()`-ed in a sandboxed environment.
+The RLM (Recursive Language Models) service integrates the `rlms` library into OpenCompany as a specialized agent node (`rlm_agent`). Unlike other specialized agents that dispatch through `SpecializedAgentBase` and the standard native agent loop, the RLM agent uses its own REPL-based code execution loop where the LM writes Python code blocks that are `exec()`-ed in a sandboxed environment.
 
 **Library**: [rlms](https://pypi.org/project/rlms/) (pip install rlms)
 **Paper**: https://arxiv.org/abs/2512.24601
@@ -15,8 +15,8 @@ The RLM (Recursive Language Models) service integrates the `rlms` library into O
 | Aspect | Standard Agents (aiAgent, chatAgent, etc.) | RLM Agent (rlm_agent) |
 |--------|---------------------------------------------|----------------------|
 | Execution model | LLM -> tool call -> LLM -> tool call | LLM -> `\`\`\`repl` code block -> exec() -> stdout -> LLM |
-| Tool interface | LangChain StructuredTool with Pydantic schemas | Python functions injected into REPL namespace |
-| State management | Message accumulation in `_run_agent_loop` | Python variables in REPL namespace + `context` variable |
+| Tool interface | Provider-neutral `AgentToolSpec` / `ToolDef` values with Pydantic validation | Python functions injected into REPL namespace |
+| State management | Native message accumulation in `run_native_agent_loop` | Python variables in REPL namespace + `context` variable |
 | Completion signal | LLM stops making tool calls | LLM calls `FINAL(answer)` or `FINAL_VAR(variable_name)` |
 | Recursion | Agent delegation (fire-and-forget) | `rlm_query()` spawns child RLM with own REPL |
 | Strengths | Structured tool calling, provider-agnostic | Complex reasoning, code-driven decomposition, recursive sub-problems |
@@ -49,11 +49,11 @@ Execution Flow
 ================================
 
 NodeExecutor._dispatch()
-  -> RLMAgentNode.execute_op()             [server/nodes/agent/rlm_agent.py]
+  -> RLMAgentNode.execute_op()             [server/nodes/agent/rlm_agent/__init__.py]
        |                                    (post-Wave-11 replacement for the
        |                                     retired server/services/handlers/rlm.py)
        +-- collect_agent_connections()      [services/plugin/edge_walker.py]
-       +-- _format_task_context()           [nodes/agent/_inline.py — prepare_agent_call]
+       +-- format_task_context()            [services/plugin/edge_walker.py]
        +-- tool stripping on completion     [REUSE pattern]
        +-- auto-prompt fallback             [REUSE pattern]
        |
@@ -87,8 +87,9 @@ server/services/rlm/
   adapters.py          # BackendAdapter, ChatModelExtractor, ToolBridgeAdapter
   service.py           # RLMService class with execute() method
 
-server/services/handlers/
-  rlm.py               # Thin handler (~70 lines, mirrors handle_chat_agent)
+server/nodes/agent/rlm_agent/
+  __init__.py          # RLMAgentNode plugin + execute_op orchestration
+  meta.json            # Plugin metadata
 ```
 
 ---
@@ -196,30 +197,29 @@ These are extracted from the node's `options` object:
 
 ---
 
-## Handler Pattern
+## Plugin Execution Pattern
 
-The handler (`handle_rlm_agent`) follows `handle_chat_agent` exactly:
+`RLMAgentNode.execute_op` shares the standard edge-collection and task/input
+preparation helpers, then delegates to the independent RLM service:
 
 ```python
-# 1. Collect connections (same as handle_chat_agent)
-memory_data, skill_data, tool_data, input_data, task_data = await _collect_agent_connections(
-    node_id, context, database, log_prefix="[RLM Agent]"
+# 1. Collect connected memory, skills, tools, input, and task data
+memory_data, skill_data, tool_data, input_data, task_data = await collect_agent_connections(
+    node_id, ctx.raw, database, log_prefix="[RLM Agent]"
 )
 
-# 2. Task context injection (same pattern)
+# 2. Inject task context and strip tools for terminal task notifications
 if task_data:
-    task_context = _format_task_context(task_data)
+    task_context = format_task_context(task_data)
     parameters = {**parameters, 'prompt': f"{task_context}\n\n{parameters.get('prompt', '')}"}
-
-    # 3. Tool stripping on task completion (same pattern)
     if task_status in ('completed', 'error') and tool_data:
         tool_data = []
 
-# 4. Auto-prompt fallback (same pattern)
+# 3. Apply the same text-shaped auto-prompt fallback as standard agents
 if not parameters.get('prompt') and input_data:
     prompt = input_data.get('message') or input_data.get('text') or ...
 
-# 5. Delegate to RLM service (differs from handle_chat_agent)
+# 4. Invoke the RLM-specific REPL runtime
 return await ai_service.rlm_service.execute(node_id, parameters, ...)
 ```
 
@@ -230,11 +230,9 @@ return await ai_service.rlm_service.execute(node_id, parameters, ...)
 | File | Change |
 |------|--------|
 | `server/constants.py` | `'rlm_agent'` in `AI_AGENT_TYPES` frozenset |
-| `server/services/node_executor.py` | `'rlm_agent': partial(handle_rlm_agent, ...)` in `_build_handler_registry()` |
-| `server/services/handlers/__init__.py` | `from .rlm import handle_rlm_agent` |
+| `server/nodes/agent/rlm_agent/__init__.py` | `RLMAgentNode` auto-registers through the plugin base and owns `execute_op` |
 | `server/services/ai.py` | `self.rlm_service = RLMService(auth=self.auth)` in `AIService.__init__()` |
-| `server/requirements.txt` | `rlms>=0.1.1` |
-| `server/pyproject.toml` | `"rlms>=0.1.1"` in `[project] dependencies` |
+| `server/pyproject.toml` / generated requirements | `rlms` runtime dependency |
 
 ---
 

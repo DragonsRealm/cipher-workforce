@@ -24,7 +24,6 @@ Search the filesystem: list directories, glob pattern match files, or grep file 
 | mode | string | No | `ls` (list directory), `glob` (pattern match), `grep` (search contents). Default: `ls` |
 | path | string | No | Directory path to search in (default: `.`) |
 | pattern | string | If glob/grep | Glob pattern (e.g., `**/*.py`) or grep search text |
-| file_filter | string | No | Glob to filter files for grep mode (e.g., `*.py`) |
 
 ### Examples
 
@@ -40,7 +39,7 @@ Search the filesystem: list directories, glob pattern match files, or grep file 
 
 **Search for a function:**
 ```json
-{"mode": "grep", "path": ".", "pattern": "def my_function", "file_filter": "*.py"}
+{"mode": "grep", "path": ".", "pattern": "def my_function"}
 ```
 
 **Find all config files:**
@@ -53,10 +52,20 @@ Search the filesystem: list directories, glob pattern match files, or grep file 
 **ls mode:**
 ```json
 {
-  "path": ".",
+  "path": "/",
   "entries": [
-    {"name": "src", "type": "dir", "size": null},
-    {"name": "README.md", "type": "file", "size": 1234}
+    {
+      "path": "/src/",
+      "is_dir": true,
+      "size": 0,
+      "modified_at": "2026-07-24T10:30:00"
+    },
+    {
+      "path": "/README.md",
+      "is_dir": false,
+      "size": 1234,
+      "modified_at": "2026-07-24T10:31:00"
+    }
   ],
   "count": 2
 }
@@ -65,9 +74,22 @@ Search the filesystem: list directories, glob pattern match files, or grep file 
 **glob mode:**
 ```json
 {
-  "path": ".",
+  "path": "/",
   "pattern": "**/*.py",
-  "matches": [{"path": "src/main.py"}, {"path": "tests/test_main.py"}],
+  "matches": [
+    {
+      "path": "/src/main.py",
+      "is_dir": false,
+      "size": 1200,
+      "modified_at": "2026-07-24T10:31:00"
+    },
+    {
+      "path": "/tests/test_main.py",
+      "is_dir": false,
+      "size": 850,
+      "modified_at": "2026-07-24T10:32:00"
+    }
+  ],
   "count": 2
 }
 ```
@@ -75,19 +97,25 @@ Search the filesystem: list directories, glob pattern match files, or grep file 
 **grep mode:**
 ```json
 {
-  "path": ".",
+  "path": "/",
   "pattern": "def main",
   "matches": [
-    {"path": "src/main.py", "line": 42, "text": "def main():"}
+    {"path": "/src/main.py", "line": 42, "text": "def main():"}
   ],
   "count": 1
 }
 ```
+
+`path` values in entries and matches are normalized virtual paths rooted at
+the workflow workspace. `size` and `modified_at` are best-effort metadata and
+may be absent if the backend cannot stat an entry.
 
 ### Guidelines
 
 1. Use `ls` to explore directory structure
 2. Use `glob` to find files by name pattern (supports `**` recursive, `*` wildcard, `?` single char)
 3. Use `grep` to search file contents (literal text, not regex)
-4. Combine `grep` with `file_filter` to limit search scope
-5. Results are capped at 500 matches for grep mode
+4. Narrow a grep by choosing a more specific `path`; there is no
+   `file_filter` parameter
+5. The native backend does not impose a match-count cap; scope broad searches
+   carefully because every matching result is returned

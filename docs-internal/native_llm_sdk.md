@@ -13,7 +13,10 @@ LangChain added a useful abstraction early on, but it introduced three recurring
 
 1. **Windows/Python 3.13 hangs**: `langchain_google_genai` deadlocks on gRPC init. The native Gemini path bypasses LangChain entirely and uses `google.genai.Client` directly.
 2. **Parameter translation loss**: LangChain's `max_completion_tokens` rewrite breaks OpenAI-compatible providers (DeepSeek, Kimi, Mistral) that expect `max_tokens`.
-3. **Hard-coded URLs**: Each provider class in LangChain hard-codes its base URL. The native layer reads `base_url` from `server/config/llm_defaults.json`, so adding an OpenAI-compatible provider is a config change.
+3. **Endpoint control**: OpenAI-compatible endpoint URLs are declared in
+   `server/config/llm_defaults.json` and registered through `_compat.py`.
+   Adding one requires the JSON entry plus one `_COMPAT_PROVIDERS` entry, not a
+   provider-specific adapter class.
 
 The native layer also gives a single normalized response shape (`LLMResponse`) across providers, which simplifies downstream code for token tracking, cost calculation, and thinking extraction.
 
@@ -42,8 +45,9 @@ server/services/llm/
 ```
 
 Each provider module calls `register_provider(ProviderSpec(...))` at module
-bottom — that side-effect IS the registration contract; there is no central
-provider list to edit.
+bottom. Shipped provider modules are imported from `providers/__init__.py` so
+their registration side effects run at service import. OpenAI-compatible
+providers share `_compat.py` and its explicit `_COMPAT_PROVIDERS` tuple.
 
 ## Supported Providers
 
@@ -80,21 +84,20 @@ Source of truth for this list: `server/config/llm_defaults.json` (the `providers
 
 | Provider | Key Models | Context | Max Output | Thinking | Temp Range |
 |----------|-----------|---------|-----------|----------|------------|
-| **OpenAI** | GPT-5.5/5.4/5.2 | 400K–1.05M | 128K | effort (hybrid) | 0-2 |
-| **OpenAI** | GPT-4.1/4.1-mini/4.1-nano | 1M | 32K | none | 0-2 |
-| **OpenAI** | o3, o4-mini | 200K | 100K | effort (reasoning) | fixed 1.0 |
-| **OpenAI** | GPT-4o/4o-mini | 128K | 16K | none | 0-2 |
+| **OpenAI** | GPT-5.6 Sol/Terra/Luna, GPT-5.5/5.4 | 1.05M | 128K | effort | omitted for reasoning models |
+| **OpenAI** | GPT-4.1 | ~1.05M | 32K | none | 0-2 |
 | **Anthropic** | Claude Fable 5 | 1M | 128K | budget | 0-1 |
 | **Anthropic** | Claude Opus 4.8/4.7 | 1M | 128K | budget | 0-1 |
 | **Anthropic** | Claude Sonnet 4.6 | 1M | 64K | budget | 0-1 |
 | **Anthropic** | Claude Haiku 4.5 | 200K | 64K | budget | 0-1 |
 | **Google** | Gemini 3.5-flash, 3.1-pro/flash-lite, 3-flash, 2.5-pro/flash/flash-lite | 1M | 64K | budget | 0-2 |
+| **xAI** | Grok 4.20/4.20-multi-agent, 4.5, 4.3, 3 | 131K-2M | 131K | model/provider dependent | 0-2 |
 | **DeepSeek** | deepseek-v4-flash, deepseek-v4-pro (deepseek-chat/reasoner legacy) | 1M | 64K | thinking modes | 0-2 |
-| **Kimi** | kimi-k2.6, kimi-k2.5, kimi-k2.7-code | 256K | 96K | on by default (disabled for agents) | fixed 0.6 |
+| **Kimi** | kimi-k3 (default), kimi-k2.6, kimi-k2.5, kimi-k2.7-code | 1M (K3); 256K (K2) | 131K (K3); 32K/96K (K2) | K2 provider default explicitly disabled unless requested | K2 fixed 0.6; K3 0-1 |
 | **Mistral** | mistral-large/medium/small-latest, codestral-latest | 256K | 131K | none | 0-1.5 |
-| **Groq** | Llama 3.3-70b, Llama 3.1-8b, GPT-OSS-120b/20b, Qwen3-32b | 131K | 8-131K | format (Qwen3) | 0-2 |
+| **Groq** | GPT-OSS-120b/20b, Qwen3-32b, legacy Llama 3.x tiers | 131K | 32K-131K | effort (GPT-OSS), format (Qwen3) | 0-2 |
 | **OpenRouter** | 200+ models from multiple providers | varies | varies | varies | 0-2 |
-| **Cerebras** | GPT-OSS-120b, Qwen-3-235b, GLM-4.7 | 131K | 65K | budget (Qwen) | 0-1.5 |
+| **Cerebras** | GPT-OSS-120b, Z.ai GLM 4.7, Gemma 4 31B | 131K | 40K | budget (GLM preview) | 0-1.5 |
 | **Ollama** | Whatever the user has pulled (qwen2.5, llama3.x, phi-3, deepseek-r1, ...) | per-loaded-model (typed via `ps()`) | ctx ÷ 4 (capped 4096) | none (per-model) | 0-2 |
 | **LM Studio** | Whatever the user has loaded in the LM Studio UI | per-loaded-model (typed via `LlmInstanceInfo.context_length`) | ctx ÷ 4 (capped 4096) | none (per-model) | 0-2 |
 
@@ -168,17 +171,20 @@ class LLMResponse:
 `thinking`, and `tool_calls` fields remain convenience views; `raw` is never
 written to memory or Temporal history.
 
-## Registry, Unifier, and Lazy Imports
+## Registry, Unifier, and Lazy SDK Clients
 
-Providers self-register and are imported only when first used, so no SDK
-loads at startup (locked by `tests/llm/test_lazy_sdk_imports.py`):
+The lightweight provider modules are imported eagerly so the registry is
+complete at service startup. Heavy SDK imports, exception-class resolution,
+and client construction are deferred until first use; `ChatUnifier` then keeps
+clients in its bounded cache. This boundary is locked by
+`tests/llm/test_lazy_sdk_imports.py`:
 
 ```python
 # server/services/llm/providers/anthropic.py — bottom of the module
 register_provider(
     ProviderSpec(
         name="anthropic",
-        factory=lambda api_key, **kw: AnthropicProvider(api_key, **kw),   # lazy: class imported here only
+        factory=lambda api_key, **kw: AnthropicProvider(api_key, **kw),   # invoked when a client is first needed
         sdk_exception_refs=("anthropic:APIError",),                        # "module:Class" string, resolved at except time
     )
 )
@@ -212,7 +218,7 @@ class ProviderConfig:
     base_url: str = ""               # OpenAI-compatible base URL
 ```
 
-Adding a new OpenAI-compatible provider is a pure config change:
+Adding a new OpenAI-compatible provider requires a config entry:
 
 ```json
 "deepseek": {
@@ -226,7 +232,16 @@ Adding a new OpenAI-compatible provider is a pure config change:
 }
 ```
 
-No new provider class, no new import. `providers/_compat.py` registers a spec whose factory reuses `OpenAIProvider` with the config's `base_url`.
+Then add the same provider name to `_COMPAT_PROVIDERS` in
+`providers/_compat.py`. No new provider class or module import is needed: the
+compat loop reuses `OpenAIProvider` and pins the JSON `base_url` in
+`ProviderSpec.client_kwargs`.
+
+At client creation, a stored `{provider}_proxy` URL takes precedence over that
+configured compat URL. Plain OpenAI uses the SDK default endpoint unless
+`openai_proxy` is set. OpenRouter uses its adapter's built-in endpoint unless
+`openrouter_proxy` is set. Ollama and LM Studio rely on their stored proxy URL
+at runtime so requests go to the selected local server.
 
 ## Unified Native Execution Path
 
@@ -244,9 +259,11 @@ ChatUnifier.chat(provider=..., Message[], ToolDef[])
 `run_native_agent_loop` appends the provider's exact assistant envelope before
 executing tools. This preserves Gemini thought signatures, Anthropic signed and
 redacted thinking blocks, and OpenAI reasoning continuation state across
-in-process and Temporal turns. Temporal executions created before the migration
-remain pinned to the legacy engine by their recorded prepare-activity result;
-new executions record `llm_engine=native` and wire version 2.
+in-process and Temporal turns. A markerless prepare result identifies a
+pre-cutover history and selects the legacy branch. New executions normally
+record `llm_engine=native` and wire version 2; the temporary emergency setting
+can instead record `llm_engine=langchain`. Either recorded choice remains
+deterministic on replay.
 
 ## Thinking and Reasoning
 
@@ -359,7 +376,8 @@ AI providers support optional proxy-based authentication — requests route thro
 
 For every new chat and agent run, `proxy_url` flows through `ChatUnifier` into
 the cached native provider factory. The old `create_model()` proxy path exists
-only for histories already pinned to `llm_engine=langchain`.
+only for markerless pre-cutover histories or emergency executions whose
+prepare result is explicitly pinned to `llm_engine=langchain`.
 
 **Use cases:** Claude Code CLI proxy for Anthropic models; native Ollama / LM Studio support; custom auth proxies; dev/testing with mock servers.
 
@@ -426,7 +444,8 @@ the plugin folder or add a `visuals.json` entry (`"openrouterChatModel":
 
 2. **Custom-SDK provider** (Anthropic, Gemini pattern):
    - Create `services/llm/providers/<name>.py` implementing the `LLMProvider` protocol.
-   - At module bottom call `register_provider(ProviderSpec(name=..., factory=..., sdk_exception_refs=("sdk_module:ErrorClass",)))` — the lazy factory + string exception refs keep the SDK unimported until first use (never import the SDK at registration; locked by `tests/llm/test_lazy_sdk_imports.py`).
+   - At module bottom call `register_provider(ProviderSpec(name=..., factory=..., sdk_exception_refs=("sdk_module:ErrorClass",)))` and add the module to the side-effect imports in `services/llm/providers/__init__.py`.
+   - Keep the SDK import inside provider construction or call methods. The eager provider-module import registers the spec; the factory and string exception refs keep SDK loading and client construction lazy (locked by `tests/llm/test_lazy_sdk_imports.py`).
    - Add a config entry in `llm_defaults.json` (no `base_url` needed if the SDK handles URLs itself).
    - There is no `factory.py` to touch — the legacy factory module was removed; registration via `register_provider` is the only entry point.
 
@@ -440,7 +459,7 @@ the plugin folder or add a `visuals.json` entry (`"openrouterChatModel":
 |---|---|
 | `server/nodes/model/<provider>_chat_model/__init__.py` | Plugin entry — metadata + Params + auto-registers |
 | `server/nodes/model/_credentials.py` | `Credential` subclass per provider |
-| `server/config/llm_defaults.json` | base_url + supported_params + temperature constraints (no hardcoded URLs in Python) |
+| `server/config/llm_defaults.json` | OpenAI-compatible `base_url` values plus supported parameters and model constraints; dedicated SDK providers may use SDK defaults, and OpenRouter owns its gateway fallback in Python |
 | `server/services/llm/providers/<provider>.py` | Native SDK provider (Protocol-based) + `register_provider(ProviderSpec)` at module bottom |
 | `server/services/llm/registry.py` | `ProviderSpec` / `register_provider` — the provider registration contract |
 | `server/services/llm/unifier.py` | `ChatUnifier` — chat dispatch facade + typed-error translation |

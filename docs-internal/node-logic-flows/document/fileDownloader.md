@@ -14,7 +14,7 @@ Download a batch of URLs in parallel to a local directory using a bounded
 `asyncio.Semaphore`. Typically consumes the `items` array produced by
 `httpScraper`. Output directory defaults to `<workspace_dir>/downloads/` so
 downloaded files land in the per-workflow workspace and can be picked up by
-`documentParser` or the Deep Agent filesystem tools.
+`documentParser` or the Coding Agent filesystem tools.
 
 ## Inputs (handles)
 

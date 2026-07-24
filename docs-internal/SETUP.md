@@ -38,6 +38,15 @@ npm run build
 npm run start
 ```
 
+The default server install stays lightweight and does not install the
+`sentence-transformers` stack. OpenAI and Ollama embeddings work through their
+native SDKs in the default install. To enable local Hugging Face embeddings for
+the embedding node and long-term memory, install the optional extra:
+
+```bash
+cd server && uv sync --extra local-embeddings
+```
+
 ### Docker
 
 ```bash
@@ -62,7 +71,7 @@ Services will be available at:
 ### Backend (Python FastAPI - Port 3010)
 - FastAPI with async support
 - SQLAlchemy + SQLite database
-- LangChain for AI integrations
+- Native Anthropic and Google Gen AI providers plus the OpenAI SDK for OpenAI-compatible chat through `ChatUnifier`; Ollama's SDK is used for local model discovery and embeddings
 - WebSocket for real-time updates
 
 **Key Endpoints:**

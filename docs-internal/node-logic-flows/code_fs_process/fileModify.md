@@ -16,7 +16,10 @@ Two operations: `write` (create/overwrite) and `edit` (exact string
 find-and-replace). Paths are normalized and resolved through
 `WorkspaceBackend`, then guarded by a per-path lock. Both operations use a
 same-directory temporary file plus `os.replace` so concurrent writes cannot
-expose partial content; existing file modes and newline bytes are preserved.
+expose partial content. Existing file modes are preserved. `write` preserves
+the caller's newline characters, while `edit` reads with universal-newline
+translation and normalizes the source text plus `old_string`/`new_string` to
+LF before replacing and writing.
 
 ## Inputs (handles)
 
@@ -71,13 +74,12 @@ flowchart TD
   C --> D{operation?}
   D -- write --> W[path lock + worker thread:<br/>raise IsADir if dir,<br/>atomic_write_text]
   W -- OSError/ValueError --> Eenv[raise NodeUserError str e]
-  W -- result.error --> Eenv
-  W -- ok --> Wok[Return dict<br/>operation=write, file_path=result.path]
+  W -- ok --> Wok[Return dict<br/>operation=write,<br/>normalized file_path]
   D -- edit --> Ei{old_string empty?}
   Ei -- yes --> Ereq[raise NodeUserError:<br/>old_string is required for edit]
-  Ei -- no --> Ed[path lock + worker thread:<br/>exact replacement + atomic_write_text]
-  Ed -- result.error --> Eenv
-  Ed -- ok --> Edok[Return dict<br/>occurrences=result.occurrences]
+  Ei -- no --> Ed[path lock + worker thread:<br/>read UTF-8 + normalize LF,<br/>exact replacement + atomic_write_text]
+  Ed -- replacement error --> Eenv
+  Ed -- ok --> Edok[Return dict<br/>operation=edit, normalized file_path,<br/>occurrences count]
   D -- other --> Unk[raise NodeUserError:<br/>Unknown operation: <op>]
 ```
 
@@ -92,15 +94,17 @@ flowchart TD
 - **`write` overwrite handling**: `_do_write` resolves the contained path,
   rejects directories, and atomically replaces or creates the file. `OSError`
   / `ValueError` are caught and re-raised as `NodeUserError`.
-- **Backend-level errors**: a non-empty `result.error` from `write`/`edit`
-  short-circuits with `raise NodeUserError(result.error)`. Common: non-unique
-  `old_string` when `replace_all=False`, path escape with `virtual_mode=True`.
+- **Replacement errors**: `perform_string_replacement` returns an error string
+  for zero or ambiguous matches; the operation raises it as `NodeUserError`.
+  Containment and filesystem exceptions are also translated to
+  `NodeUserError`.
 - **`edit` uniqueness constraint**: when `replace_all=False`, the backend
   REQUIRES `old_string` to appear exactly once. Zero or multiple matches
   trigger a backend-level error.
-- **`file_path` echoed from `result.path`**: on success the returned
-  `file_path` comes from the backend's normalised path, falling back to the
-  normalised `file_path` only if `result.path` is empty.
+- **Result shape**: `write` returns only `operation` and normalized
+  `file_path`; `edit` returns those fields plus the integer `occurrences`.
+  Neither branch returns a backend result object or `written` /
+  `replacements`.
 
 ## Side Effects
 
@@ -111,6 +115,8 @@ flowchart TD
   - `get_backend` ensures the workspace root exists.
   - `write` and `edit` write a same-directory temporary file, flush it, retain
     an existing file's mode, and atomically replace the destination.
+  - `write` emits the caller's text unchanged; `edit` normalizes CRLF and
+    lone-CR input and replacement strings to LF.
 - **Subprocess**: none.
 
 ## External Dependencies
@@ -125,8 +131,9 @@ flowchart TD
 - **`edit` without a match**: raises `NodeUserError` (backend surfaces the
   message). The handler never distinguishes "not found" from "multiple
   matches" - both are `NodeUserError` strings.
-- **No encoding option**: writes are always UTF-8 and preserve caller newline
-  bytes (`newline=""`).
+- **No encoding option**: writes are always UTF-8. Direct `write` preserves
+  caller newline characters (`newline=""`), but `edit` uses universal-newline
+  reads and rewrites the resulting LF-normalized text.
 - **`working_directory` not exposed**: `extra="ignore"` means the sandbox
   cannot be widened via a node param on this node.
 - **`replace_all=true` with empty `new_string`**: effectively deletes every

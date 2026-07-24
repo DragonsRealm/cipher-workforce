@@ -1,7 +1,7 @@
 {
   "version": "2026.07.23",
   "last_updated": "2026-07-23",
-  "_description": "LLM provider defaults. popular_models drives the ordered global selector and offline fallback independently of token constraints. POLICY (2026-07-23): popular_models lists only models with >= 1M-token context windows — providers whose models are all below 1M carry an empty list and contribute nothing to the global selector (their models stay reachable via the live per-provider fetch_models dropdown). Connection config drives native SDK and LangChain paths; model specs are enriched by model_registry.json (OpenRouter cache).",
+  "_description": "LLM provider defaults. popular_models drives the ordered global selector and offline fallback independently of token constraints. POLICY (2026-07-23): popular_models lists only models with >= 1M-token context windows — providers whose models are all below 1M carry an empty list and contribute nothing to the global selector (their models stay reachable via the live per-provider fetch_models dropdown). base_url directly configures the eight OpenAI-compatible native providers; dedicated OpenAI, Anthropic, and Gemini providers use SDK defaults, while OpenRouter has its own gateway default. Runtime proxy credentials can override supported endpoints. Model specs are enriched by model_registry.json (OpenRouter cache).",
 
   "agent": {
     "_description": "Agent execution defaults. recursion_limit and compaction.ratio are sourced from the environment (AGENT_RECURSION_LIMIT, COMPACTION_RATIO via core.config.Settings) — these JSON values are last-resort fallbacks when the env vars aren't loaded (e.g. one-off CLI scripts that bypass Settings). default_temperature stays JSON-resident since it has no env override yet.",

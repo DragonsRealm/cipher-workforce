@@ -178,31 +178,33 @@ live on separate doc pages:
 If a separate snapshot of any of these pages would help, fetch and
 add an analogous `claude_code_*_reference.md` file.
 
-## Flags we use in `services/cli_agent/`
+## Flags used by the current Claude Code agent
 
 Quick cross-reference for the OpenCompany `claude_code_agent` integration:
 
 | Flag | Used in | Purpose |
 |---|---|---|
-| `--output-format stream-json` | always | NDJSON event stream parsed by `session.py:_consume_stdout` |
-| `--verbose` | always | required when `--output-format stream-json` is set with `--print` |
-| `--include-partial-messages` | always | surface streaming deltas to the Terminal panel |
-| `--include-hook-events` | always | surface `SessionStart` / hook events into the stream |
-| `--print`, `-p` | always | one-shot non-interactive query |
+| `--output-format stream-json` | always | NDJSON event stream consumed by `_pool.py` |
+| `--input-format stream-json` | always | prompts are written to the long-lived subprocess over stdin |
+| `--verbose` | always | include complete stream-json event detail |
+| `--ide` | always | discover the per-process IDE lockfile used for MCP connectivity |
 | `--model <id>` | always | from `ClaudeTaskSpec.model` / config default |
-| `--max-turns <N>` | always | from `ClaudeTaskSpec.max_turns` |
-| `--permission-mode <mode>` | always | default `acceptEdits` |
-| `--allowedTools <csv>` | always | `Read,Edit,Bash,Glob,Grep,Write,Skill,WebSearch,WebFetch,mcp__opencompany__*` (see canonical patterns RFC §5 R3) |
+| `--permission-mode <mode>` | normally | defaults to `dontAsk` so the explicit allowlist remains authoritative without interactive prompts |
+| `--allowedTools <csv>` | always | connected workflow tools plus OpenCompany MCP infrastructure tools; Claude built-ins are opt-in, except `Skill` when a skill is connected |
 | `--mcp-config <json>` | when MCP wired | inline JSON with `{mcpServers: {opencompany: {type: http, url, headers, alwaysLoad: true}}}` |
 | `--strict-mcp-config` | when MCP wired | blocks user-level `~/.claude.json` MCP entries |
-| `--append-system-prompt <text>` | when system_prompt or connected tools wired | per-task system prompt + connected-tools steering directive |
-| `--session-id <UUID>` | memory bridge first run | deterministic `uuid5(memory_node_id, session_id)` |
-| `--resume <UUID>` | memory bridge subsequent runs | `simpleMemory.last_session_id` saved by `_persist_memory` |
-| `--max-budget-usd <USD>` | when `ClaudeTaskSpec.max_budget_usd > 0` | cost cap per task |
+| `--append-system-prompt <text>` | when `system_prompt` is set | append the task prompt to Claude Code's built-in system prompt |
+| `--continue` | first spawn for a memory-bound run | let Claude select the latest conversation for the stable working directory |
+| `--resume <UUID>` | pooled-process crash or reap recovery | resume the session UUID captured from Claude's stream events |
 | `--effort <level>` | optional per-task override | reasoning effort |
-| `--fallback-model <id>` | optional per-task override | fallback when default model is overloaded |
 | `--add-dir <path>*` | optional per-task override | grant extra working dirs |
 | `--disallowedTools <csv>` | optional per-task override | remove tools from context |
 | `--agent <name>` | optional per-task override | use a specific subagent |
+
+The interactive subprocess path intentionally does not emit `--print`,
+`--include-partial-messages`, `--include-hook-events`, or `--session-id`.
+It also retains `max_turns`, `max_budget_usd`, and `fallback_model` on the
+task specification only for compatibility; their corresponding flags are
+print-mode-only and are not emitted by this path.
 
 See [`server/nodes/agent/claude_code_agent/_provider.py`](../server/nodes/agent/claude_code_agent/_provider.py) for the argv-construction code.

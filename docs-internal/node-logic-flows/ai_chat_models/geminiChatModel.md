@@ -71,7 +71,7 @@ flowchart TD
   F --> G[ChatUnifier.chat -> registry.get_provider gemini<br/>google.genai.Client]
   G --> H[provider.chat -> LLMResponse]
   H --> I[success envelope]
-  G -- Exception --> X
+  G -- typed SDK error --> X[NodeUserError -> BaseNode error envelope]
 ```
 
 ## Decision Logic
@@ -81,13 +81,13 @@ flowchart TD
 - **Native SDK**: `ChatUnifier` uses `google.genai.Client` for both chat and
   current agent requests.
 - **Thinking budget**: `thinkingBudget` -> `NativeThinkingConfig.budget` -> Gemini `thinking_budget` API parameter.
-- **Model string scrubbing**: `[FREE] ` prefix stripped; `owner/model` prefix stripped (non-OpenRouter).
+- **Model ID handling**: only the UI-only `[FREE] ` decoration is stripped; the remaining provider model ID is preserved.
 
 ## Side Effects
 
 - **Database writes**: none on bare chat path.
 - **Broadcasts**: none.
-- **External API calls**: `POST https://generativelanguage.googleapis.com/v1beta/...` via `google-genai` SDK; base URL from `llm_defaults.json`.
+- **External API calls**: the endpoint selected by the native `google-genai` SDK. A proxy credential can override the Developer API base URL; Vertex Express mode uses the Vertex endpoint and ignores that proxy.
 - **File I/O**: none.
 - **Subprocess**: none.
 
@@ -104,9 +104,9 @@ flowchart TD
   former adapter's gRPC import deadlock. Both current chat and agent
   executions use the native path.
 - **Thinking budget units**: expressed as token count, not low/medium/high effort levels. Defaults to 2048.
-- **Safety settings**: forwarded via the SDK; malformed values surface as `success=false` in the envelope.
+- **Safety settings**: forwarded via the SDK; typed API failures are translated into a user-safe node error at the execution boundary.
 - **`maxTokens` clamp**: capped at the model's ceiling (65K for 2.5/3.x).
-- **Errors swallowed into envelope** - handler never raises.
+- **Error boundary**: typed Google SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 
 ## Related
 

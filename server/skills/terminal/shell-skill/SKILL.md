@@ -1,6 +1,6 @@
 ---
 name: shell-skill
-description: Execute short-lived shell commands inside the per-workflow workspace. The shell is Nushell (cross-platform, same syntax on Windows/macOS/Linux). External tools on PATH (npm, node, python, git, ...) are available.
+description: Execute short-lived shell commands inside the per-workflow workspace. Uses Nushell when installed and otherwise the host shell. External tools on PATH (npm, node, python, git, ...) are available.
 allowed-tools: "shell"
 metadata:
   author: opencompany
@@ -9,29 +9,37 @@ metadata:
 
 ---
 
-# Shell Tool (Nushell)
+# Shell Tool
 
-Execute short-lived shell commands in the workflow workspace. **The shell is [Nushell](https://www.nushell.sh/) — the same grammar runs on Windows, macOS, and Linux.** Do not write `cmd.exe`, PowerShell, or Bash idioms; they will fail or behave wrong.
+Execute short-lived shell commands in the workflow workspace. The backend uses
+[Nushell](https://www.nushell.sh/) when `nu` is installed. Otherwise it passes
+the command to the host shell (`cmd.exe` on Windows or the platform
+`/bin/sh`-style shell on POSIX). Shell-specific syntax is therefore
+conditional on the installed runner.
 
-External binaries on `PATH` (`npm`, `node`, `python`, `git`, `pwd`, etc.) are available — Nu invokes them as external commands automatically.
+External binaries on `PATH` (`npm`, `node`, `python`, `git`, etc.) are
+available to whichever runner is selected.
 
-**GNU coreutils (`sed`, `awk`, `head`, `tail`, `grep`, `cut`, `sort`, `uniq`, `wc`, `tr`, `xargs`, `find`) are NOT in PATH on Windows** and will fail with `Command not found`. Use Nushell builtins or switch tools — see the table below.
+For portable calls, prefer one external command with ordinary arguments, such
+as `git status` or `python -V`. Use `file_read`, `file_modify`, or `fs_search`
+for filesystem work; they avoid runner-specific parsing.
 
-## Check the host before reaching for external tools
+## Runner-dependent syntax
 
-Don't burn turns on trial-and-error (`sed not found` → retry with `awk` → `awk not found` → ...). Detect the host **once** at the start of a task that needs platform-sensitive binaries, then branch:
+The node rejects space-delimited `&&` and `||` before selecting a runner, so
+those operators are unsupported even when the host shell would normally
+accept them. Prefer separate tool calls. If the environment is known to have
+Nushell, its equivalents include:
 
 ```nu
-# `$nu.os-info.name` is "windows" | "linux" | "macos" | "android" | ...
-let os = $nu.os-info.name
+try { npm install } catch { print 'install failed'; exit 1 }
+open README.md --raw | lines | first 20
 ```
 
-Then either:
-1. **Skip the shell entirely.** For reading / editing / searching files, the right answer almost always is `file_read` / `file_modify` / `fs_search` — they are path-sandboxed and platform-agnostic by construction.
-2. **Use Nu builtins.** `open`, `lines`, `first`, `last`, `find`, `glob`, `length`, `save`, `cp`, `mv`, `rm`, `mkdir` exist on every host.
-3. **Probe before invoking external CLIs.** `if (which sed | is-empty) { ... } else { sed ... }` — but at that point, `file_read` / `file_modify` is shorter and works everywhere.
-
-**Rule of thumb**: if your command starts with `sed` / `awk` / `head` / `tail` / `grep`, stop and reach for `file_read` or `fs_search` instead. You almost never need a host check — you need the dedicated tool.
+Do not send Nushell pipelines, Bash substitutions, PowerShell cmdlets, or
+`cmd.exe` builtins unless the selected environment is known to support that
+syntax. GNU utilities such as `sed`, `awk`, and `grep` are not generally
+available on Windows.
 
 ## shell_execute Tool
 
@@ -39,8 +47,8 @@ Then either:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| command | string | Yes | Nushell command (single or `;`-chained) |
-| timeout | int | No | Seconds (default 30, max 300) |
+| command | string | Yes | Command interpreted by Nushell when installed, otherwise by the host shell |
+| timeout | int | No | Seconds (default 30, max 600) |
 
 ### Response
 
@@ -59,9 +67,9 @@ Then either:
 | 124 | Timed out |
 | non-zero | Failure |
 
-## Critical: Nushell ≠ Bash
+## Nushell reference (only when `nu` is installed)
 
-| Bash / cmd.exe (do NOT use) | Nushell (correct) |
+| Bash / cmd.exe form | Nushell form |
 |---|---|
 | `cmd1 && cmd2` (and-then) | `cmd1; cmd2` *(unconditional sequential — see below for short-circuit)* |
 | `cmd1 || cmd2` (or-else) | `try { cmd1 } catch { cmd2 }` |
@@ -84,26 +92,22 @@ Then either:
 | `find . -name '*.py'` | `glob '**/*.py'` |
 | `xargs cmd` | `each { \|x\| cmd $x }` |
 
-### Short-circuit "and-then" (the `&&` replacement)
+### Short-circuit "and-then" when Nushell is active
 
-The user log showed `pwd && ls -la` failing — the parser explicitly rejects `&&`. Use one of:
+The node explicitly rejects the usual space-delimited `&&` form. With
+Nushell available, use:
 
 ```nu
-# A: just sequential, doesn't short-circuit on failure
-pwd; ls -la
-
-# B: short-circuit using exit code via try/catch
+# Short-circuit using try/catch
 try { npm install } catch { print 'install failed'; exit 1 }
 ls -la
 
-# C: explicit conditional on the previous command's success
+# Or inspect an external command's exit code
 let r = (do { npm install } | complete)
 if $r.exit_code == 0 { ls -la } else { print $r.stderr }
 ```
 
-Use **A** for "run these in order regardless of outcome", **B/C** when you must stop on failure.
-
-## Common tasks (cross-platform, Nushell)
+## Common tasks when Nushell is active
 
 | Task | Command |
 |---|---|
@@ -137,11 +141,11 @@ Use **A** for "run these in order regardless of outcome", **B/C** when you must 
 
 ## Guidelines
 
-1. **Never use `&&`, `||`, backticks, `$VAR`, or `>` redirection.** Use the Nushell equivalent on the right side of the table above.
-2. **Never invoke GNU coreutils** (`sed`, `awk`, `head`, `tail`, `grep`, `find`, `wc`, `cut`, `sort`, `uniq`, `xargs`, `tr`). They are not on Windows. For peeking at a file, use **`file_read`** (line-numbered, `offset`/`limit` aware); for searching, use **`fs_search`** (grep mode).
-3. **Check the host first** when an external CLI is unavoidable. `let os = $nu.os-info.name` once, then gate by `windows` / `linux` / `macos`. Don't loop "try → fail → retry".
-4. **One command (or `;`-chain) per call.** No multi-line scripts; if you need control flow, use `if` / `try` / `each` inline.
+1. **Never use `&&` or `||`.** The node pre-flight rejects their common
+   space-delimited forms before invoking either runner, and their behavior is
+   not portable even without surrounding spaces.
+2. **Prefer one simple command per call.** Chaining, variables, redirection, pipelines, and builtins depend on whether Nushell or the host shell was selected.
+3. **Use dedicated filesystem tools.** `file_read`, `file_modify`, and `fs_search` are workspace-contained and avoid shell parsing differences.
+4. **Treat Nushell syntax as conditional.** The reference above applies only when `nu` is installed.
 5. **Short-lived only.** `shell_execute` *always* awaits completion — a small `timeout` does **not** make it run in the background, it just kills the command after N seconds. If the command runs longer than ~30s, opens a port, watches files, or is described as "dev server / watcher / daemon" (`npm run dev`, `vite`, `tsx watch`, `python -m http.server`, ...), use **`process_manager`** instead. Trying to "fire and forget" with `timeout=2` will kill the process the moment the port comes up.
-6. **Nu syntax is host-agnostic.** Builtins (`ls`, `open`, `glob`, `lines`, `save`, `cp`, ...) work the same everywhere. You only need the host check for *external* tools.
-7. **Quote glob patterns** (`'*.py'`) so Nu's `glob` builtin expands them, not the caller.
-8. **Capture command exit code** with `do { … } | complete` if you need to branch on success/failure.
+6. **The timeout range is 1–600 seconds.** Use `process_manager` instead of raising it for persistent processes.

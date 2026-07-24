@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Single-turn chat completion against the Anthropic Messages API (Claude family). The `ChatModelBase.chat` operation (in `_base.py`) calls `AIService.execute_chat` for every chat-model node; provider-specific branching lives inside `execute_chat` and the native `services/llm/providers/anthropic.py`. Also wired as an AI-agent advisor tool (`usable_as_tool = True`) so an agent can consult a stronger model mid-task.
+Single-turn chat completion against the Anthropic Messages API (Claude family). The `ChatModelBase.chat` operation (in `_base.py`) calls the provider-neutral `AIService.execute_chat`; Anthropic-specific request and response behavior lives in `services/llm/providers/anthropic.py` behind `ChatUnifier`. Also wired as an AI-agent advisor tool (`usable_as_tool = True`) so an agent can consult a stronger model mid-task.
 
 ## Inputs (handles)
 
@@ -73,7 +73,7 @@ flowchart TD
   G --> H[Lookup anthropic_proxy credential]
   H --> I[ChatUnifier.chat -> registry.get_provider anthropic<br/>await provider.chat with thinking]
   I --> J[Return success envelope with response + thinking]
-  I -- Exception --> X
+  I -- typed SDK error --> X[NodeUserError -> BaseNode error envelope]
 ```
 
 ## Decision Logic
@@ -81,7 +81,7 @@ flowchart TD
 - **Validation**: missing api_key or empty prompt -> error envelope.
 - **Provider routing**: `detect_ai_provider` matches `'anthropic'` on `'anthropic' in node_type.lower()` branch.
 - **Native provider**: `ChatUnifier` resolves the self-registered `anthropic` spec - uses the `anthropic` Python SDK.
-- **Model ID scrubbing**: strips `[FREE] ` prefix; strips `owner/` prefix for non-OpenRouter providers.
+- **Model ID handling**: strips only the UI-only `[FREE] ` decoration. Provider model IDs are otherwise treated as opaque and preserved.
 - **Temperature override**: when `thinkingEnabled=true`, temperature is auto-forced to 1 by `native_resolve_temperature`.
 - **Thinking config**: `NativeThinkingConfig(enabled=True, budget=int(thinkingBudget))` forwarded to the SDK, which maps to Anthropic's `thinking={type: "enabled", budget_tokens: N}`.
 
@@ -89,7 +89,7 @@ flowchart TD
 
 - **Database writes**: none on the bare chat path.
 - **Broadcasts**: none.
-- **External API calls**: `POST https://api.anthropic.com/v1/messages` via `anthropic` SDK; base URL configurable in `llm_defaults.json`, overridable via `anthropic_proxy` credential.
+- **External API calls**: Anthropic Messages API via the `anthropic` SDK's default endpoint; an `anthropic_proxy` credential can override the SDK base URL.
 - **File I/O**: none.
 - **Subprocess**: none.
 
@@ -103,10 +103,10 @@ flowchart TD
 ## Edge cases & known limits
 
 - **Model ID format**: Anthropic API uses hyphens (`claude-sonnet-4-6`), NOT dots. Dotted IDs (as used by OpenRouter or Gemini) will 404. The frontend model list already uses the correct form, but template-substituted or hand-entered IDs with dots will fail.
-- **`maxTokens > thinkingBudget` required**: if thinking is enabled and `maxTokens <= thinkingBudget`, the Anthropic API rejects the request. The handler does not pre-validate this; the resulting error becomes the envelope's `error` field.
+- **Thinking budget versus output**: when thinking is enabled and the requested `maxTokens` does not exceed `thinkingBudget`, the native provider raises `max_tokens` to `thinkingBudget + 1024` before calling Anthropic.
 - **Temperature forced to 1 when thinking enabled**: regardless of user input.
 - **1M context**: current Claude models (Fable 5, Opus 4.x, Sonnet 4.6) support a 1M context window; configured in `llm_defaults.json` rather than the node.
-- **Errors swallowed into envelope**: handler never raises; all failures surface as `success=false`.
+- **Error boundary**: typed Anthropic SDK failures become user-safe `NodeUserError` values in `ChatUnifier` and are re-raised to `BaseNode.execute()`, which produces the standard failure envelope. Unexpected failures are logged and returned by `execute_chat`.
 - **No streaming** / **no pricing tracking** on standalone chat nodes.
 
 ## Related

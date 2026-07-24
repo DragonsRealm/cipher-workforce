@@ -1,7 +1,7 @@
 Component-palette row: what users drag onto the canvas.
 
 ```jsx
-<ComponentItem icon="🤖" name="AI Agent" description="LangGraph agent with memory and tools" />
+<ComponentItem icon="🤖" name="AI Agent" description="Native agent with memory and tools" />
 <ComponentItem icon="📱" name="WhatsApp Send" description="Send a WhatsApp message" />
 ```
 

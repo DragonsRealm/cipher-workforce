@@ -31,7 +31,7 @@ own plugin folder; there is no `functools.partial` wiring anymore.
 | `input-main` | main | no | Upstream data. Auto-prompt fallback when `prompt` is empty. |
 | `input-skill` | main | no | Skill nodes (including `masterSkill` aggregation). |
 | `input-memory` | main | no | `simpleMemory` node for conversation history. |
-| `input-tools` | main | no | Tool nodes bound to the LLM via `chat_model.bind_tools`. |
+| `input-tools` | main | no | Tool nodes compiled into provider-neutral `AgentToolSpec` / `ToolDef` values for each native LLM step. |
 | `input-task` | main | no | `taskTrigger` output - formatted and prepended to the prompt. |
 | `input-teammates` | main | no | **Team-lead only** (`orchestrator_agent`, `ai_employee`). Agents on this handle become authorized Task Manager assignees. |
 
@@ -80,6 +80,10 @@ flowchart TD
   `edge_walker.collect_agent_connections`; same rules as `aiAgent` (see that doc
   for memory session derivation, `masterSkill` expansion, Android toolkit,
   child-agent tool discovery).
+- **Native agent loop**: current executions call the shared
+  `run_native_agent_loop` / `run_native_llm_step` service through
+  `ChatUnifier`. The LangChain tool-binding loop is retained only for
+  replaying eligible pre-cutover or emergency-pinned Temporal histories.
 - **Task context injection** mirrors `aiAgent`: `format_task_context` wraps
   the task result as a plain-English instruction that the LLM must "report
   naturally", then all tools are stripped if the task has already completed
@@ -95,9 +99,11 @@ flowchart TD
 
 ## Side Effects
 
-- **Database writes**: none directly. `execute_chat_agent` writes
-  `token_usage_metrics` and updates the connected `simpleMemory` node's
-  `memoryContent` via `database.save_node_parameters`.
+- **Database writes**: none directly. In-process execution can update a
+  connected `simpleMemory` node and record compaction usage for that memory
+  session; the Temporal workflow accumulates normalized usage in its result
+  envelope. Standalone executions without connected memory do not persist a
+  token metric here.
 - **Broadcasts**: `StatusBroadcaster` is fetched and passed down, enabling
   `update_node_status` events (`thinking`, `executing_tool`, `success`), plus
   `token_usage_update` from the compaction tracker.

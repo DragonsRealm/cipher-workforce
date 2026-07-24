@@ -1,13 +1,14 @@
-"""Standard-JSONL conversation-memory helpers.
+"""Standalone standard-JSONL conversation normalization helpers.
 
 Lines are Anthropic Messages API objects: ``{"role": "user"|"assistant",
-"content": str | List[ContentBlock], ...}``. Extra metadata
-(``timestamp``, ``session_id``, ``model``, ...) rides alongside
-``role`` / ``content`` and is preserved on round-trip; standard parsers
-(Anthropic SDK, LangChain converters) ignore unknown keys.
+"content": str | List[ContentBlock], ...}``. :func:`append_message` can
+serialize extra metadata (``timestamp``, ``session_id``, ``model``, ...),
+but :func:`parse_jsonl` intentionally drops it when normalizing rows to
+native :class:`services.llm.protocol.Message` values.
 
-Used by :mod:`nodes.agent.claude_code_agent` (session memory) via
-:func:`services.cli_agent.service.AICliService.run_batch`.
+No production agent currently calls these helpers. Claude Code owns and
+reads its native session JSONL independently; this module remains a tested
+primitive for normalized import/export.
 """
 
 import json
@@ -19,8 +20,9 @@ from services.llm.protocol import Message
 def parse_jsonl(text: str) -> List[Message]:
     """Standard JSONL -> native :class:`Message` list.
 
-    Tool-call content blocks collapse to text; rows with unknown roles
-    or unparseable JSON are skipped (forward compatibility).
+    Text content blocks are joined with spaces; tool-call blocks and extra
+    metadata are discarded. Rows with unknown roles, non-text content, or
+    unparseable JSON are skipped for forward compatibility.
     """
     if not text:
         return []
@@ -58,8 +60,10 @@ def append_message(
 ) -> str:
     """Append one Anthropic Messages-format line to a JSONL string.
 
-    Metadata fields ride alongside ``role`` / ``content``. Always emits
-    a trailing newline so successive appends concatenate cleanly.
+    Metadata fields ride alongside ``role`` / ``content`` on the serialized
+    line, but :func:`parse_jsonl` does not surface them on ``Message``.
+    Always emits a trailing newline so successive appends concatenate
+    cleanly.
     """
     line = json.dumps(
         {"role": role, "content": content, **metadata},

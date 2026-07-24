@@ -23,7 +23,7 @@ The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk�
 - **Short declarative fragments for value props.** "No code required. No subscription. No usage limits."
 - **Sentence case everywhere** — headings ("What You Can Build" is Title Case in README headers, but UI copy is sentence case: "No workflows yet", "Create your first workflow to get started"). Buttons are single words or short verb phrases: **Start**, **Stop**, **Save**, **New Workflow**, **Apply All**.
 - **UI microcopy is terse and systemy.** Status bar reads like a shell prompt: `ONLINE | WF: Test | NODES: 12 | THEME: DARK | 14:02:33`. States: "Saved" / "Modified". Tooltips are full sentences: "Override all agent nodes in this workflow to use the selected model".
-- **Numbers as proof.** "50+ other services", "11 LLM providers", "17 specialized agent types", "16 device services". Counts are surfaced in the UI too (badge with component count, "3 saved").
+- **Numbers as proof.** "50+ other services", "12 LLM providers", "17 specialized agent types", "16 device services". Counts are surfaced in the UI too (badge with component count, "3 saved").
 - **Emoji: not part of the brand voice.** Marketing copy uses none. In-product the only emoji are *functional glyphs* (⚙️ gear button, 📦 fallback icon) — never decorative, never in sentences.
 - **Bold for product nouns** mid-sentence: "**AI Employee**", "**Stripe**", "**WhatsApp**".
 - Example headline pairs: "Personal AI assistants that remember" / "Task automations that run themselves" — lowercase-after-first-word, noun phrase + verb clause.
