@@ -6,8 +6,8 @@ any :class:`EventSource`. Plugins call it once and register the dict —
 no per-handler boilerplate.
 
 :func:`make_status_refresh` returns a ``register_service_refresh``
-callback that auto-reconnects the source when a credential is stored
-and mirrors its status into the broadcaster cache.
+callback that passively mirrors the source's status into the
+broadcaster cache (it never starts the source; see its docstring).
 
 Together these collapse ~50 LOC of identical boilerplate per plugin
 into two function calls.
@@ -79,17 +79,16 @@ def make_status_refresh(
 ) -> Callable[["StatusBroadcaster"], Awaitable[None]]:
     """Return a ``register_service_refresh`` callback.
 
-    The callback auto-starts the source if it has stored credentials,
-    mirrors its status into ``broadcaster._status[status_key]``, and
-    emits a ``broadcast_type`` broadcast.
+    The callback is a passive probe: it mirrors the source's status into
+    ``broadcaster._status[status_key]`` and emits a ``broadcast_type``
+    broadcast. It never starts the source — a stored credential alone is
+    not a reason to run an optional daemon. Sources start on demand:
+    user-initiated ``{prefix}_connect`` / login handlers, and trigger-node
+    deploy prechecks (e.g. ``StripeReceiveNode._check_precondition``).
     """
 
     async def refresh(broadcaster: "StatusBroadcaster") -> None:
         try:
-            if not getattr(source, "_started", False) and hasattr(source, "has_credential"):
-                if await source.has_credential():  # type: ignore[attr-defined]
-                    logger.info("[StatusBroadcaster] auto-reconnecting %s", status_key)
-                    await source.start()
             status = await source.status()
             broadcaster._status[status_key] = status
             await broadcaster.broadcast({"type": broadcast_type, "data": status})

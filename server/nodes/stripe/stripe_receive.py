@@ -67,8 +67,18 @@ class StripeReceiveNode(WebhookTriggerNode):
     async def _check_precondition(self) -> Optional[str]:
         from ._source import get_listen_source
 
-        if not get_listen_source()._started:
-            return "Stripe daemon not running. Add Stripe API key in Credentials and connect."
+        source = get_listen_source()
+        if source._started:
+            return None
+        # Deploying a stripeReceive workflow IS the demand signal: start the
+        # listen daemon here instead of relying on a credential-triggered
+        # auto-start at boot (the status refresh is a passive probe now).
+        if not await source.has_credential():
+            return "Stripe not connected. Add Stripe API key in Credentials and connect."
+        result = await source.start()
+        if not (result or {}).get("success", False):
+            error = (result or {}).get("error") or "unknown error"
+            return f"Stripe daemon failed to start: {error}"
         return None
 
     def shape_output(self, event: WorkflowEvent) -> Dict:
