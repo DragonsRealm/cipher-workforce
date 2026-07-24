@@ -354,20 +354,25 @@ class ChatUnifier:
         proxy_url: Optional[str],
         sdk_max_retries: int,
     ) -> str:
-        credential_fingerprint = fingerprint_credential(api_key)
         material = json.dumps(
             {
                 "provider": spec.name,
                 "proxy_url": proxy_url or "",
                 "client_kwargs": spec.client_kwargs,
-                "credential": credential_fingerprint,
                 "max_retries": max(0, int(sdk_max_retries)),
             },
             sort_keys=True,
             separators=(",", ":"),
             default=str,
         )
-        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+        # The credential component is appended as a PBKDF2 fingerprint rather
+        # than folded into the SHA-256 material: credential-derived bytes must
+        # never enter a fast hash (CodeQL py/weak-sensitive-data-hashing).
+        return (
+            hashlib.sha256(material.encode("utf-8")).hexdigest()
+            + ":"
+            + fingerprint_credential(api_key)
+        )
 
     @staticmethod
     async def _close_client(client: LLMProvider) -> None:

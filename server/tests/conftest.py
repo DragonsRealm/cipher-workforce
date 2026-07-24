@@ -121,6 +121,18 @@ sys.modules["core.auth_cookies"] = _auth_cookies_mod
 _auth_cookies_spec.loader.exec_module(_auth_cookies_mod)
 setattr(_core_pkg, "auth_cookies", _auth_cookies_mod)
 
+# core.encryption depends only on stdlib + cryptography, and its
+# fingerprint_credential is imported at module load by services.llm.unifier
+# and services.memory.vector_store, so expose the real module.
+_encryption_spec = _importlib_util.spec_from_file_location(
+    "core.encryption",
+    SERVER_DIR / "core" / "encryption.py",
+)
+_encryption_mod = _importlib_util.module_from_spec(_encryption_spec)
+sys.modules["core.encryption"] = _encryption_mod
+_encryption_spec.loader.exec_module(_encryption_mod)
+setattr(_core_pkg, "encryption", _encryption_mod)
+
 # core.paths — central path resolution. Stub the public surface with
 # tmpdir-rooted Paths so plugin module imports don't trip over the
 # real ``Path.home()`` lookup during test collection. Tests that
