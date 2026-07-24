@@ -45,13 +45,9 @@ _SANCTIONED: List[Tuple[str, str]] = [
     ("main.py", "_startup_log"),
     ("core/container.py", "_clog"),
     ("nodes/code/python_executor/__init__.py", "captured_print"),
-    # Temporal CLI shims — supervised subprocess + build-time installer.
-    # These run BEFORE the structlog pipeline is configured in their own
-    # subprocess (same role as ``_startup_log`` / ``_clog`` for the main
-    # process). Stdout markers are consumed by the supervisor's
-    # line-prefixer (``cli/colors.py``), which adds the timestamp tag.
-    ("services/temporal/_supervised_runtime.py", "_run"),
-    ("services/temporal/_supervised_runtime.py", "main"),
+    # Build-time Temporal installer — runs in its own one-shot subprocess
+    # BEFORE the structlog pipeline is configured (same role as
+    # ``_startup_log`` / ``_clog`` for the main process).
     ("services/temporal/_install.py", "_main"),
 ]
 
@@ -87,8 +83,7 @@ def _enclosing_function_name(tree: ast.AST, target: ast.AST) -> str:
 
 def test_no_raw_prints_in_server_code() -> None:
     """Every ``print(`` call in server runtime code is in an allow-listed body."""
-    # Multimap: a single module may sanction multiple entry-point bodies
-    # (e.g. ``_supervised_runtime`` has both ``_run`` and ``main``).
+    # Multimap: a single module may sanction multiple entry-point bodies.
     sanctioned_map: dict[str, set[str]] = {}
     for rel, fn in _SANCTIONED:
         sanctioned_map.setdefault(rel.replace("\\", "/"), set()).add(fn)

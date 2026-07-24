@@ -6,8 +6,7 @@ import subprocess
 
 from cli._common import preflight
 from cli.colors import console
-from cli.platform_ import server_dir
-from cli.run import uv_run
+from cli.platform_ import server_dir, server_venv_python
 
 from . import app
 from ._state import detached_kwargs, log_file, pid_dir, pid_file, read_pid
@@ -29,7 +28,9 @@ def start_command() -> None:
     log = log_path.open("ab")
 
     proc = subprocess.Popen(
-        uv_run(
+        [
+            str(server_venv_python(root)),
+            "-m",
             "uvicorn",
             "main:app",
             "--host",
@@ -38,7 +39,7 @@ def start_command() -> None:
             str(backend_port),
             "--log-level",
             "warning",
-        ),
+        ],
         cwd=str(server_dir(root)),
         stdin=subprocess.DEVNULL,
         stdout=log,

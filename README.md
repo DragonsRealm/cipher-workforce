@@ -22,7 +22,7 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3000 and click the key icon (**API Credentials**) in the toolbar to connect your first AI provider.
+Open http://localhost:3010 and click the key icon (**API Credentials**) in the toolbar to connect your first AI provider.
 
 > **Upgrading from MachinaOS?** Existing `~/.machina` and checkout-local `.machina` state is detected when the new `.opencompany` location does not yet exist, so databases and deployment state are not stranded. The `machina` command remains available as a deprecated legacy alias; new scripts should use `company`.
 

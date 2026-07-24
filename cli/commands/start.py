@@ -2,11 +2,16 @@
 
 Production launcher: validates the build exists, runs the sqlalchemy
 preflight probe (Windows Defender workaround), frees configured ports,
-then spawns the static client + uvicorn + temporal-server (unless
-already running) under ``Manager.run()``.
+then spawns uvicorn under ``Manager.run()``. The backend serves the
+built SPA itself (the ``SERVE_STATIC_CLIENT`` block in
+``server/main.py``, on by default), so there is no separate static
+client process.
 
-WhatsApp's edgymeow Go binary is supervised by the Python backend
-(``server/nodes/whatsapp/_runtime.py``) so it does NOT appear here.
+Optional daemons are supervised by the Python backend, not here:
+WhatsApp's edgymeow binary (``server/nodes/whatsapp/_runtime.py``) and
+the Temporal dev server (``server/services/temporal/_runtime.py``,
+started from the backend lifespan when ``TEMPORAL_ENABLED`` and the
+configured address is loopback).
 """
 
 from __future__ import annotations
@@ -27,12 +32,10 @@ from cli.platform_ import (
     platform_name,
     server_dir,
     server_venv,
-    static_client_script,
+    server_venv_python,
 )
 from cli.buildenv import validate_build
-from cli.run import uv_run
 from cli.supervisor import Manager, ServiceSpec
-from cli.commands._temporal_specs import temporal_specs
 
 
 def _sqlalchemy_preflight(root: Path) -> None:
@@ -44,16 +47,13 @@ def _sqlalchemy_preflight(root: Path) -> None:
     clear remediation message instead of letting uvicorn hang silently.
     See ``docs-internal/errors.md`` #1 / #1a.
 
-    Runs the probe inside the server ``.venv`` through ``uv run`` with
-    ``cwd=server/`` so uv discovers ``server/pyproject.toml`` (the only
-    place uv-managed Python deps live -- root ``pyproject.toml`` is the
-    standalone CLI package). Same environment the supervised services
-    will use, no path-to-interpreter logic on this side.
+    Runs the probe with the server venv's interpreter -- the same one
+    the supervised backend spec uses.
     """
     started = time.monotonic()
     try:
         subprocess.run(
-            uv_run("python", "-c", "import sqlalchemy"),
+            [str(server_venv_python(root)), "-c", "import sqlalchemy"],
             cwd=str(server_dir(root)),
             timeout=15,
             check=True,
@@ -101,17 +101,6 @@ def _sqlalchemy_preflight(root: Path) -> None:
         )
 
 
-def _temporal_running(cfg) -> bool:
-    """Check whether a Temporal frontend is already listening on the
-    configured gRPC port. TCP probe instead of spawning a CLI -- works
-    without the legacy ``temporal-server`` npm wrapper (we install our
-    own binary via pooch at first boot of the supervised
-    ``TemporalServerRuntime``)."""
-    from cli.tcp import probe_tcp_port_sync
-
-    return probe_tcp_port_sync(cfg.temporal_port)
-
-
 def _read_version(root: Path) -> str:
     try:
         pkg = json.loads((root / "package.json").read_text(encoding="utf-8"))
@@ -120,7 +109,7 @@ def _read_version(root: Path) -> str:
         return "0.0.0"
 
 
-def _build_specs(root: Path, cfg, *, temporal_running: bool) -> list[ServiceSpec]:
+def _build_specs(root: Path, cfg) -> list[ServiceSpec]:
     # Bind host: ``OPENCOMPANY_BIND_HOST`` overrides the auto-pick. The
     # pre-rebrand ``MACHINA_BIND_HOST`` spelling remains a compatibility
     # hatch when the platform detection is wrong or the operator wants
@@ -134,18 +123,7 @@ def _build_specs(root: Path, cfg, *, temporal_running: bool) -> list[ServiceSpec
         or ("127.0.0.1" if IS_WINDOWS else "0.0.0.0")
     )
 
-    specs: list[ServiceSpec] = [
-        ServiceSpec(
-            name="client",
-            argv=["node", str(static_client_script(root))],
-            cwd=root,
-            ready_port=cfg.client_port,
-        ),
-        build_backend_spec(cfg, host=backend_host, root=root),
-    ]
-    if not temporal_running:
-        specs.extend(temporal_specs(root, cfg))
-    return specs
+    return [build_backend_spec(cfg, host=backend_host, root=root)]
 
 
 def start_command() -> None:
@@ -155,10 +133,6 @@ def start_command() -> None:
     validate_build(root, require_client_dist=True)
     _sqlalchemy_preflight(root)
 
-    temporal_running = _temporal_running(cfg)
-    if temporal_running:
-        console.print("[dim]Temporal already running, skipping[/]")
-
     console.log("Freeing ports...")
     free_all_ports(cfg)
     console.log("Ports ready")
@@ -166,13 +140,12 @@ def start_command() -> None:
     version = _read_version(root)
     console.print()
     console.print(f"  [bold]OpenCompany[/] v{version}")
-    console.print(f"  Frontend:  http://localhost:{cfg.client_port}")
-    console.print(f"  Backend:   http://localhost:{cfg.backend_port}")
+    console.print(f"  App:       http://localhost:{cfg.backend_port}  (API + WebSocket + SPA)")
     console.print(f"  Platform:  {platform_name()}")
     console.print()
 
     manager = Manager()
-    manager.add_all(_build_specs(root, cfg, temporal_running=temporal_running))
+    manager.add_all(_build_specs(root, cfg))
     rc = asyncio.run(manager.run())
     if rc != 0:
         raise typer.Exit(code=rc)

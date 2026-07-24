@@ -1,7 +1,8 @@
 """``company dev`` -- replaces ``scripts/dev.js``.
 
 Development launcher: validates the build, frees ports, then spawns
-Vite + uvicorn + temporal-server under ``Manager.run()``.
+Vite + uvicorn under ``Manager.run()``. The Temporal dev server is
+backend-owned (started from the lifespan when ``TEMPORAL_ENABLED``).
 
 The Vite dep cache (``client/node_modules/.vite``) is preserved across
 boots -- Vite self-invalidates it via the lockfile/config hashes in
@@ -34,11 +35,9 @@ from cli.config import load_dev_overrides
 from cli.platform_ import (
     node_modules_dir,
     platform_name,
-    static_client_script,
 )
 from cli.buildenv import validate_build
 from cli.supervisor import Manager, ServiceSpec
-from cli.commands._temporal_specs import temporal_specs
 
 
 def _has_vite(root: Path) -> bool:
@@ -50,26 +49,25 @@ def _has_vite(root: Path) -> bool:
 def _build_specs(
     root: Path, cfg, *, daemon: bool, use_vite: bool, force: bool = False
 ) -> list[ServiceSpec]:
-    if use_vite:
-        client_spec = ServiceSpec(
+    # Without Vite there is no separate client process: the backend
+    # serves the built SPA itself (``SERVE_STATIC_CLIENT`` in
+    # ``server/main.py``, on by default). The Temporal dev server is
+    # likewise backend-owned (started from the lifespan when enabled).
+    backend_host = "0.0.0.0" if daemon else "127.0.0.1"
+    server_spec = build_backend_spec(cfg, host=backend_host, root=root)
+    if not use_vite:
+        return [server_spec]
+    return [
+        ServiceSpec(
             name="client",
             argv=["pnpm", "run", "client:start"],
             cwd=root,
             ready_port=cfg.client_port,
             ready_timeout=60.0,
             env={"VITE_FORCE": "1"} if force else {},
-        )
-    else:
-        client_spec = ServiceSpec(
-            name="client",
-            argv=["node", str(static_client_script(root))],
-            cwd=root,
-            ready_port=cfg.client_port,
-        )
-
-    backend_host = "0.0.0.0" if daemon else "127.0.0.1"
-    server_spec = build_backend_spec(cfg, host=backend_host, root=root)
-    return [client_spec, server_spec, *temporal_specs(root, cfg)]
+        ),
+        server_spec,
+    ]
 
 
 def dev_command(
@@ -108,7 +106,9 @@ def dev_command(
     console.log("Ports ready")
 
     use_vite = _has_vite(root)
-    console.print(f"Client:   {'Vite dev server' if use_vite else 'Static server'}")
+    console.print(
+        f"Client:   {'Vite dev server' if use_vite else 'served by backend (built SPA)'}"
+    )
     if force:
         console.print("Vite:     forced dependency re-bundle (--force)")
     console.print()

@@ -141,9 +141,10 @@ class TestNoPluginRouterOutsideNodes:
     ``nodes/<plugin>/_router.py`` -- never in ``server/routers/``.
 
     ``server/routers/`` is reserved for cross-cutting routers
-    (auth, websocket, webhook, workflow, database, maps,
-    nodejs_compat, schemas, credentials). Maps/webhook are recorded
-    here as still-shared dispatchers pending a future design pass.
+    (auth, websocket, webhook, workflow, database, schemas,
+    credentials). Webhook is recorded here as a still-shared
+    dispatcher pending a future design pass. The legacy nodejs_compat
+    router was deleted in the July 2026 trim (nothing consumed it).
     """
 
     _MUST_NOT_EXIST = (
@@ -296,8 +297,8 @@ class TestStaleServiceFilesAbsent:
 
 class TestMainPyDoesNotMountPluginRouters:
     """``server/main.py`` mounts framework routers explicitly
-    (auth / websocket / workflow / database / maps / nodejs_compat /
-    schemas / credentials / webhook). Plugin routers flow in via the
+    (auth / websocket / workflow / database / schemas / credentials /
+    webhook). Plugin routers flow in via the
     ``for r in get_routers(): app.include_router(r)`` loop.
 
     Direct ``app.include_router(<plugin>.router)`` calls or

@@ -9,9 +9,8 @@ Centralises the four patterns that previously appeared inlined in
                                 loop; lazy-imports ``cli.ports`` so a
                                 broken ``psutil`` install doesn't take
                                 down the recovery verb.
-  - :func:`build_backend_spec` -- the shared ``uv_run("uvicorn", ...)``
-                                  ServiceSpec used by both ``start``
-                                  and ``dev``.
+  - :func:`build_backend_spec` -- the shared uvicorn ServiceSpec used
+                                  by both ``start`` and ``dev``.
   - :func:`error_block`      -- multi-line ``[red]Error: ...[/]``
                                 formatter; lazy-imports ``cli.colors``.
 
@@ -77,21 +76,25 @@ def build_backend_spec(
 ) -> "ServiceSpec":
     """The Python backend ``ServiceSpec`` shared by ``start`` and ``dev``.
 
-    Routes through :func:`cli.run.uv_run` so the standardised
-    ``uv run --no-sync`` flags stay in one place. ``host`` is the only
-    differentiator (``start`` picks ``127.0.0.1`` on Windows/WSL vs
-    ``0.0.0.0`` elsewhere; ``dev`` honours its ``--daemon`` flag).
+    Invokes the server venv's interpreter directly — the same idiom
+    ``company serve`` documents (no resident ``uv run`` parent process,
+    no runtime dependency on uv being on PATH; ``company build`` owns
+    sync semantics). ``host`` is the only differentiator (``start``
+    picks ``127.0.0.1`` on Windows/WSL vs ``0.0.0.0`` elsewhere;
+    ``dev`` honours its ``--daemon`` flag).
 
-    ``cli.run`` and ``cli.supervisor`` are lazy-imported so this module
-    stays importable when their transitive ``rich`` dep is missing --
-    ``company clean`` doesn't call this and shouldn't pay for it.
+    ``cli.supervisor`` is lazy-imported so this module stays importable
+    when its transitive ``rich`` dep is missing -- ``company clean``
+    doesn't call this and shouldn't pay for it.
     """
-    from cli.run import uv_run
+    from cli.platform_ import server_venv_python
     from cli.supervisor import ServiceSpec
 
     return ServiceSpec(
         name="server",
-        argv=uv_run(
+        argv=[
+            str(server_venv_python(root)),
+            "-m",
             "uvicorn",
             "main:app",
             "--host",
@@ -100,7 +103,7 @@ def build_backend_spec(
             str(cfg.backend_port),
             "--log-level",
             "warning",
-        ),
+        ],
         cwd=server_dir(root),
         ready_port=cfg.backend_port,
     )

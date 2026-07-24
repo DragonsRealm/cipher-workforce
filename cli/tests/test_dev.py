@@ -63,12 +63,12 @@ def test_build_specs_dev_uses_vite_when_available(tmp_path: Path):
     assert by_name["client"].argv[:3] == ["pnpm", "run", "client:start"]
 
 
-def test_build_specs_dev_falls_back_to_static_without_vite(tmp_path: Path):
+def test_build_specs_dev_without_vite_is_backend_only(tmp_path: Path):
+    # No Vite => no client process at all: the backend serves the built
+    # SPA itself (SERVE_STATIC_CLIENT in server/main.py, on by default).
     cfg = _cfg()
     specs = dev._build_specs(tmp_path, cfg, daemon=False, use_vite=False)
-    by_name = {s.name: s for s in specs}
-    assert by_name["client"].argv[0] == "node"
-    assert "serve-client.js" in by_name["client"].argv[1]
+    assert {s.name for s in specs} == {"server"}
 
 
 def test_build_specs_daemon_binds_0_0_0_0(tmp_path: Path):
@@ -85,7 +85,10 @@ def test_build_specs_non_daemon_binds_127_0_0_1(tmp_path: Path):
     assert "127.0.0.1" in server_argv
 
 
-def test_build_specs_dev_always_includes_temporal(tmp_path: Path):
+def test_build_specs_dev_has_no_temporal_spec(tmp_path: Path):
+    # The Temporal dev server is backend-owned: started from the FastAPI
+    # lifespan (services.temporal._runtime.ensure_started) when
+    # TEMPORAL_ENABLED and the configured address is loopback.
     cfg = _cfg()
     specs = dev._build_specs(tmp_path, cfg, daemon=False, use_vite=True)
-    assert any(s.name == "temporal" for s in specs)
+    assert not any(s.name == "temporal" for s in specs)

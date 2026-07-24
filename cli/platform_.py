@@ -106,6 +106,18 @@ def server_venv(root: Path | None = None) -> Path:
     return base / ".venv"
 
 
+def server_venv_python(root: Path | None = None) -> Path:
+    """The server venv's Python interpreter (respects
+    ``UV_PROJECT_ENVIRONMENT`` via :func:`server_venv`).
+
+    Long-running services spawn this directly; ``uv run`` would stay
+    resident as each child's parent and require uv on PATH at runtime.
+    One-shot build/sync commands keep using :func:`cli.run.uv_run`.
+    """
+    rel = "Scripts/python.exe" if IS_WINDOWS else "bin/python"
+    return server_venv(root) / rel
+
+
 def node_modules_dir(root: Path | None = None) -> Path:
     """The pnpm/npm-installed dependency tree at the workspace root."""
     return _root(root) / "node_modules"
@@ -115,12 +127,6 @@ def client_dist_entry(root: Path | None = None) -> Path:
     """The Vite-built client entrypoint -- proof that the client side
     of ``company build`` completed."""
     return _root(root) / "client" / "dist" / "index.html"
-
-
-def static_client_script(root: Path | None = None) -> Path:
-    """The Node.js static-server script that serves the built client
-    (used by ``company start``)."""
-    return _root(root) / "scripts" / "serve-client.js"
 
 
 # ---------------------------------------------------------------------------

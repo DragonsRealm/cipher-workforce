@@ -61,6 +61,10 @@ print('ENC='+secrets.token_hex(24))"
    single-port `serve` (API + WS + SPA, used by the Terraform path). This runbook's
    tested shape remains `company start` (static client on **:3000**, backend uvicorn
    on **:3010**) plus an nginx reverse proxy on :80/:443 — it works on every release.
+   **Releases after 0.0.95**: `company start` became single-port itself (uvicorn
+   serves the SPA on :3010; no :3000 static server). When upgrading a VM past
+   0.0.95, change the nginx `location /` block to `proxy_pass http://127.0.0.1:3010;`
+   (same target as `/api/`) and reload nginx.
 3. **Owner env seeding requires `>= 0.0.95`.** 0.0.88 ignored `MACHINA_OWNER_*`
    entirely. Since 0.0.95 the backend seeds the owner at startup from
    `OPENCOMPANY_OWNER_EMAIL` + `OPENCOMPANY_OWNER_PASSWORD` (>= 8 chars;

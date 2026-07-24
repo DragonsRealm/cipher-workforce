@@ -18,7 +18,7 @@ Wraps the official `temporal` CLI's `server start-dev` mode (per [docs.temporal.
 
 **Install:** Automated. `company build` step [6/6] runs `python -m services.temporal._install`, which uses `pooch` to download the official CLI archive from `https://temporal.download/cli/archive/latest?platform=<os>&arch=<arch>` into `<DATA_DIR>/packages/temporal/` (= `~/.opencompany/packages/temporal/` by default, on every OS — via `core.paths.package_dir("temporal")`). No npm package, no system install required.
 
-**Lifecycle:** Managed entirely by the CLI commands (`company start` / `company dev` / `company stop`) — there's no separate `temporal:start` npm script. The supervisor at [cli/supervisor.py](../cli/supervisor.py) spawns the official CLI via the supervised-runtime shim at [server/services/temporal/_supervised_runtime.py](../server/services/temporal/_supervised_runtime.py).
+**Lifecycle:** Backend-owned (July 2026): the FastAPI lifespan starts the dev server via `TemporalServerRuntime.ensure_started()` ([server/services/temporal/_runtime.py](../server/services/temporal/_runtime.py)) when `TEMPORAL_ENABLED` and the configured address is loopback; `shutdown_all_supervisors()` stops it at shutdown. The CLI no longer supervises Temporal (the `_supervised_runtime.py` shim and `cli/commands/_temporal_specs.py` were deleted); `company stop` still frees the Temporal ports.
 
 **Ports (declared in `.env.template`, freed by `company stop`'s port-kill pre-flight):**
 | Service | Port | Env var |

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from cli.commands import start
 from cli.config import Config, load_config
@@ -17,42 +16,31 @@ def _cfg() -> Config:
     return load_config()
 
 
-# The previous ``test_venv_python_*`` cases verified a custom helper
-# that walked ``server/.venv/{Scripts,bin}`` paths. That helper has been
-# retired: subprocess launchers now build their argv via
-# :func:`cli.run.uv_run`, which delegates interpreter selection to
-# ``uv run`` (https://docs.astral.sh/uv/reference/cli/#uv-run). Nothing
-# platform-specific to assert from the CLI side anymore.
+# ``start`` supervises exactly one process: uvicorn, spawned via the
+# server venv's interpreter (see ``cli.platform_.server_venv_python``).
+# The backend serves the built SPA itself (SERVE_STATIC_CLIENT) and
+# owns the Temporal dev server + other optional daemons from its
+# lifespan, so no client/temporal specs exist on the CLI side.
 
 
-def test_temporal_running_false_when_port_closed():
-    # TCP-probe based check: returns False when nothing is listening on
-    # the configured gRPC port. Mock the probe directly instead of the
-    # legacy subprocess-spawn implementation.
+def test_build_specs_is_backend_only(tmp_path: Path):
     cfg = _cfg()
-    with patch("cli.tcp.probe_tcp_port_sync", return_value=False):
-        assert start._temporal_running(cfg) is False
+    specs = start._build_specs(tmp_path, cfg)
+    assert {s.name for s in specs} == {"server"}
 
 
-def test_build_specs_skips_temporal_when_already_running(tmp_path: Path):
+def test_build_specs_backend_uses_venv_interpreter(tmp_path: Path):
+    from cli.platform_ import server_venv_python
+
     cfg = _cfg()
-    specs = start._build_specs(tmp_path, cfg, temporal_running=True)
-    assert {s.name for s in specs} == {"client", "server"}
-
-
-def test_build_specs_includes_temporal_when_not_running(tmp_path: Path):
-    cfg = _cfg()
-    specs = start._build_specs(tmp_path, cfg, temporal_running=False)
-    names = {s.name for s in specs}
-    # Backend-agnostic: sqlite yields {"client", "server", "temporal"};
-    # postgres yields {"client", "server", "postgres", "temporal"}.
-    assert {"client", "server", "temporal"} <= names
+    specs = start._build_specs(tmp_path, cfg)
+    server = next(s for s in specs if s.name == "server")
+    assert server.argv[0] == str(server_venv_python(tmp_path))
+    assert server.argv[1:4] == ["-m", "uvicorn", "main:app"]
 
 
 def test_build_specs_assigns_ready_ports(tmp_path: Path):
     cfg = _cfg()
-    specs = start._build_specs(tmp_path, cfg, temporal_running=False)
+    specs = start._build_specs(tmp_path, cfg)
     by_name = {s.name: s for s in specs}
-    assert by_name["client"].ready_port == cfg.client_port
     assert by_name["server"].ready_port == cfg.backend_port
-    assert by_name["temporal"].ready_port == cfg.temporal_port

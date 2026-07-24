@@ -7,7 +7,7 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3000
+Open http://localhost:3010
 
 ## CLI Commands (`company`, Python Typer app under `cli/`)
 
@@ -20,8 +20,8 @@ deprecation warning; kept for upgrade compatibility).
 
 | Command | Description |
 |---------|-------------|
-| `company start` | Start all services in production mode (static client + uvicorn + temporal) |
-| `company dev` | Start in dev mode (Vite HMR + uvicorn + temporal). `--force` re-bundles Vite deps (recovers "Outdated Optimize Dep"); `--daemon` binds backend to 0.0.0.0 |
+| `company start` | Production mode, single port: uvicorn serves API + WS + built SPA on :3010. Optional daemons (Temporal dev server, WhatsApp) are backend-owned, started from the lifespan when enabled |
+| `company dev` | Start in dev mode (Vite HMR + uvicorn). `--force` re-bundles Vite deps (recovers "Outdated Optimize Dep"); `--daemon` binds backend to 0.0.0.0 |
 | `company serve` | Single-port production runtime (uvicorn serves API + WS + built SPA + Node sidecar) — the systemd `ExecStart` on deployed VMs |
 | `company stop` | Stop all services and free configured ports |
 | `company build` | Full production build (pnpm install → client → sidecar → uv sync → bytecode → temporal binary). Step [0/6] scaffolds `.env` from `.env.template` when missing, generating fresh random secrets (`secrets.token_hex(24)`) for `SECRET_KEY` / `JWT_SECRET_KEY` / `API_KEY_ENCRYPTION_KEY` instead of the dev placeholders; an existing `.env` is untouched |
@@ -90,8 +90,10 @@ Temporal server lifecycle is managed by `company start` / `company dev` / `compa
 | `install.js` | npm-tarball install pipeline (pnpm/uv install, client + sidecar build, bytecode compile, temporal binary fetch) — mirrors `company build`; the compileall command shape is locked in sync by `cli/tests/test_release_pipeline_config.py` |
 | `preinstall.js` | Legacy-package/temp cleanup (also runs on uninstall) |
 | `postinstall.js` | npm lifecycle entry that guards recursion and invokes install.js |
-| `serve-client.js` | Static client server used by `company start` (production mode, no Vite) |
 | `migrate_icons.py`, `migrate_skill_icons.py` | One-off icon-migration utilities (historical) |
+
+(`serve-client.js` was retired July 2026: `company start` is single-port —
+the backend serves the built SPA itself via `SERVE_STATIC_CLIENT`.)
 
 There is no Docker tooling: Docker Compose support was removed
 (historical topology preserved in

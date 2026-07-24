@@ -177,6 +177,17 @@ class TemporalServerRuntime(BaseProcessSupervisor):
         # OpenCompany uses for every other supervised TCP service.
         return await _probe_tcp_port(self.settings.temporal_frontend_grpc_port)
 
+    async def ensure_started(self) -> None:
+        """Start the dev server unless the gRPC port is already served.
+
+        A listening port means either a previously spawned instance or an
+        externally managed Temporal server — both are left alone. Idempotent
+        like ``start()``; callers may invoke it on every reconnect attempt.
+        """
+        if await _probe_tcp_port(self.settings.temporal_frontend_grpc_port):
+            return
+        await self.start()
+
     def _extra_status(self) -> dict[str, Any]:
         base = super()._extra_status()
         return {

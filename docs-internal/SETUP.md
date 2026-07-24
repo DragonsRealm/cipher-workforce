@@ -4,7 +4,7 @@
 
 ```
 OpenCompany/
-├── client/                 # React frontend (port 3000)
+├── client/                 # React frontend (Vite dev server on port 3000; production build served by the backend)
 │   ├── src/
 │   └── package.json
 ├── server/                 # Python FastAPI backend (port 3010)
@@ -25,7 +25,8 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3000
+Open http://localhost:3010 — `company start` is single-port (API +
+WebSocket + built SPA on the backend port).
 
 ### Local Development (from source)
 
@@ -47,22 +48,16 @@ the embedding node and long-term memory, install the optional extra:
 cd server && uv sync --extra local-embeddings
 ```
 
-### Docker
+Services (production `company start`):
+- **App (API + WS + SPA)**: http://localhost:3010
+- **WhatsApp Service**: http://localhost:9400 (backend-spawned on demand)
+- **Temporal dev server**: gRPC :7233, Web UI :8080 (backend-spawned when `TEMPORAL_ENABLED`)
 
-```bash
-git clone https://github.com/zeenie-ai/OpenCompany.git OpenCompany
-cd OpenCompany
-npm run docker:up
-```
-
-Services will be available at:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3010
-- **WhatsApp Service**: http://localhost:9400
+`company dev` additionally runs the Vite HMR client at http://localhost:3000.
 
 ## Services Overview
 
-### Frontend (React - Port 3000)
+### Frontend (React — Vite dev port 3000, production served by the backend on 3010)
 - React 19 with TypeScript
 - React Flow for workflow canvas
 - Zustand for state management
@@ -89,8 +84,8 @@ Services will be available at:
 
 ### Temporal Server (Distributed Execution)
 - Provides durable workflow execution with per-node retry and horizontal scaling
-- Official `temporal` CLI downloaded by `pooch` from `https://temporal.download/cli/archive/latest` on `company build` (or first `company start`)
-- Supervised by OpenCompany as `temporal server start-dev` — single process, SQLite at `~/.opencompany/temporal.db`
+- Official `temporal` CLI downloaded by `pooch` from `https://temporal.download/cli/archive/latest` on `company build` (or first backend boot with Temporal enabled)
+- Backend-owned: the FastAPI lifespan starts `temporal server start-dev` via `TemporalServerRuntime.ensure_started()` when `TEMPORAL_ENABLED` and the configured address is loopback (external clusters are detected via TCP probe and left alone) — SQLite at `~/.opencompany/temporal.db`
 - Ports: gRPC 7233, Web UI 8080
 - Embedded worker runs inside Python backend (`TemporalWorkerManager` in `main.py`)
 - Workflow auto-resumption disabled at startup (history preserved); see `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP`
@@ -142,16 +137,9 @@ When `VITE_AUTH_ENABLED=false` (the default):
 - API keys can be saved/retrieved without user authentication
 - Useful for local development and testing
 
-## Docker Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run docker:up` | Start containers |
-| `npm run docker:down` | Stop containers |
-| `npm run docker:logs` | View logs |
-| `npm run docker:build` | Rebuild images |
-
 **Redis (optional):** Set `REDIS_ENABLED=true` in `.env`
+(Docker Compose tooling was removed; the historical topology is in
+[deployment_legacy.md](./deployment_legacy.md).)
 
 ## Local Commands
 
@@ -185,16 +173,9 @@ uv export --frozen --no-emit-project --no-hashes --no-dev -o requirements.txt
 ```
 
 ### Database issues
-SQLite database is created automatically at `server/workflow.db`.
-Delete the database file to reset all data.
-
-### Docker containers won't start
-Check logs and rebuild:
-```bash
-docker-compose logs -f
-docker-compose down
-docker-compose up --build -d
-```
+SQLite databases are created automatically under `DATA_DIR`
+(`~/.opencompany/` by default; `<repo>/.opencompany/` in dev mode).
+Delete `workflow.db` there to reset all data.
 
 ## Development Workflow
 
@@ -205,7 +186,7 @@ docker-compose up --build -d
 
 ## Architecture Notes
 
-- **WebSocket-First**: 25 message handlers replace most REST APIs
+- **WebSocket-First**: WS message handlers replace most REST APIs (live set = `MESSAGE_HANDLERS` in `server/routers/websocket.py` + plugin-registered handlers)
 - **n8n-inspired**: Node definitions follow n8n INodeProperties pattern
 - **Cache Fallback**: Redis (production) → SQLite (dev) → Memory
 - **Event-Driven**: Trigger nodes use asyncio.Future for event waiting

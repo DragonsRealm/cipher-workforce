@@ -28,14 +28,7 @@ import typer
 from cli._common import preflight
 from cli.buildenv import validate_build
 from cli.colors import console
-from cli.platform_ import IS_WINDOWS, server_dir, server_venv
-
-
-def _venv_python(root: Path | None = None) -> str:
-    """Absolute path to the server venv's Python interpreter."""
-    venv = server_venv(root)
-    rel = "Scripts/python.exe" if IS_WINDOWS else "bin/python"
-    return str(venv / rel)
+from cli.platform_ import server_dir, server_venv_python
 
 
 def serve_command(port: int | None = None) -> None:
@@ -67,7 +60,7 @@ def serve_command(port: int | None = None) -> None:
         ServiceSpec(
             name="server",
             argv=[
-                _venv_python(root),
+                str(server_venv_python(root)),
                 "-m",
                 "uvicorn",
                 "main:app",

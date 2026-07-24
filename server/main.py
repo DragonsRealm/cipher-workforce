@@ -59,7 +59,7 @@ _startup_log("Importing DI container + all services...")
 from core.container import container
 
 _startup_log("Importing routers...")
-from routers import workflow, database, nodejs_compat, websocket, webhook, auth, credentials, schemas
+from routers import workflow, database, websocket, webhook, auth, credentials, schemas
 
 _startup_log("All imports complete")
 
@@ -138,7 +138,6 @@ async def lifespan(app: FastAPI):
         modules=[
             "routers.workflow",
             "routers.database",
-            "routers.nodejs_compat",
             "routers.websocket",
             "routers.webhook",
             "routers.auth",
@@ -327,9 +326,22 @@ async def lifespan(app: FastAPI):
             unwired after an initial failed connect.
             """
             temporal_client_wrapper = container.temporal_client()
+            # Loopback address => this process owns the SQLite dev server,
+            # via the same BaseSupervisor singleton pattern as the WhatsApp
+            # runtime (teardown is covered by shutdown_all_supervisors()).
+            # Remote/production clusters are never spawned at.
+            _tp_host = settings.temporal_server_address.rsplit(":", 1)[0].strip("[]")
+            _owns_dev_server = _tp_host in ("localhost", "127.0.0.1", "::1")
             attempt = 0
             while True:
                 attempt += 1
+                if _owns_dev_server:
+                    from services.temporal._runtime import get_temporal_server_runtime
+
+                    try:
+                        await get_temporal_server_runtime().ensure_started()
+                    except Exception as dev_exc:  # noqa: BLE001 — connect loop retries
+                        _startup_log(f"[Temporal] Dev server start failed (attempt {attempt}): {dev_exc}")
                 client = await temporal_client_wrapper.connect(retries=1, delay=0)
                 if client is None:
                     # Surface every failed attempt to stdout so users can see
@@ -595,7 +607,6 @@ app.add_middleware(
 # folder's ``__init__.py`` and are mounted via the loop below — main.py
 # never imports a migrated plugin module by name.
 app.include_router(auth.router)  # Auth routes (login, register, logout, status)
-app.include_router(nodejs_compat.router)  # Node.js compatibility (includes root endpoints)
 app.include_router(workflow.router)
 app.include_router(database.router)
 app.include_router(websocket.router)
@@ -720,11 +731,11 @@ async def health_check():
 # Single-port SPA serving (container / Cloud Run)
 # ---------------------------------------------------------------------------
 #
-# In the containerised deployment one uvicorn process must front the API,
-# the WebSocket, AND the built React client on a single port ($PORT). The
-# CLI dev/start path serves the client from a separate node static server
-# (scripts/serve-client.js), so this block is gated on the dist existing +
-# SERVE_STATIC_CLIENT so local ``company dev`` is unaffected.
+# One uvicorn process fronts the API, the WebSocket, AND the built React
+# client. This is the only static-serving path: ``company start`` and the
+# containerised deployment both rely on it (``company dev`` uses Vite for
+# HMR instead). Gated on the dist existing + SERVE_STATIC_CLIENT (default
+# on) so a dist-less dev checkout is unaffected.
 #
 # Registered LAST so every real API / WS / mounted route above wins; this
 # only catches otherwise-unmatched GET paths and returns the SPA shell for
@@ -740,18 +751,8 @@ _SERVE_STATIC = _spa_os.environ.get("SERVE_STATIC_CLIENT", "true").lower() in ("
 _NON_SPA_PREFIXES = ("api/", "ws/", "webhook/", "mcp/", "health", "docs", "redoc", "openapi.json")
 
 if _SERVE_STATIC and (_CLIENT_DIST / "index.html").is_file():
-    # The nodejs-compat router registers an informational ``GET /`` JSON shim
-    # that would shadow the SPA at the root. In the container the SPA must own
-    # "/", so drop that single route before installing the fallback. Its
-    # ``/api/*`` routes are untouched.
-    from starlette.routing import Route as _Route
-
-    app.router.routes = [
-        _r
-        for _r in app.router.routes
-        if not (isinstance(_r, _Route) and _r.path == "/" and "GET" in (_r.methods or set()))
-    ]
-
+    # The SPA owns "/" — no other GET "/" route exists (the legacy
+    # nodejs-compat router that used to shadow it was removed entirely).
     _assets_dir = _CLIENT_DIST / "assets"
     if _assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
