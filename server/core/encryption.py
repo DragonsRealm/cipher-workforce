@@ -11,15 +11,43 @@ Security:
 """
 
 import base64
+import hashlib
 import logging
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 logger = logging.getLogger(__name__)
+
+# Deterministic credential fingerprinting for in-memory cache keys. The salt is
+# a fixed context string (not a secret): fingerprints must be stable across
+# processes and restarts, so a random per-process salt would break cache-key
+# identity. PBKDF2 (not plain SHA-256) because credentials require a
+# computationally expensive hash (CodeQL py/weak-sensitive-data-hashing);
+# results are memoized so the KDF cost is paid once per credential per process.
+_FINGERPRINT_SALT = b"opencompany-credential-fingerprint-v1"
+_fingerprint_cache: Dict[str, str] = {}
+
+
+def fingerprint_credential(credential: str) -> str:
+    """Stable hex fingerprint of a credential (API key, token) for cache keys.
+
+    Never use for password verification storage; this is for deriving
+    non-reversible in-memory cache-key components from credentials.
+    """
+    cached = _fingerprint_cache.get(credential)
+    if cached is None:
+        cached = hashlib.pbkdf2_hmac(
+            "sha256",
+            credential.encode("utf-8"),
+            _FINGERPRINT_SALT,
+            EncryptionService.PBKDF2_ITERATIONS,
+        ).hex()
+        _fingerprint_cache[credential] = cached
+    return cached
 
 
 class EncryptionService:

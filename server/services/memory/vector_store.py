@@ -8,7 +8,6 @@ model construction and encoding run through :func:`asyncio.to_thread`.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import importlib.util
 import inspect
 import math
@@ -18,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Literal, Optional, Protocol
 from uuid import uuid4
 
+from core.encryption import fingerprint_credential
 from core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -482,7 +482,7 @@ class NativeMemoryVectorStore:
 def _credential_fingerprint(api_key: Optional[str]) -> str:
     if not api_key:
         return "none"
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    return fingerprint_credential(api_key)[:16]
 
 
 async def get_memory_vector_store(

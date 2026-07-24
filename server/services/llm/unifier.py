@@ -20,6 +20,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from core.encryption import fingerprint_credential
 from core.logging import get_logger
 from services.llm.protocol import (
     LLMError,
@@ -353,9 +354,7 @@ class ChatUnifier:
         proxy_url: Optional[str],
         sdk_max_retries: int,
     ) -> str:
-        credential_fingerprint = hashlib.sha256(
-            api_key.encode("utf-8")
-        ).hexdigest()
+        credential_fingerprint = fingerprint_credential(api_key)
         material = json.dumps(
             {
                 "provider": spec.name,
