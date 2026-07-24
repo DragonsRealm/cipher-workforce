@@ -140,6 +140,14 @@
   "geminiChatModel": {
     "icon": "lobehub:gemini"
   },
+  "gcloud": {
+    "icon": "lobehub:googlecloud",
+    "color": "#4285F4"
+  },
+  "gcloudAction": {
+    "icon": "lobehub:googlecloud",
+    "skill": "gcloud-skill"
+  },
   "github": {
     "icon": "lobehub:Github",
     "color": "#8250df"

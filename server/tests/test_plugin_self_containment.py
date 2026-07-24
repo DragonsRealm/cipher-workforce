@@ -62,6 +62,7 @@ _MIGRATED_PLUGINS = (
     "cloudflare",
     "code",
     "email",
+    "gcloud",
     "github",
     "google",
     "stripe",
@@ -76,6 +77,7 @@ _MIGRATED_PLUGINS = (
 _PLUGINS_WITH_HANDLERS = (
     "android",
     "cloudflare",
+    "gcloud",
     "github",
     "google",
     "stripe",
