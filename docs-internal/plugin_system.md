@@ -1286,7 +1286,7 @@ project that publishes pre-built binaries via GitHub releases.
 | Status refresh on WS connect | `make_status_refresh(source, status_key, broadcast_type)` | nothing — auto-derived from source |
 | CLI subprocess invocation | `run_cli_command(binary=…, argv=…, credential=…)` | nothing — credential injection is automatic |
 | Credentials Modal panel | `server/config/credential_providers.json` (read by `services.credential_registry`) | one provider entry: name, category, color, `kind: "oauth"`, `icon_ref`, `status_hook`, `ws.{login,logout,status}` handler names, fields list, instructions string. Frontend modal renders it automatically — no React file edits. |
-| AI tool surface | `services/ai.py` `DEFAULT_TOOL_NAMES` + `DEFAULT_TOOL_DESCRIPTIONS` | one row per dual-purpose ActionNode mapping `<nodeType>` → `<snake_case_of_node_type>` |
+| AI tool surface | per-plugin `tool_name` / `tool_description` ClassVars resolved via the node registry (Wave 12 D5 retired the `services/ai.py` `DEFAULT_TOOL_NAMES` / `DEFAULT_TOOL_DESCRIPTIONS` dicts — reintroduction is blocked by `tests/test_tool_registry.py`) | `tool_name` + `tool_description` on the dual-purpose ActionNode, plus a row in `tests/fixtures/tool_names_snapshot.json` locking the name |
 | Skill (LLM teaching markdown) | `server/skills/<agent>/<skill-name>/SKILL.md` (auto-discovered by `SkillLoader`) | the markdown itself, plus the linkage in `visuals.json` (`"<nodeType>": { ..., "skill": "<skill-name>" }`) |
 | Connection state surfaced to the modal (CLI-managed auth) | `auth_service.store_oauth_tokens(provider, "cli-managed", "cli-managed")` + `StatusBroadcaster.broadcast_credential_event` (CloudEvents v1.0 envelope wrapping `WorkflowEvent`; locked by `tests/credentials/test_credential_broadcasts.py`) | `_mark_logged_in` / `_mark_logged_out` helper pair; one `broadcaster.broadcast_credential_event("credential.oauth.connected", provider="<id>")` after login and `…disconnected` after logout. Same shape Twitter / Google logout use. |
 | Auto-install of an external CLI binary | `_install.py` with `ensure_<cli>_cli()` + GitHub-releases asset map | pinned `_VERSION` constant, `(system, machine) -> (asset, kind, member)` table, and an override on `DaemonEventSource.start()` that `await`s the helper before `super().start()` (also set `binary_name = ""` to skip the framework's `shutil.which` pre-check) |
@@ -1300,7 +1300,7 @@ the skill icon resolver to find their target:
 |---|---|---|
 | Plugin node `type` | camelCase | `stripeAction` |
 | `visuals.json` key | matches node `type` (camelCase) | `"stripeAction": { "icon": "asset:stripe", ... }` |
-| `services/ai.py` `DEFAULT_TOOL_NAMES[<type>]` | snake_case of node type | `"stripeAction": "stripe_action"` |
+| Plugin `tool_name` ClassVar (snapshot: `tests/fixtures/tool_names_snapshot.json`) | snake_case of node type | `tool_name = "stripe_action"` |
 | Skill `allowed-tools` token | matches the LLM tool name above | `allowed-tools: "stripe_action"` |
 
 `SkillLoader._parse_skill_metadata` runs each `allowed-tools` token

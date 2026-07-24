@@ -202,7 +202,13 @@ When the CLI's OAuth grant is a fixed scope set (cf: 86 scopes, no
 `--scopes`), pair it with an optional API-token field (vercel dual-path)
 as the documented full-scope escape. Reference:
 [`server/nodes/cloudflare/`](../server/nodes/cloudflare/) +
-[cloudflare_service.md](./cloudflare_service.md).
+[cloudflare_service.md](./cloudflare_service.md). gcloud is the second
+reference for this variant (`gcloud auth login --quiet`; random
+loopback port, so no fixed-port collision — the single-flight guard is
+kept anyway to prevent duplicate browser tabs, and it adds a pinned
+`CLOUDSDK_CONFIG` dir so node auth state never touches the operator's
+own gcloud config): [`server/nodes/gcloud/`](../server/nodes/gcloud/) +
+[gcloud_service.md](./gcloud_service.md).
 
 ## What auto-wires (don't write it yourself)
 

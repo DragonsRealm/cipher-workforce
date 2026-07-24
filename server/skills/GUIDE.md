@@ -23,6 +23,7 @@ server/skills/
 ├── coding_agent/             # Code execution skills
 │     python-skill, javascript-skill, monty-skill, file-read-skill,
 │     file-modify-skill, fs-search-skill
+├── gcloud/                   # gcloud-skill (Google Cloud CLI)
 ├── github/                   # github-skill (gh CLI)
 ├── payments_agent/           # stripe-skill
 ├── productivity_agent/       # Google Workspace skills
@@ -94,7 +95,7 @@ Provide usage guidelines, examples, and constraints.
 |-------|----------|-------------|
 | `name` | Yes | Lowercase, hyphens only. Must match pattern `^[a-z0-9]+(-[a-z0-9]+)*$` |
 | `description` | Yes | One-line summary shown in skill lists and to the LLM |
-| `allowed-tools` | No | Space-delimited list of LLM-facing tool names (snake_case, e.g. `stripe_action`, `apify_actor`, `whatsapp_send`). The first token whose snake→camel conversion (`stripe_action` → `stripeAction`) matches a node `type` in `server/nodes/visuals.json` becomes the skill's visual source — its icon/color come from that entry via the `_visuals` handler. **Convention:** the LLM tool name MUST be the snake_case form of the node type (e.g. `stripeAction` → `stripe_action`). The same string goes into `services/ai.py` `DEFAULT_TOOL_NAMES` so the LLM and the skill agree on the name. Mismatching the snake_case (e.g. `stripe_cli` for a `stripeAction` node) silently breaks icon resolution. |
+| `allowed-tools` | No | Space-delimited list of LLM-facing tool names (snake_case, e.g. `stripe_action`, `apify_actor`, `whatsapp_send`). The first token whose snake→camel conversion (`stripe_action` → `stripeAction`) matches a node `type` in `server/nodes/visuals.json` becomes the skill's visual source — its icon/color come from that entry via the `_visuals` handler. **Convention:** the LLM tool name MUST be the snake_case form of the node type (e.g. `stripeAction` → `stripe_action`). The same string is the plugin's `tool_name` ClassVar (locked by `server/tests/fixtures/tool_names_snapshot.json`) so the LLM and the skill agree on the name. Mismatching the snake_case (e.g. `stripe_cli` for a `stripeAction` node) silently breaks icon resolution. |
 | `metadata` | No | Arbitrary key-value pairs (author, version, category). **Don't set `icon`/`color` for skills that target a node** — those are resolved from the target node's `visuals.json` entry so the skill always mirrors the canvas. Skills with no node target (personality skills, memory operators, autonomous patterns) **may** set inline `icon` and `color` — they're the only visual source for those. |
 
 ### Name Format Rules
@@ -113,7 +114,7 @@ Three places have to agree for a skill's icon to render correctly:
 |---|---|---|
 | Plugin node `type` (in `<plugin>.py`) | camelCase | `stripeAction` |
 | `server/nodes/visuals.json` key | camelCase (= node type) | `"stripeAction": { "icon": "asset:stripe", ... }` |
-| `server/services/ai.py` `DEFAULT_TOOL_NAMES` value | snake_case (LLM tool name) | `"stripeAction": "stripe_action"` |
+| Plugin `tool_name` ClassVar (snapshot: `tests/fixtures/tool_names_snapshot.json`) | snake_case (LLM tool name) | `tool_name = "stripe_action"` |
 | Skill `allowed-tools` | snake_case (matches the LLM tool name) | `allowed-tools: "stripe_action"` |
 
 The skill resolver (`SkillLoader._parse_skill_metadata`) takes each `allowed-tools` token, runs snake→camel (`stripe_action` → `stripeAction`), and looks it up in `visuals.json`. If the conversion doesn't equal the node type, no icon resolves and the skill renders without one.
