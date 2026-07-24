@@ -178,7 +178,7 @@ class TestJavascriptExecutor:
         )
 
         with patch(
-            "nodes.code._nodejs.get_nodejs_client",
+            "nodes.code._nodejs.acquire_client",
             return_value=fake_client,
         ):
             result = await harness.execute(
@@ -217,7 +217,7 @@ class TestJavascriptExecutor:
         )
 
         with patch(
-            "nodes.code._nodejs.get_nodejs_client",
+            "nodes.code._nodejs.acquire_client",
             return_value=fake_client,
         ):
             result = await harness.execute("javascriptExecutor", {"code": "oops"})
@@ -231,7 +231,7 @@ class TestJavascriptExecutor:
         fake_client.execute = AsyncMock(side_effect=ConnectionRefusedError("Cannot connect to host localhost:5680"))
 
         with patch(
-            "nodes.code._nodejs.get_nodejs_client",
+            "nodes.code._nodejs.acquire_client",
             return_value=fake_client,
         ):
             result = await harness.execute("javascriptExecutor", {"code": "output = 1"})
@@ -258,7 +258,7 @@ class TestTypescriptExecutor:
         )
 
         with patch(
-            "nodes.code._nodejs.get_nodejs_client",
+            "nodes.code._nodejs.acquire_client",
             return_value=fake_client,
         ):
             result = await harness.execute(
@@ -289,7 +289,7 @@ class TestTypescriptExecutor:
         )
 
         with patch(
-            "nodes.code._nodejs.get_nodejs_client",
+            "nodes.code._nodejs.acquire_client",
             return_value=fake_client,
         ):
             result = await harness.execute("typescriptExecutor", {"code": "output = foo"})

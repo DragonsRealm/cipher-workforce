@@ -109,6 +109,7 @@ _FORBIDDEN_IMPORT_FRAGMENTS = (
     "services.claude_code_service",
     "services.maps",  # Wave 11.I, N: -> nodes/location/_service
     "services.node_option_loaders",  # Wave 11.I, M: -> nodes/<plugin>/_option_loaders
+    "services.nodejs_client",  # July 2026: -> nodes/code/_client (plugin-owned)
     "routers.twitter",
     "routers.google",
     "routers.android",
@@ -273,6 +274,7 @@ _STALE_SERVICE_PATHS = (
     "services/websocket_client.py",  # dead re-export shim, deleted in E
     "services/maps.py",  # Wave 11.I, N: -> nodes/location/_service.py
     "services/node_option_loaders",  # Wave 11.I, M: -> nodes/<plugin>/_option_loaders.py
+    "services/nodejs_client.py",  # July 2026: -> nodes/code/_client.py (plugin-owned)
     "routers/twitter.py",
     "routers/google.py",
     "routers/android.py",

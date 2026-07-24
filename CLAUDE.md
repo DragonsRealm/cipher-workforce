@@ -118,7 +118,6 @@ server/services/
 ├── parameter_resolver.py    # Template variable resolution
 ├── agent_team.py            # AgentTeamService for multi-agent coordination
 ├── model_registry.py        # ModelRegistryService - model constraints from OpenRouter + llm_defaults
-├── nodejs_client.py         # HTTP client for Node.js code executor
 ├── pricing.py               # LLM and API cost calculation (loads config/pricing.json)
 ├── markdown_formatter.py    # GFM markdown to platform-specific formatting (Telegram HTML, WhatsApp, plain)
 ├── ws_handler_registry.py   # Plugin-owned WS commands self-register here (Wave 11.H)
@@ -212,15 +211,15 @@ server/nodejs/                   # Persistent Node.js server for JS/TS execution
 OpenCompany can optionally integrate with the sibling **polyglot-server** repo (a plugin-registry microservice exposing REST + MCP + WebSocket). NOTE: the OpenCompany-side client/handler (`polyglot_client.py`, `handlers/polyglot.py`) are not currently present in the tree — this is a possible future integration, not wired. See [Polyglot Server](../polyglot-server/ARCHITECTURE.md).
 
 ### Node.js Code Executor
-Persistent Node.js server for JavaScript/TypeScript code execution, replacing subprocess spawning per execution.
+Persistent Node.js server for JavaScript/TypeScript code execution, replacing subprocess spawning per execution. **Plugin-owned (July 2026):** the sidecar is supervised by `nodes/code/_runtime.py` (`NodeJSExecutorRuntime`, same `BaseProcessSupervisor` pattern as WhatsApp/Temporal) and spawns on demand from `acquire_client()` on the first JS/TS node execution — in every run mode, with no CLI service wiring. Client + config are plugin-owned too (`nodes/code/_client.py`, `NODEJS_EXECUTOR_*` env vars; core `Settings` carries no executor fields).
 
 **Architecture:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Python Backend (port 5678)                  │
+│           Python Backend (PYTHON_BACKEND_PORT)               │
 │  ┌────────────────┐     HTTP/JSON      ┌──────────────────┐ │
 │  │ NodeJSClient   │◄──────────────────►│  Node.js Server  │ │
-│  │ (aiohttp)      │   localhost:5680   │  (Express + tsx) │ │
+│  │ (aiohttp)      │ NODEJS_EXECUTOR_PORT │ (Express + tsx)│ │
 │  └────────────────┘                    └──────────────────┘ │
 │         ▲                                                    │
 │         │                                                    │
@@ -242,7 +241,6 @@ server/nodejs/
     └── package.json
 
 server/services/
-└── nodejs_client.py          # Async HTTP client for Node.js server
 
 server/nodes/code/                # Executor plugins (javascript_executor, typescript_executor)
 ```
@@ -258,9 +256,9 @@ server/nodes/code/                # Executor plugins (javascript_executor, types
 **Environment Variables:**
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NODEJS_EXECUTOR_URL` | `http://localhost:5680` | Server URL for Python client |
+| `NODEJS_EXECUTOR_URL` | `http://localhost:${NODEJS_EXECUTOR_PORT}` | Server URL for Python client |
 | `NODEJS_EXECUTOR_TIMEOUT` | `30` | Request timeout in seconds |
-| `NODEJS_EXECUTOR_PORT` | `5680` | Server port |
+| `NODEJS_EXECUTOR_PORT` | see `.env.template` | Server port |
 | `NODEJS_EXECUTOR_HOST` | `localhost` | Server host |
 | `NODEJS_EXECUTOR_BODY_LIMIT` | `10mb` | Max request body size |
 
@@ -623,8 +621,8 @@ Node groups (palette categories): agent, model, skill, tool, trigger, workflow, 
 ## Backend Services
 
 ### Python Backend (FastAPI)
-- **Port**: 5678
-- **Base URL**: http://localhost:5678
+- **Port**: `PYTHON_BACKEND_PORT` (defaults in `.env.template`)
+- **Base URL**: `http://localhost:${PYTHON_BACKEND_PORT}`
 - **Main File**: `server/main.py`
 
 ### API Endpoints
@@ -687,7 +685,7 @@ Node groups (palette categories): agent, model, skill, tool, trigger, workflow, 
 
 ### Temporal Distributed Execution
 
-Workflows execute via Temporal for durability and horizontal scaling, gated by `TEMPORAL_ENABLED`. Three dispatch paths exist — legacy single `execute_node_activity` (fallback), per-type `node.{type}.v{version}` activities (F4.A, `TEMPORAL_PER_TYPE_DISPATCH=true`), and Agent-as-child-workflow (F4.B, `TEMPORAL_AGENT_WORKFLOW_ENABLED=true`) — with `rlm_agent`/`claude_code_agent` always bypassing AgentWorkflow. **Per-queue activity routing is production-default (Wave 16)**: a `TemporalWorkerPool` runs one activity-only worker per plugin-declared `cls.task_queue` (ai-heavy / browser / code-exec / rest-api / messaging / ...) with per-queue concurrency + rate limits + resource-based tuning for ai-heavy/browser; rollback via `TEMPORAL_WORKER_POOL_ENABLED=false`. Resilience knobs (Waves 17-18): `DEPLOYMENT_MODE` (local halves concurrency; sizes the sticky cache), one-shot retry on `agent.execute_llm_step.v1` (LLM calls are not idempotent), observability interceptors (`activity_retry` WARN on re-dispatch), 30s periodic heartbeat during long activity bodies, cron `catchup_window=24h`, poller autoscaling. Execution routing falls back Temporal → sequential; the Temporal dev server + embedded worker are managed in-process under `server/services/temporal/` (pooch-downloaded CLI, single `temporal server start-dev` process, gRPC 5682 + Web UI 5683, SQLite at `~/.opencompany/temporal.db`). Full architecture, dispatch matrix, per-node + agent-loop lifecycle, all 16 F4.B `agent.*.v1` activities, heartbeat semantics, delegation input contract, resumption toggle (`TEMPORAL_TERMINATE_RUNNING_ON_STARTUP`), the worker tuning recipe, and all `.env` tunables live in [docs-internal/TEMPORAL_ARCHITECTURE.md](./docs-internal/TEMPORAL_ARCHITECTURE.md).
+Workflows execute via Temporal for durability and horizontal scaling, gated by `TEMPORAL_ENABLED`. Three dispatch paths exist — legacy single `execute_node_activity` (fallback), per-type `node.{type}.v{version}` activities (F4.A, `TEMPORAL_PER_TYPE_DISPATCH=true`), and Agent-as-child-workflow (F4.B, `TEMPORAL_AGENT_WORKFLOW_ENABLED=true`) — with `rlm_agent`/`claude_code_agent` always bypassing AgentWorkflow. **Per-queue activity routing is production-default (Wave 16)**: a `TemporalWorkerPool` runs one activity-only worker per plugin-declared `cls.task_queue` (ai-heavy / browser / code-exec / rest-api / messaging / ...) with per-queue concurrency + rate limits + resource-based tuning for ai-heavy/browser; rollback via `TEMPORAL_WORKER_POOL_ENABLED=false`. Resilience knobs (Waves 17-18): `DEPLOYMENT_MODE` (local halves concurrency; sizes the sticky cache), one-shot retry on `agent.execute_llm_step.v1` (LLM calls are not idempotent), observability interceptors (`activity_retry` WARN on re-dispatch), 30s periodic heartbeat during long activity bodies, cron `catchup_window=24h`, poller autoscaling. Execution routing falls back Temporal → sequential; the Temporal dev server + embedded worker are managed in-process under `server/services/temporal/` (pooch-downloaded CLI, single `temporal server start-dev` process, gRPC `TEMPORAL_FRONTEND_GRPC_PORT` + Web UI `TEMPORAL_UI_PORT`, SQLite at `~/.opencompany/temporal.db`). Full architecture, dispatch matrix, per-node + agent-loop lifecycle, all 16 F4.B `agent.*.v1` activities, heartbeat semantics, delegation input contract, resumption toggle (`TEMPORAL_TERMINATE_RUNNING_ON_STARTUP`), the worker tuning recipe, and all `.env` tunables live in [docs-internal/TEMPORAL_ARCHITECTURE.md](./docs-internal/TEMPORAL_ARCHITECTURE.md).
 
 **Temporal tracing ownership is strict.** Register the SDK `TracingInterceptor` exactly once on the shared `Client.connect(...)`; the Python SDK automatically prepends compatible client interceptors to every worker. Never repeat `TracingInterceptor` in `Worker(..., interceptors=...)`. Worker lists contain the distinct `ObservabilityWorkerInterceptor` and plugin-specific worker interceptors only. Exact paired `StartActivity` / `RunActivity` / `CompleteWorkflow` console spans with identical Temporal identities indicate duplicate instrumentation, not duplicate execution; use Temporal Event History and the `node.<type>.execute` application span to verify actual attempts. See the tracing and debugging sections in [TEMPORAL_ARCHITECTURE.md](./docs-internal/TEMPORAL_ARCHITECTURE.md) and [errors.md](./docs-internal/errors.md).
 
@@ -735,7 +733,7 @@ See **[Scripts Reference](./docs-internal/SCRIPTS.md)** for full documentation.
 ✅ **Process Management**: Robust stop scripts with duplicate process detection
 ✅ **WhatsApp Integration**: Square node design with QR code viewer, group/sender name persistence, newsletter channel support (send, query, follow/unfollow, create, mute, mark viewed, react, live updates), media download, profile pics, and proper error handling
 ✅ **Backend Stability**: Fixed dependency injection and error handling preventing crashes
-✅ **Development Server**: the app is **http://localhost:5678** in every mode. `company dev` = Vite HMR on 5678 proxying /api /ws /webhook to the backend on :5679; `company start` (production) = uvicorn alone on 5678 (API + WS + SPA)
+✅ **Development Server**: the app is **`http://localhost:${PYTHON_BACKEND_PORT}`** in every mode (defaults in `.env.template`). `company dev` = Vite HMR on that port proxying /api /ws /webhook to the backend (dev override in `.env.dev`); `company start` (production) = uvicorn alone on it (API + WS + SPA)
 ✅ **WebSocket Integration**: Persistent WebSocket connections for remote Android devices with background tasks and message queue
 ✅ **Real-time Status WebSocket**: Frontend-backend WebSocket at `/ws/status` for live Android status, node status, and variable updates
 ✅ **Event-Driven Trigger Nodes**: WhatsApp Receive and Webhook Trigger with asyncio.Future-based event waiting, filter builders, and cancel support
@@ -1122,7 +1120,7 @@ Full reference — agent loop, skill injection, tool building, input/auto-prompt
 ## Testing & Validation
 ```bash
 # Development server test
-curl -I http://localhost:5678
+curl -I http://localhost:${PYTHON_BACKEND_PORT:-5678}
 
 # TypeScript validation
 npx tsc --noEmit
@@ -1781,11 +1779,11 @@ export interface AndroidStatus {
 ## WhatsApp Integration
 
 ### Overview
-WhatsApp nodes use square design with integrated QR code viewing and proper error handling. The integration proxies all requests through the Python backend to the WhatsApp RPC service (default port 5681, configurable via `WHATSAPP_RPC_PORT` env var or `--port` CLI flag). Supports individual chats, groups, and newsletter channels (sending, querying, follow/unfollow, create, mute, mark viewed, react, live updates, media download, profile pics). All 14 WhatsApp events handled.
+WhatsApp nodes use square design with integrated QR code viewing and proper error handling. The integration proxies all requests through the Python backend to the WhatsApp RPC service (port from `WHATSAPP_RPC_PORT`, or the `--port` CLI flag). Supports individual chats, groups, and newsletter channels (sending, querying, follow/unfollow, create, mute, mark viewed, react, live updates, media download, profile pics). All 14 WhatsApp events handled.
 
 ### Architecture
 ```
-Frontend (WhatsAppNode.tsx) → Python Backend (/api/whatsapp/*) → WhatsApp RPC Service (localhost:${WHATSAPP_RPC_PORT:-5681})
+Frontend (WhatsAppNode.tsx) → Python Backend (/api/whatsapp/*) → WhatsApp RPC Service (localhost:${WHATSAPP_RPC_PORT})
 ```
 
 ### Key Features
@@ -2583,7 +2581,7 @@ This function:
 - **WhatsApp Integration**: Square node design with QR code viewer, proper error handling, no crashes
   - Critical fix: Added "routers.whatsapp" to dependency injection wiring
   - All endpoints use safe JSON parsing with comprehensive error handling
-  - Backend proxies all requests to WhatsApp RPC service (default port 5681, configurable)
+  - Backend proxies all requests to WhatsApp RPC service (`WHATSAPP_RPC_PORT`)
   - Returns proper HTTP status codes (503, 504, 410) instead of mock data
   - Python server never crashes when WhatsApp service is unavailable
   - WebSocket handlers for status, QR code, send message, and start connection
@@ -2634,7 +2632,7 @@ This function:
   - Published to PyPI as `whatsapp-rpc` (async Python client)
   - Cross-platform binaries built via GitHub Actions (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64)
   - Binary downloaded from GitHub releases during npm postinstall
-  - Configurable port via `--port` CLI flag, `PORT` or `WHATSAPP_RPC_PORT` env vars (OpenCompany passes 5681; the package's own default is 9400)
+  - Configurable port via `--port` CLI flag, `PORT` or `WHATSAPP_RPC_PORT` env vars (OpenCompany passes WHATSAPP_RPC_PORT; the npm package's own default is 9400)
   - QR codes generated as base64 PNG in memory (no file I/O, no `data/qr` directory)
   - Source: https://github.com/trohitg/whatsapp-rpc
 - **Node Data Architecture**: `node.data` only stores `label` (display name). All parameters are stored in the database via `save_node_parameters` WebSocket handler. This prevents parameter bloat in workflow JSON exports and keeps React Flow state lightweight. `useDragAndDrop.ts` saves default parameters to DB on drop, not to `node.data`.
@@ -2642,7 +2640,7 @@ This function:
 - **Skill System Architecture**: Skills organized in `server/skills/<folder>/` subfolders. Each folder appears in Master Skill dropdown. DB/Master Skill customization is authoritative. Standard skills use progressive disclosure without modifying the agent system prompt: the dynamically connected `Skill` tool carries the bounded name/description catalogue, loads instructions, then separately reads/searches declared resources. Personality skills remain eager. Duplicate connected names block with `DUPLICATE_CONNECTED_SKILL_NAME`. Runtime state and sanitized `agent.skill.*` observability live in [`skill_runtime.py`](./server/services/skill_runtime.py); tool results persist in the current conversation while canvas badges clear at turn end. Icon resolution mirrors `BaseNode._metadata_dict`: per-plugin `<plugin>/icon.svg` (served as `/api/schemas/nodes/<type>/icon`) → `visuals.json` (emoji / `lobehub:<brand>`); color: per-plugin `<plugin>/meta.json` → `visuals.json`. Lives in [`skill_loader.py::_parse_skill_metadata`](./server/services/skill_loader.py). Native DOM keydown handler prevents React Flow from intercepting Ctrl shortcuts in skill editor. **Mutation broadcasts use the CloudEvents-typed `skill_lifecycle` wire key** with stages `created` / `updated` / `deleted` / `content_saved` — see "Plugin-folder location for plugin-specific CloudEvents factories" below.
 - **Example Workflows**: Auto-load example workflow seeds from `<repo>/.opencompany/workflows/` on first use (git-tracked; the only non-ignored content under `<repo>/.opencompany/`). Path resolved by `core.paths.example_workflows_dir()` — fixed, NOT under `DATA_DIR`, preserved by `company clean` via `_OPENCOMPANY_KEEP`. Uses `UserSettings.examples_loaded` flag; supports anonymous users (`user_id="default"`); embedded `nodeParameters` saved to DB on import.
 - **Onboarding Service**: 5-step welcome wizard (Welcome, Concepts, API Keys, Canvas Tour, Get Started) using shadcn primitives + lucide icons. Database-backed via `UserSettings.onboarding_completed` + `onboarding_step`. Existing users auto-skip (migration marks `examples_loaded=1` as completed). Replayable from Settings "Help" section. No new WebSocket handlers needed. See [Onboarding Service](./docs-internal/onboarding.md) for details.
-- **Node.js Code Executor**: Persistent Node.js server (Express + tsx) at port 5680 for JavaScript/TypeScript execution, replacing subprocess spawning per execution. The code executor plugins under `server/nodes/code/` call `NodeJSClient` which makes HTTP requests to the Node.js server. All config via environment variables (`NODEJS_EXECUTOR_URL`, `NODEJS_EXECUTOR_PORT`, etc.).
+- **Node.js Code Executor**: Persistent Node.js server (Express + tsx) at `NODEJS_EXECUTOR_PORT` for JavaScript/TypeScript execution, replacing subprocess spawning per execution. The code executor plugins under `server/nodes/code/` call `NodeJSClient` which makes HTTP requests to the Node.js server. All config via environment variables (`NODEJS_EXECUTOR_URL`, `NODEJS_EXECUTOR_PORT`, etc.).
 - **writeTodos Tool Node**: Dedicated AI tool for task planning connecting to any agent's `input-tools` handle. `TodoService` singleton (`server/services/todo_service.py`) stores JSON-based per-session todo state keyed by workflow_id. Handler broadcasts `phase: "todo_update"` via WebSocket on each update for real-time UI. (The former checklist rendering — `formatTodoOutput()` — lived only in the legacy `ui/OutputDisplayPanel.tsx`, which was deleted as dead code; the active `components/output/OutputPanel.tsx` shows todo results as regular JSON.) Schema uses `TodoItem`/`TodoStatus` Pydantic enum. Skill at `server/skills/assistant/write-todos-skill/SKILL.md` teaches the plan-work-update loop.
 - **Temporal Activity Heartbeats**: Activities send `activity.heartbeat()` on every non-matching WebSocket broadcast inside the read loop in `services/temporal/activities.py`. This keeps long-running browser and claude_code_agent operations alive past the 2-minute `heartbeat_timeout`. Start/end heartbeats alone were causing `TIMEOUT_TYPE_HEARTBEAT` failures on ops taking 5-10 minutes. Connection config: `heartbeat=30`, `receive_timeout=540` (fits within 10-min `start_to_close_timeout`).
 - **WebSocket `_safe_send` Guard**: `server/routers/websocket.py` checks `websocket.client_state.name != "CONNECTED"` before sending and logs at `debug` level (not `error`) on failure. Prevents "ASGI message after websocket.close" errors when broadcasts race with disconnects.
@@ -2658,7 +2656,7 @@ This function:
 - **Process manager port admission + middle panel**: server commands declare listener `ports` (with compatibility inference for `--port`, `-p`, `PORT`, and `*_PORT`). `ProcessService.start()` serializes admission, checks managed reservations plus OS TCP listeners, and returns structured `PORT_IN_USE` without killing the owner or allowing framework auto-port fallback. Explicit ports/environment survive restart. The `isProcessManagerPanel` UI hint gives only `processManager` a full-height workflow-scoped process table with PID/ports/timestamps/elapsed/output and stop/restart controls. See [docs-internal/process_manager.md](./docs-internal/process_manager.md).
 - **Telegram message auto-split**: Telegram Bot API caps `sendMessage.text` at 4096 chars (per https://core.telegram.org/bots/api). `TelegramService.send_message` splits longer text at paragraph → line → sentence → space → hard-cut boundaries via `_split_text` helper, sends each chunk threaded under the previous (`reply_to_message_id` cascade), returns first message's metadata + `parts` + `message_ids[]`. Captions on `send_photo` / `send_document` still take the legacy path and will fail on >1024 chars — separate fix once needed (constants `_TG_TEXT_LIMIT=3500`, `_TG_CAPTION_LIMIT=900` in `_service.py` already account for ~20% HTML expansion from markdown→HTML conversion in `_resolve_body`).
 - **Google OAuth scope expansion**: Google's authorisation server legitimately returns a wider scope set than requested when the OAuth Client's "Data Access" page lists extra scopes (commonly `cloud-platform`) or when `include_granted_scopes` replays a previously-granted scope. `oauthlib` does strict set-equality and aborts with `Warning: Scope has changed`. As of 2026 (`google-auth-oauthlib` 1.2.4, `oauthlib` upstream issue #562 still open), no constructor flag, context manager, or `expected_scopes` argument exists — the documented relief is the env var. `services/google_oauth.py` sets `OAUTHLIB_RELAX_TOKEN_SCOPE=1` via `os.environ.setdefault` BEFORE the `google_auth_oauthlib.flow` import (oauthlib reads it once at parameters-module import; request-time setting races under uvicorn workers), paired with `warnings.filterwarnings(message=r"Scope has changed.*")` to keep the operator log clean. Long-term root cause: audit the Cloud Console Data Access page and remove `cloud-platform` if no handler uses it.
-- **Code-executor error mapping** (`pythonExecutor` / `javascriptExecutor` / `typescriptExecutor`): wrap user-code execution and sidecar calls in `try/except`. Python: detect `ImportError("__import__ not found")` (the LLM tried `import X` against the sandboxed builtins) and surface the pre-injected names list (`math, json, datetime, timedelta, re, random, Counter, defaultdict`) plus the suggestion to use `process_manager` for unsupported modules; other exceptions get formatted as `<ErrorName> at line N: <message>` (line N walked from `<string>` frame in the traceback) plus any captured stdout. JS/TS: detect `aiohttp.ClientConnectorError` and surface "JavaScript executor not running on localhost:5680. Start the dev runner or fall back to python_executor." All raise `NodeUserError` so the framework logs one WARN line — no aiohttp/CreateProcessW noise in the operator log.
+- **Code-executor error mapping** (`pythonExecutor` / `javascriptExecutor` / `typescriptExecutor`): wrap user-code execution and sidecar calls in `try/except`. Python: detect `ImportError("__import__ not found")` (the LLM tried `import X` against the sandboxed builtins) and surface the pre-injected names list (`math, json, datetime, timedelta, re, random, Counter, defaultdict`) plus the suggestion to use `process_manager` for unsupported modules; other exceptions get formatted as `<ErrorName> at line N: <message>` (line N walked from `<string>` frame in the traceback) plus any captured stdout. JS/TS: detect `aiohttp.ClientConnectorError` and surface "JavaScript executor not running on NODEJS_EXECUTOR_PORT. Start the dev runner or fall back to python_executor." All raise `NodeUserError` so the framework logs one WARN line — no aiohttp/CreateProcessW noise in the operator log.
 - **Workflow-scoped chat + console history**: chat messages persist with `chat_messages.session_id == <workflow_id>` (or `"default"` when no workflow is open); console logs persist with `console_logs.workflow_id`. Backend `database.get_console_logs(limit, workflow_id=None)` and `clear_console_logs(workflow_id=None)` filter by workflow when given. `handle_clear_console_logs` broadcasts `console_logs_cleared` carrying the `workflow_id` so the existing frontend filter in `WebSocketContext` keeps other workflows' panels intact. Frontend reads `currentWorkflow.id` via the documented Zustand escape hatch (`useAppStore.getState().currentWorkflow?.id`) at call time for `clearChatMessages` / `clearConsoleLogs` / `sendChatMessage` so the callbacks don't re-create on every workflow switch. A dedicated `useEffect([currentWorkflowId, isReady])` resets local `chatMessages` / `consoleLogs` and refetches both when the user opens / switches workflow. Incoming `console_log` broadcasts are filtered by `currentWorkflow.id` so a parallel run on another workflow never bleeds into the active panel. Legacy logs without `workflow_id` still surface (transition guard).
 - **Auto-derived `isConfigNode` uiHint**: `_derive_auto_ui_hints(group)` in `services/plugin/base.py` automatically sets `uiHints.isConfigNode: True` on any plugin whose `group` tuple contains `memory` or `tool` (centralized as `_CONFIG_NODE_GROUPS = frozenset({"memory", "tool"})`). Explicit `cls.ui_hints` always wins (merge order: auto first, then `dict.update`). Frontend `InputSection.tsx` and `OutputPanel.tsx` consume the flag via `definition?.uiHints?.isConfigNode === true` — the old `groups.includes('memory') || groups.includes('tool')` heuristic is gone. Pytest invariant `test_ui_hints_only_carry_known_flags` locks the flag name. Adding a new auxiliary node type costs zero per-plugin code; opting out costs one line (`ui_hints = {"isConfigNode": False}`).
 - **`isMasterSkillEditor` uiHint replaces `node.type === 'masterSkill'` checks**: 6 frontend callsites (`Dashboard.tsx:98` component dispatch, `useAutoSkillEdges.ts` constant + edge filter, `MiddleSection.tsx` × 3) now read `getCachedNodeSpec(type)?.uiHints?.isMasterSkillEditor === true` instead of comparing the type string. The `MasterSkillNode` plugin already declared the hint — no backend change. Renaming the plugin's `type` is now a single backend edit followed by a NodeSpec deploy; the frontend never needs to know the string.

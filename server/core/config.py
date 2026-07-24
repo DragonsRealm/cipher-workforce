@@ -246,10 +246,9 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
     google_ai_api_key: Optional[str] = Field(default=None, env="GOOGLE_AI_API_KEY")
 
-    # Node.js Executor Configuration
-    nodejs_executor_url: str = Field(default="http://localhost:5680", env="NODEJS_EXECUTOR_URL")
-    nodejs_executor_timeout: int = Field(default=30, env="NODEJS_EXECUTOR_TIMEOUT", ge=5, le=300)
-    nodejs_executor_port: int = Field(default=5680, env="NODEJS_EXECUTOR_PORT", ge=1024, le=65535)
+    # Node.js executor settings live in the plugin: nodes/code/_runtime.py
+    # and _nodejs.py read the NODEJS_EXECUTOR_* env vars directly
+    # (plugin-owned config, same as the WhatsApp runtime).
 
     # AI Proxy Configuration (Ollama-style proxy)
     ai_proxy_default_port: int = Field(default=11434, env="AI_PROXY_DEFAULT_PORT")

@@ -1,7 +1,7 @@
 """Client / in-process-task supervisor.
 
 For services that don't own a subprocess but still have a lifecycle:
-HTTP clients pointed at an externally-spawned daemon (nodejs_client),
+HTTP clients pointed at an externally-spawned daemon,
 or in-process tasks like the python-telegram-bot polling loop.
 """
 

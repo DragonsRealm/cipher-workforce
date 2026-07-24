@@ -22,7 +22,7 @@ class TypeScriptExecutorNode(CodeExecutorBase):
         """Inlined from handlers/code.py (Wave 11.D.2)."""
         from aiohttp import ClientConnectorError
 
-        from .._nodejs import get_nodejs_client
+        from .._nodejs import acquire_client, executor_base_url
 
         if not params.code.strip():
             raise NodeUserError("No code provided")
@@ -30,19 +30,18 @@ class TypeScriptExecutorNode(CodeExecutorBase):
         input_data["workspace_dir"] = ctx.workspace_dir or ""
 
         try:
-            result = await get_nodejs_client().execute(
+            client = await acquire_client()
+            result = await client.execute(
                 code=params.code,
                 input_data=input_data,
                 timeout=params.timeout * 1000,
                 language="typescript",
             )
-        except ClientConnectorError as exc:
+        except (ClientConnectorError, RuntimeError) as exc:
             raise NodeUserError(
-                "TypeScript executor is not running (cannot reach the "
-                "Node.js sidecar on localhost:5680). Start the dev runner "
-                "(it spawns the Node executor automatically), or fall back "
-                "to python_executor for similar logic. Underlying: "
-                f"{exc}"
+                "TypeScript executor is unavailable (Node.js sidecar at "
+                f"{executor_base_url()}). Fall back to python_executor "
+                f"for similar logic. Underlying: {exc}"
             ) from exc
 
         if not result.get("success"):

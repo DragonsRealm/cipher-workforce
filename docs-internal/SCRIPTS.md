@@ -22,7 +22,7 @@ deprecation warning; kept for upgrade compatibility).
 |---------|-------------|
 | `company start` | Production mode, single port: uvicorn serves API + WS + built SPA on :5678. Optional daemons (Temporal dev server, WhatsApp) are backend-owned, started from the lifespan when enabled |
 | `company dev` | Start in dev mode (Vite HMR + uvicorn). `--force` re-bundles Vite deps (recovers "Outdated Optimize Dep"); `--daemon` binds backend to 0.0.0.0 |
-| `company serve` | Single-port production runtime (uvicorn serves API + WS + built SPA + Node sidecar) — the systemd `ExecStart` on deployed VMs |
+| `company serve` | Single-port production runtime (uvicorn serves API + WS + built SPA; optional daemons incl. the Node.js executor are backend-spawned on demand) — the systemd `ExecStart` on deployed VMs |
 | `company stop` | Stop all services and free configured ports |
 | `company build` | Full production build (pnpm install → client → sidecar → uv sync → bytecode → temporal binary). Step [0/6] scaffolds `.env` from `.env.template` when missing, generating fresh random secrets (`secrets.token_hex(24)`) for `SECRET_KEY` / `JWT_SECRET_KEY` / `API_KEY_ENCRYPTION_KEY` instead of the dev placeholders; an existing `.env` is untouched |
 | `company clean` | Stop services, then remove build artifacts, node_modules, `.venv`, repo-local state (preserves `.opencompany/{workflows,deploy,packages}`) |
