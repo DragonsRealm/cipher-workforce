@@ -109,8 +109,8 @@ Key variables in `.env` (see `.env.template` for the full list):
 ### Ports
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_CLIENT_PORT` | 5679 | Frontend port |
-| `PYTHON_BACKEND_PORT` | 5678 | Backend port |
+| `VITE_CLIENT_PORT` | 5678 | App port (Vite dev server; proxies backend prefixes) |
+| `PYTHON_BACKEND_PORT` | 5678 | Backend port (5679 in dev via `.env.dev`, behind the Vite proxy) |
 | `WHATSAPP_RPC_PORT` | 5681 | WhatsApp API port |
 | `NODEJS_EXECUTOR_PORT` | 5680 | Node.js code-executor sidecar |
 | — | 5682 / 5683 | Temporal gRPC / Temporal Web UI |
@@ -138,7 +138,7 @@ Key variables in `.env` (see `.env.template` for the full list):
 
 ```bash
 # Development
-company dev            # Vite HMR (:5679) + backend (:5678)
+company dev            # app at :5678 (Vite HMR; backend :5679 behind the proxy)
 company dev --force    # ...forcing a Vite dependency re-bundle
 company start          # Production mode (single port :5678)
 company stop           # Stop all services

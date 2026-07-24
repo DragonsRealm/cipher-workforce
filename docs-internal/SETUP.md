@@ -4,7 +4,7 @@
 
 ```
 OpenCompany/
-├── client/                 # React frontend (Vite dev server on port 3000; production build served by the backend)
+├── client/                 # React frontend (Vite dev server on :5678, proxying the backend; production build served by uvicorn on :5678)
 │   ├── src/
 │   └── package.json
 ├── server/                 # Python FastAPI backend (port 5678)
@@ -53,11 +53,11 @@ Services (production `company start`):
 - **WhatsApp Service**: http://localhost:5681 (backend-spawned on demand)
 - **Temporal dev server**: gRPC :5682, Web UI :5683 (backend-spawned when `TEMPORAL_ENABLED`)
 
-`company dev` additionally runs the Vite HMR client at http://localhost:5679.
+`company dev` serves the same URL (http://localhost:5678) from the Vite HMR server, which proxies /api /ws /webhook to the backend on :5679.
 
 ## Services Overview
 
-### Frontend (React — Vite dev port 3000, production served by the backend on 3010)
+### Frontend (React — always at :5678; Vite dev server proxying the backend, or the production build served by uvicorn)
 - React 19 with TypeScript
 - React Flow for workflow canvas
 - Zustand for state management
@@ -112,8 +112,8 @@ Alternatively, `company build` scaffolds `.env` from `.env.template` automatical
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_CLIENT_PORT` | 5679 | Frontend port |
-| `PYTHON_BACKEND_PORT` | 5678 | Backend API port |
+| `VITE_CLIENT_PORT` | 5678 | App port (Vite dev server; proxies backend prefixes) |
+| `PYTHON_BACKEND_PORT` | 5678 | Backend port (5679 in dev via `.env.dev`, behind the Vite proxy) |
 | `AUTH_MODE` | single | Authentication mode (single/multi) |
 | `REDIS_ENABLED` | false | Enable Redis cache (production) |
 | `DEBUG` | true | Debug mode |

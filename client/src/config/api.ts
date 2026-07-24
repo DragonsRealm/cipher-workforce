@@ -13,14 +13,13 @@ interface ApiConfig {
 function getApiConfig(): ApiConfig {
   const viteEnv = (import.meta as any).env || {};
 
-  // In production (non-localhost), use relative URLs (same origin)
-  const isProduction = typeof window !== 'undefined' &&
-    !window.location.hostname.includes('localhost') &&
-    !window.location.hostname.includes('127.0.0.1');
-
   return {
-    // Python FastAPI backend (port 5678 in dev, same origin in prod)
-    PYTHON_BASE_URL: viteEnv.VITE_PYTHON_SERVICE_URL || (isProduction ? '' : 'http://localhost:5678'),
+    // Same origin everywhere: in production uvicorn serves the SPA and
+    // the API on one port; in dev the Vite server proxies the backend
+    // prefixes (/api, /ws, /webhook, /health, /mcp) — see
+    // client/vite.config.js. VITE_PYTHON_SERVICE_URL remains as an
+    // explicit escape hatch for pointing at a remote backend.
+    PYTHON_BASE_URL: viteEnv.VITE_PYTHON_SERVICE_URL || '',
   };
 }
 

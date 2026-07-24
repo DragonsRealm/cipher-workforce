@@ -735,7 +735,7 @@ See **[Scripts Reference](./docs-internal/SCRIPTS.md)** for full documentation.
 ✅ **Process Management**: Robust stop scripts with duplicate process detection
 ✅ **WhatsApp Integration**: Square node design with QR code viewer, group/sender name persistence, newsletter channel support (send, query, follow/unfollow, create, mute, mark viewed, react, live updates), media download, profile pics, and proper error handling
 ✅ **Backend Stability**: Fixed dependency injection and error handling preventing crashes
-✅ **Development Server**: `company dev` = Vite HMR at **http://localhost:5679** + backend at **http://localhost:5678**; `company start` (production) = single port **http://localhost:5678** (API + WS + SPA)
+✅ **Development Server**: the app is **http://localhost:5678** in every mode. `company dev` = Vite HMR on 5678 proxying /api /ws /webhook to the backend on :5679; `company start` (production) = uvicorn alone on 5678 (API + WS + SPA)
 ✅ **WebSocket Integration**: Persistent WebSocket connections for remote Android devices with background tasks and message queue
 ✅ **Real-time Status WebSocket**: Frontend-backend WebSocket at `/ws/status` for live Android status, node status, and variable updates
 ✅ **Event-Driven Trigger Nodes**: WhatsApp Receive and Webhook Trigger with asyncio.Future-based event waiting, filter builders, and cancel support

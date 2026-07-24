@@ -1,9 +1,10 @@
 {
-  "id": "example_workflow-1779095939967-2369cff4",
+  "id": "9fa6f4d2e603427491a26405e0fc8cde",
   "name": "Claude Assistant",
+  "slug": "Claude_Assistant_1",
   "nodes": [
     {
-      "id": "chatTrigger-17792004809890-32f2e9",
+      "id": "chatTrigger-17842180599640-7e1723",
       "type": "chatTrigger",
       "position": {
         "x": 920,
@@ -12,8 +13,8 @@
       "data": {
         "label": "Chat Trigger"
       },
-      "width": 110,
-      "height": 82,
+      "width": 69,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 920,
@@ -22,7 +23,7 @@
       "dragging": true
     },
     {
-      "id": "console-17792004809891-32f2e9",
+      "id": "console-17842180599641-7e1723",
       "type": "console",
       "position": {
         "x": 1760,
@@ -31,8 +32,8 @@
       "data": {
         "label": "Console"
       },
-      "width": 69,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1760,
@@ -41,7 +42,7 @@
       "dragging": false
     },
     {
-      "id": "simpleMemory-17792004809892-32f2e9",
+      "id": "simpleMemory-17842180599642-7e1723",
       "type": "simpleMemory",
       "position": {
         "x": 1160,
@@ -50,8 +51,8 @@
       "data": {
         "label": "Simple Memory"
       },
-      "width": 120,
-      "height": 96,
+      "width": 87,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1160,
@@ -60,7 +61,7 @@
       "dragging": true
     },
     {
-      "id": "writeTodos-17792004809893-32f2e9",
+      "id": "writeTodos-17842180599643-7e1723",
       "type": "writeTodos",
       "position": {
         "x": 1480,
@@ -69,8 +70,8 @@
       "data": {
         "label": "Write Todos"
       },
-      "width": 104,
-      "height": 82,
+      "width": 66,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1480,
@@ -79,7 +80,7 @@
       "dragging": true
     },
     {
-      "id": "telegramReceive-17792004809894-32f2e9",
+      "id": "telegramReceive-17842180599644-7e1723",
       "type": "telegramReceive",
       "position": {
         "x": 920,
@@ -88,8 +89,8 @@
       "data": {
         "label": "Telegram Receive"
       },
-      "width": 120,
-      "height": 96,
+      "width": 99,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 920,
@@ -98,7 +99,7 @@
       "dragging": false
     },
     {
-      "id": "telegramSend-17792004809895-32f2e9",
+      "id": "telegramSend-17842180599645-7e1723",
       "type": "telegramSend",
       "position": {
         "x": 1720,
@@ -107,8 +108,8 @@
       "data": {
         "label": "Telegram Send"
       },
-      "width": 120,
-      "height": 96,
+      "width": 84,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1720,
@@ -117,7 +118,7 @@
       "dragging": false
     },
     {
-      "id": "masterSkill-17792004809896-32f2e9",
+      "id": "masterSkill-17842180599646-7e1723",
       "type": "masterSkill",
       "position": {
         "x": 1280,
@@ -126,8 +127,8 @@
       "data": {
         "label": "Master Skill"
       },
-      "width": 110,
-      "height": 82,
+      "width": 67,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1280,
@@ -136,7 +137,7 @@
       "dragging": true
     },
     {
-      "id": "claude_code_agent-17792004809897-32f2e9",
+      "id": "claude_code_agent-17842180599647-7e1723",
       "type": "claude_code_agent",
       "position": {
         "x": 1300,
@@ -155,26 +156,26 @@
       "dragging": false
     },
     {
-      "id": "duckduckgoSearch-17792004809898-32f2e9",
+      "id": "duckduckgoSearch-17842180599648-7e1723",
       "type": "duckduckgoSearch",
       "position": {
-        "x": 1680,
+        "x": 1700,
         "y": 720
       },
       "data": {
         "label": "DuckDuckGo Search"
       },
-      "width": 120,
-      "height": 96,
+      "width": 116,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
-        "x": 1680,
+        "x": 1700,
         "y": 720
       },
-      "dragging": false
+      "dragging": true
     },
     {
-      "id": "processManager-17792004809899-32f2e9",
+      "id": "processManager-17842180599649-7e1723",
       "type": "processManager",
       "position": {
         "x": 1580,
@@ -183,17 +184,17 @@
       "data": {
         "label": "Process Manager"
       },
-      "width": 120,
-      "height": 96,
+      "width": 98,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1580,
         "y": 720
       },
-      "dragging": false
+      "dragging": true
     },
     {
-      "id": "browser-177920048098910-32f2e9",
+      "id": "browser-178421805996410-7e1723",
       "type": "browser",
       "position": {
         "x": 1820,
@@ -202,8 +203,8 @@
       "data": {
         "label": "Browser"
       },
-      "width": 74,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1820,
@@ -212,7 +213,7 @@
       "dragging": false
     },
     {
-      "id": "fileModify-177920048098911-32f2e9",
+      "id": "fileModify-178421805996411-7e1723",
       "type": "fileModify",
       "position": {
         "x": 1920,
@@ -221,8 +222,8 @@
       "data": {
         "label": "File Modify"
       },
-      "width": 96,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
         "x": 1920,
@@ -231,58 +232,58 @@
       "dragging": false
     },
     {
-      "id": "fileRead-177920048098912-32f2e9",
+      "id": "fileRead-178421805996412-7e1723",
       "type": "fileRead",
       "position": {
-        "x": 2040,
+        "x": 2020,
         "y": 720
       },
       "data": {
         "label": "File Read"
       },
-      "width": 77,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
-        "x": 2040,
+        "x": 2020,
         "y": 720
       },
       "dragging": false
     },
     {
-      "id": "fsSearch-177920048098913-32f2e9",
+      "id": "fsSearch-178421805996413-7e1723",
       "type": "fsSearch",
       "position": {
-        "x": 2140,
+        "x": 2120,
         "y": 720
       },
       "data": {
         "label": "FS Search"
       },
-      "width": 81,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
-        "x": 2140,
+        "x": 2120,
         "y": 720
       },
       "dragging": false
     },
     {
-      "id": "shell-177920048098914-32f2e9",
+      "id": "shell-178421805996414-7e1723",
       "type": "shell",
       "position": {
-        "x": 2240,
+        "x": 2220,
         "y": 720
       },
       "data": {
         "label": "Shell"
       },
-      "width": 60,
-      "height": 82,
+      "width": 64,
+      "height": 86,
       "selected": false,
       "positionAbsolute": {
-        "x": 2240,
+        "x": 2220,
         "y": 720
       },
       "dragging": true
@@ -296,11 +297,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "telegramReceive-17792004809894-32f2e9",
+      "source": "telegramReceive-17842180599644-7e1723",
       "sourceHandle": "output-main",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-main",
-      "id": "e-telegramReceive-17792004809894-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-telegramReceive-17842180599644-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -310,11 +311,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "chatTrigger-17792004809890-32f2e9",
+      "source": "chatTrigger-17842180599640-7e1723",
       "sourceHandle": "output-main",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-main",
-      "id": "e-chatTrigger-17792004809890-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-chatTrigger-17842180599640-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -324,11 +325,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "claude_code_agent-17792004809897-32f2e9",
+      "source": "claude_code_agent-17842180599647-7e1723",
       "sourceHandle": "output-main",
-      "target": "telegramSend-17792004809895-32f2e9",
+      "target": "telegramSend-17842180599645-7e1723",
       "targetHandle": "input-main",
-      "id": "e-claude_code_agent-17792004809897-32f2e9-telegramSend-17792004809895-32f2e9-1779200480989-32f2e9",
+      "id": "e-claude_code_agent-17842180599647-7e1723-telegramSend-17842180599645-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -338,11 +339,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "claude_code_agent-17792004809897-32f2e9",
+      "source": "claude_code_agent-17842180599647-7e1723",
       "sourceHandle": "output-main",
-      "target": "console-17792004809891-32f2e9",
+      "target": "console-17842180599641-7e1723",
       "targetHandle": "input-main",
-      "id": "e-claude_code_agent-17792004809897-32f2e9-console-17792004809891-32f2e9-1779200480989-32f2e9",
+      "id": "e-claude_code_agent-17842180599647-7e1723-console-17842180599641-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -352,11 +353,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "simpleMemory-17792004809892-32f2e9",
+      "source": "simpleMemory-17842180599642-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-memory",
-      "id": "e-simpleMemory-17792004809892-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-simpleMemory-17842180599642-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -366,11 +367,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "masterSkill-17792004809896-32f2e9",
+      "source": "masterSkill-17842180599646-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-skill",
-      "id": "e-masterSkill-17792004809896-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-masterSkill-17842180599646-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -380,11 +381,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "writeTodos-17792004809893-32f2e9",
+      "source": "writeTodos-17842180599643-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-writeTodos-17792004809893-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-writeTodos-17842180599643-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -394,11 +395,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "browser-177920048098910-32f2e9",
+      "source": "browser-178421805996410-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-browser-177920048098910-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-browser-178421805996410-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -408,11 +409,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "processManager-17792004809899-32f2e9",
+      "source": "processManager-17842180599649-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-processManager-17792004809899-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-processManager-17842180599649-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -422,11 +423,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "duckduckgoSearch-17792004809898-32f2e9",
+      "source": "duckduckgoSearch-17842180599648-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-duckduckgoSearch-17792004809898-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-duckduckgoSearch-17842180599648-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -436,11 +437,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "fileModify-177920048098911-32f2e9",
+      "source": "fileModify-178421805996411-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-fileModify-177920048098911-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-fileModify-178421805996411-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -450,11 +451,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "fileRead-177920048098912-32f2e9",
+      "source": "fileRead-178421805996412-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-fileRead-177920048098912-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-fileRead-178421805996412-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -464,11 +465,11 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "fsSearch-177920048098913-32f2e9",
+      "source": "fsSearch-178421805996413-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-fsSearch-177920048098913-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-fsSearch-178421805996413-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     },
     {
@@ -478,19 +479,19 @@
         "stroke": "#8be9fd",
         "strokeWidth": 3
       },
-      "source": "shell-177920048098914-32f2e9",
+      "source": "shell-178421805996414-7e1723",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17792004809897-32f2e9",
+      "target": "claude_code_agent-17842180599647-7e1723",
       "targetHandle": "input-tools",
-      "id": "e-shell-177920048098914-32f2e9-claude_code_agent-17792004809897-32f2e9-1779200480989-32f2e9",
+      "id": "e-shell-178421805996414-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
       "selected": false
     }
   ],
-  "createdAt": "2026-05-19T08:51:20.997Z",
-  "lastModified": "2026-05-19T08:51:20.997Z",
-  "version": "0.0.72",
+  "createdAt": "2026-07-16T10:37:39.971Z",
+  "lastModified": "2026-07-24T10:56:59.000Z",
+  "version": "0.0.95",
   "nodeParameters": {
-    "console-17792004809891-32f2e9": {
+    "console-17842180599641-7e1723": {
       "label": "Console",
       "log_mode": "field",
       "field_path": "{{claudecode.response}}",
@@ -498,7 +499,7 @@
       "format": "json",
       "fieldPath": ""
     },
-    "simpleMemory-17792004809892-32f2e9": {
+    "simpleMemory-17842180599642-7e1723": {
       "session_id": "",
       "window_size": 100,
       "memory_content": "# Conversation History\n\n*No messages yet.*\n",
@@ -510,7 +511,7 @@
       "longTermEnabled": false,
       "retrievalCount": 3
     },
-    "telegramReceive-17792004809894-32f2e9": {
+    "telegramReceive-17842180599644-7e1723": {
       "content_type_filter": "text",
       "sender_filter": "self",
       "chat_id": "",
@@ -519,7 +520,7 @@
       "ignore_bots": true,
       "label": "Telegram Receive"
     },
-    "telegramSend-17792004809895-32f2e9": {
+    "telegramSend-17842180599645-7e1723": {
       "recipient_type": "self",
       "chat_id": "",
       "message_type": "text",
@@ -536,7 +537,7 @@
       "reply_to_message_id": 0,
       "label": "Telegram Send"
     },
-    "masterSkill-17792004809896-32f2e9": {
+    "masterSkill-17842180599646-7e1723": {
       "skills_config": {
         "perplexity-search-skill": {
           "enabled": true,
@@ -630,7 +631,7 @@
         }
       }
     },
-    "claude_code_agent-17792004809897-32f2e9": {
+    "claude_code_agent-17842180599647-7e1723": {
       "tasks": null,
       "prompt": "{{telegramreceive.text}}",
       "model": "claude-sonnet-4-6",
@@ -640,11 +641,11 @@
       "allowed_credentials": null,
       "label": "Claude Code"
     },
-    "duckduckgoSearch-17792004809898-32f2e9": {
+    "duckduckgoSearch-17842180599648-7e1723": {
       "max_results": 5,
       "label": "DuckDuckGo Search"
     },
-    "processManager-17792004809899-32f2e9": {
+    "processManager-17842180599649-7e1723": {
       "operation": "list",
       "name": "",
       "command": "",
@@ -654,7 +655,7 @@
       "tail": 100,
       "label": "Process Manager"
     },
-    "browser-177920048098910-32f2e9": {
+    "browser-178421805996410-7e1723": {
       "operation": "navigate",
       "url": "",
       "selector": "",
@@ -681,7 +682,7 @@
       "timeout": 30,
       "label": "Browser"
     },
-    "fileModify-177920048098911-32f2e9": {
+    "fileModify-178421805996411-7e1723": {
       "operation": "write",
       "content": "",
       "old_string": "",
@@ -689,18 +690,18 @@
       "replace_all": false,
       "label": "File Modify"
     },
-    "fileRead-177920048098912-32f2e9": {
+    "fileRead-178421805996412-7e1723": {
       "offset": 0,
       "limit": 2000,
       "label": "File Read"
     },
-    "fsSearch-177920048098913-32f2e9": {
+    "fsSearch-178421805996413-7e1723": {
       "mode": "ls",
       "path": ".",
       "pattern": "",
       "label": "FS Search"
     },
-    "shell-177920048098914-32f2e9": {
+    "shell-178421805996414-7e1723": {
       "cwd": "",
       "timeout": 30,
       "label": "Shell"

@@ -112,12 +112,14 @@ def dev_command(
 
     use_vite = _has_vite(root)
     if use_vite:
-        console.print(f"Client:   Vite dev server at http://localhost:{cfg.client_port}")
+        console.print(
+            f"App:      http://localhost:{cfg.client_port}  "
+            f"(Vite HMR; backend :{cfg.backend_port} behind the proxy)"
+        )
     else:
         console.print(
-            f"Client:   built SPA served by the backend at http://localhost:{cfg.backend_port}"
+            f"App:      http://localhost:{cfg.backend_port}  (built SPA served by the backend)"
         )
-    console.print(f"Backend:  http://localhost:{cfg.backend_port}")
     if cfg.temporal_enabled:
         console.print(
             f"Temporal: backend-managed (gRPC :{cfg.temporal_port}, UI http://localhost:{cfg.temporal_ui_port})"

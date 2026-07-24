@@ -89,9 +89,25 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: parseInt(getEnv('VITE_CLIENT_PORT', '5679')),
+      port: parseInt(getEnv('VITE_CLIENT_PORT', '5678')),
       strictPort: false,
-      host: true
+      host: true,
+      // Same-origin dev: the app lives at the canonical port (5678) in
+      // dev AND prod. Vite forwards the backend-owned prefixes to
+      // uvicorn (5679 in dev via .env.dev); production has no Vite —
+      // uvicorn serves the SPA itself on 5678. Keeps OAuth callback
+      // URLs (…:5678/api/...) valid in both modes and removes the
+      // cross-origin dependence in dev.
+      proxy: Object.fromEntries(
+        ['/api', '/ws', '/webhook', '/health', '/mcp'].map((prefix) => [
+          prefix,
+          {
+            target: `http://localhost:${getEnv('PYTHON_BACKEND_PORT', '5679')}`,
+            changeOrigin: true,
+            ws: prefix === '/ws',
+          },
+        ])
+      ),
     },
     optimizeDeps: {
       // `company dev --force` sets VITE_FORCE to re-run dependency

@@ -104,10 +104,10 @@ export const resolveIcon = (icon: string | undefined | null): string | null => {
     return ICON_REGISTRY[icon.slice('asset:'.length)] ?? null;
   }
   if (icon.startsWith('/api/')) {
-    // Backend-served icon endpoint. In dev the FE runs on Vite:5679 and
-    // the backend on :5678, so a bare relative path would hit the Vite
-    // server. Prefix with PYTHON_BASE_URL (empty string in prod, full
-    // localhost URL in dev) so the browser fetches the right origin.
+    // Backend-served icon endpoint. PYTHON_BASE_URL is '' (same origin)
+    // in both modes — prod uvicorn serves the SPA + API on one port and
+    // the dev Vite server proxies /api — but remains prefixed here so
+    // the VITE_PYTHON_SERVICE_URL remote-backend override still works.
     return `${API_CONFIG.PYTHON_BASE_URL}${icon}`;
   }
   if (icon.startsWith('data:') || icon.startsWith('http://') || icon.startsWith('https://') || icon.startsWith('/')) {
