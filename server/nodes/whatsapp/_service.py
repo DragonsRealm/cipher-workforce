@@ -33,7 +33,7 @@ def qr_code_to_base64(code: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-WHATSAPP_RPC_URL = os.getenv("WHATSAPP_RPC_URL", "ws://localhost:9400/ws/rpc")
+WHATSAPP_RPC_URL = os.getenv("WHATSAPP_RPC_URL", "ws://localhost:5681/ws/rpc")
 
 
 def extract_phone_from_jid(jid: str | None) -> str | None:
@@ -349,7 +349,7 @@ async def get_client(force_reconnect: bool = False, *, spawn: bool = True) -> RP
             except (ConnectionRefusedError, OSError) as e:
                 _client = None
                 logger.error(f"WhatsApp RPC connection refused: {e}")
-                raise Exception("WhatsApp service not running - start Go whatsmeow service on port 9400")
+                raise Exception("WhatsApp service not running - start Go whatsmeow service on port 5681")
             except Exception as e:
                 _client = None
                 logger.error(f"WhatsApp RPC error: {e}")

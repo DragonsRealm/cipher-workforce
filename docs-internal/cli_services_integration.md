@@ -23,8 +23,8 @@ Wraps the official `temporal` CLI's `server start-dev` mode (per [docs.temporal.
 **Ports (declared in `.env.template`, freed by `company stop`'s port-kill pre-flight):**
 | Service | Port | Env var |
 |---------|------|---------|
-| gRPC    | 7233 | `TEMPORAL_FRONTEND_GRPC_PORT` |
-| Web UI  | 8080 | `TEMPORAL_UI_PORT` (CLI default is 8233; we override) |
+| gRPC    | 5682 | `TEMPORAL_FRONTEND_GRPC_PORT` |
+| Web UI  | 5683 | `TEMPORAL_UI_PORT` (CLI default is 8233; we override) |
 
 Both bound by the same `temporal.exe` process. Killing the process releases both.
 

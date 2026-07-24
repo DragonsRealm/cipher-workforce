@@ -118,8 +118,8 @@ Google Workspace services (Gmail, Calendar, Drive, Sheets, Tasks, Contacts) shar
 ### Environment Variables (Optional)
 
 ```bash
-# Custom OAuth redirect URI (defaults to localhost:3010)
-GOOGLE_REDIRECT_URI=http://localhost:3010/api/google/callback
+# Custom OAuth redirect URI (defaults to localhost:5678)
+GOOGLE_REDIRECT_URI=http://localhost:5678/api/google/callback
 ```
 
 ### Token Storage

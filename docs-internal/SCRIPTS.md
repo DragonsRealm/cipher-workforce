@@ -7,7 +7,7 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3010
+Open http://localhost:5678
 
 ## CLI Commands (`company`, Python Typer app under `cli/`)
 
@@ -20,7 +20,7 @@ deprecation warning; kept for upgrade compatibility).
 
 | Command | Description |
 |---------|-------------|
-| `company start` | Production mode, single port: uvicorn serves API + WS + built SPA on :3010. Optional daemons (Temporal dev server, WhatsApp) are backend-owned, started from the lifespan when enabled |
+| `company start` | Production mode, single port: uvicorn serves API + WS + built SPA on :5678. Optional daemons (Temporal dev server, WhatsApp) are backend-owned, started from the lifespan when enabled |
 | `company dev` | Start in dev mode (Vite HMR + uvicorn). `--force` re-bundles Vite deps (recovers "Outdated Optimize Dep"); `--daemon` binds backend to 0.0.0.0 |
 | `company serve` | Single-port production runtime (uvicorn serves API + WS + built SPA + Node sidecar) — the systemd `ExecStart` on deployed VMs |
 | `company stop` | Stop all services and free configured ports |
@@ -59,11 +59,11 @@ the source of truth).
 | Script | Command | Description |
 |--------|---------|-------------|
 | `client:start` | `cd client && npm run start` | React frontend (Vite dev server) |
-| `python:start` | `cd server && uv run uvicorn main:app --host 127.0.0.1 --port 3010 ...` | Backend only |
+| `python:start` | `cd server && uv run uvicorn main:app --host 127.0.0.1 --port 5678 ...` | Backend only |
 | `python:daemon` | same, bound to `0.0.0.0` | Backend only, LAN-reachable |
 | `temporal:worker` | `cd server && uv run python -m services.temporal.worker` | Standalone Temporal worker |
 
-Temporal server lifecycle is managed by `company start` / `company dev` / `company stop` directly (see [Temporal Architecture](./TEMPORAL_ARCHITECTURE.md)). The official `temporal` CLI is downloaded by `pooch` to `<DATA_DIR>/packages/temporal/` (= `~/.opencompany/packages/temporal/` by default) during `company build` and spawned as a supervised subprocess.
+The Temporal dev server is backend-owned: the FastAPI lifespan starts it via `TemporalServerRuntime.ensure_started()` when `TEMPORAL_ENABLED` (see [Temporal Architecture](./TEMPORAL_ARCHITECTURE.md)). The official `temporal` CLI is downloaded by `pooch` to `<DATA_DIR>/packages/temporal/` (= `~/.opencompany/packages/temporal/` by default) during `company build`.
 
 ### Tests
 
@@ -109,11 +109,11 @@ Key variables in `.env` (see `.env.template` for the full list):
 ### Ports
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_CLIENT_PORT` | 3000 | Frontend port |
-| `PYTHON_BACKEND_PORT` | 3010 | Backend port |
-| `WHATSAPP_RPC_PORT` | 9400 | WhatsApp API port |
-| `NODEJS_EXECUTOR_PORT` | 3020 | Node.js code-executor sidecar |
-| — | 7233 / 8080 | Temporal gRPC / Temporal Web UI |
+| `VITE_CLIENT_PORT` | 5679 | Frontend port |
+| `PYTHON_BACKEND_PORT` | 5678 | Backend port |
+| `WHATSAPP_RPC_PORT` | 5681 | WhatsApp API port |
+| `NODEJS_EXECUTOR_PORT` | 5680 | Node.js code-executor sidecar |
+| — | 5682 / 5683 | Temporal gRPC / Temporal Web UI |
 
 ### Features
 | Variable | Default | Description |
@@ -138,9 +138,9 @@ Key variables in `.env` (see `.env.template` for the full list):
 
 ```bash
 # Development
-company dev            # Vite HMR + backend + temporal
+company dev            # Vite HMR (:5679) + backend (:5678)
 company dev --force    # ...forcing a Vite dependency re-bundle
-company start          # Production mode (static client)
+company start          # Production mode (single port :5678)
 company stop           # Stop all services
 
 # Build / clean

@@ -19,8 +19,8 @@ function getApiConfig(): ApiConfig {
     !window.location.hostname.includes('127.0.0.1');
 
   return {
-    // Python FastAPI backend (port 3010 in dev, same origin in prod)
-    PYTHON_BASE_URL: viteEnv.VITE_PYTHON_SERVICE_URL || (isProduction ? '' : 'http://localhost:3010'),
+    // Python FastAPI backend (port 5678 in dev, same origin in prod)
+    PYTHON_BASE_URL: viteEnv.VITE_PYTHON_SERVICE_URL || (isProduction ? '' : 'http://localhost:5678'),
   };
 }
 

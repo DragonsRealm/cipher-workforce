@@ -15,7 +15,7 @@ from services.nodejs_client import NodeJSClient
 _client: Optional[NodeJSClient] = None
 
 
-def get_nodejs_client(base_url: str = "http://localhost:3020", timeout: int = 30) -> NodeJSClient:
+def get_nodejs_client(base_url: str = "http://localhost:5680", timeout: int = 30) -> NodeJSClient:
     global _client
     if _client is None:
         _client = NodeJSClient(base_url, timeout)

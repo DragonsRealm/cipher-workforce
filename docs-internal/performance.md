@@ -14,7 +14,7 @@ warm OS file cache, with bytecode pre-compile applied:
 | Metric | Value | Source |
 |---|---|---|
 | Application startup complete | **2.90 s** | `start.log` 14:38 (post-`e77215c`, May 6 2026) |
-| HTTP `ready on port 3010` | **3.17 s** | same |
+| HTTP `ready on port 5678` | **3.17 s** | same |
 | First WebSocket client connected | **8.29 s** | same |
 | Status broadcasters fully settled | **12.27 s** | same |
 | AIService import (warm) | **703 ms** | same — was ~31 s on v0.0.75 |
@@ -69,7 +69,7 @@ T+2.25 — Lifespan startup
        ├── Compaction service (0.12 s)
        └── All services initialized (2.63 s)
 T+2.90 — Application startup complete ◀ HTTP-ready point
-T+3.17 — `ready on port 3010` (uvicorn accepting)
+T+3.17 — `ready on port 5678` (uvicorn accepting)
 T+3.85 — Temporal worker started (background)
         ├── ... (auth state propagates to FE; React mounts; queries fire)
 T+8.29 — First WebSocket client connected ◀ UI-interactive point
@@ -93,7 +93,7 @@ T+8.7  — 152 node plugins loaded               (was 10.8 s → 4.7 s segment)
 T+11.9 — Lifespan startup begin                (3.2 s gap: CLI-agent MCP mount)
 T+21.5 — Application startup complete          (lifespan 9.6 s: fresh-DB init 4.4 s,
                                                 salt/PBKDF2 + encryption ~3 s — see follow-ups)
-T+22.2 — ready on port 3010                    (pre-fix: probe timed out at 30 s,
+T+22.2 — ready on port 5678                    (pre-fix: probe timed out at 30 s,
                                                 line never printed)
 T+27    — Temporal worker registered; worker_start span 7.6 s wall but OFF-LOOP:
           broadcaster refreshes + WhatsApp RPC handshake interleave mid-hash
@@ -106,7 +106,7 @@ T+51    — example workflows imported (still inline — see follow-ups)
 
 ## The remaining +5 s gap (HTTP-ready → first WS connect)
 
-`ready on port 3010` at +3.17 s, first WS connect at +8.29 s. Backend
+`ready on port 5678` at +3.17 s, first WS connect at +8.29 s. Backend
 is idle in this window; the cost lives on the frontend. Likely
 contributors:
 
@@ -198,7 +198,7 @@ company start > start.log 2>&1
 Then extract phase markers:
 
 ```bash
-grep -E "Freeing ports|Importing FastAPI|AIService imported|All imports complete|Lifespan startup begin|Application startup complete|ready on port 3010|StatusBroadcaster\] Client connected|broadcaster.refresh_all_services" start.log
+grep -E "Freeing ports|Importing FastAPI|AIService imported|All imports complete|Lifespan startup begin|Application startup complete|ready on port 5678|StatusBroadcaster\] Client connected|broadcaster.refresh_all_services" start.log
 ```
 
 ### Bundle size + chunk shape
@@ -249,7 +249,7 @@ Tracked but explicitly **not** in any active plan.
 | Plugin walker lazy-loading | ~0.5-0.8 s on server-ready | Would need to defer registration until first NodeSpec request rather than at module-import time. Touches every `BaseNode` subclass — biggest blast radius of the candidates. |
 | Retire legacy Temporal history adapters after the rollback / retention window | negligible startup impact | New executions already use native messages and the compatibility imports are lazy. This is dependency and maintenance cleanup, not a measured cold-start win. |
 | `+5 s` HTTP-ready → first-WS-connect gap | up to 5 s | Diagnostics needed (see "remaining +5 s gap"). May reveal nothing actionable. |
-| Supervisor backend `ready_timeout` (default 30 s, shortest of the three services) | cosmetic | The probe is inert (one-shot, no restart/gating) but a >30 s boot prints an alarming "timed out waiting for port 3010" and skips the ready line. Post-fix boots fit the window; revisit only if cold boots regress past 30 s. |
+| Supervisor backend `ready_timeout` (default 30 s, shortest of the three services) | cosmetic | The probe is inert (one-shot, no restart/gating) but a >30 s boot prints an alarming "timed out waiting for port 5678" and skips the ready line. Post-fix boots fit the window; revisit only if cold boots regress past 30 s. |
 | Standalone Nuitka / PyOxidizer release binary | full Python interpreter init (~0.4 s) + `.pyc` regeneration on cold disk | User explicitly declined when scoping the build pipeline; revisit if "ship a single binary" becomes a product requirement. |
 
 ## References

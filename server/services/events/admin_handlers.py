@@ -185,7 +185,7 @@ async def handle_get_workflow_failure_history(
         }
 
     Ops-only — no replay action available here. For more detail use
-    Temporal Web UI at http://localhost:8233 or the temporal CLI:
+    Temporal Web UI at http://localhost:5683 or the temporal CLI:
 
         temporal workflow show --workflow-id <id> --output json
     """

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // All configuration from environment variables
-const PORT = parseInt(process.env.NODEJS_EXECUTOR_PORT ?? '', 10) || 3020;
+const PORT = parseInt(process.env.NODEJS_EXECUTOR_PORT ?? '', 10) || 5680;
 const HOST = process.env.NODEJS_EXECUTOR_HOST ?? 'localhost';
 const BODY_LIMIT = process.env.NODEJS_EXECUTOR_BODY_LIMIT ?? '10mb';
 const USER_PACKAGES_DIR = process.env.NODEJS_USER_PACKAGES_DIR ?? path.join(__dirname, '..', 'user-packages');

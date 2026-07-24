@@ -7,12 +7,12 @@ OpenCompany/
 ├── client/                 # React frontend (Vite dev server on port 3000; production build served by the backend)
 │   ├── src/
 │   └── package.json
-├── server/                 # Python FastAPI backend (port 3010)
+├── server/                 # Python FastAPI backend (port 5678)
 │   ├── services/           # Business logic (workflow, AI, etc.)
 │   ├── routers/            # API endpoints
 │   ├── core/               # DI container, database, cache
 │   ├── models/             # SQLModel definitions
-│   ├── whatsapp-rpc/       # Go WhatsApp service (port 9400)
+│   ├── whatsapp-rpc/       # Go WhatsApp service (port 5681)
 │   └── requirements.txt
 ├── scripts/                # Build and utility scripts
 └── package.json            # Workspace root with npm scripts
@@ -25,7 +25,7 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3010 — `company start` is single-port (API +
+Open http://localhost:5678 — `company start` is single-port (API +
 WebSocket + built SPA on the backend port).
 
 ### Local Development (from source)
@@ -49,11 +49,11 @@ cd server && uv sync --extra local-embeddings
 ```
 
 Services (production `company start`):
-- **App (API + WS + SPA)**: http://localhost:3010
-- **WhatsApp Service**: http://localhost:9400 (backend-spawned on demand)
-- **Temporal dev server**: gRPC :7233, Web UI :8080 (backend-spawned when `TEMPORAL_ENABLED`)
+- **App (API + WS + SPA)**: http://localhost:5678
+- **WhatsApp Service**: http://localhost:5681 (backend-spawned on demand)
+- **Temporal dev server**: gRPC :5682, Web UI :5683 (backend-spawned when `TEMPORAL_ENABLED`)
 
-`company dev` additionally runs the Vite HMR client at http://localhost:3000.
+`company dev` additionally runs the Vite HMR client at http://localhost:5679.
 
 ## Services Overview
 
@@ -63,7 +63,7 @@ Services (production `company start`):
 - Zustand for state management
 - WebSocket connection to backend
 
-### Backend (Python FastAPI - Port 3010)
+### Backend (Python FastAPI - Port 5678)
 - FastAPI with async support
 - SQLAlchemy + SQLite database
 - Native Anthropic and Google Gen AI providers plus the OpenAI SDK for OpenAI-compatible chat through `ChatUnifier`; Ollama's SDK is used for local model discovery and embeddings
@@ -86,7 +86,7 @@ Services (production `company start`):
 - Provides durable workflow execution with per-node retry and horizontal scaling
 - Official `temporal` CLI downloaded by `pooch` from `https://temporal.download/cli/archive/latest` on `company build` (or first backend boot with Temporal enabled)
 - Backend-owned: the FastAPI lifespan starts `temporal server start-dev` via `TemporalServerRuntime.ensure_started()` when `TEMPORAL_ENABLED` and the configured address is loopback (external clusters are detected via TCP probe and left alone) — SQLite at `~/.opencompany/temporal.db`
-- Ports: gRPC 7233, Web UI 8080
+- Ports: gRPC 5682, Web UI 5683
 - Embedded worker runs inside Python backend (`TemporalWorkerManager` in `main.py`)
 - Workflow auto-resumption disabled at startup (history preserved); see `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP`
 - See [Temporal Architecture](./TEMPORAL_ARCHITECTURE.md) and [CLI Services Guide](./cli_services_integration.md)
@@ -112,8 +112,8 @@ Alternatively, `company build` scaffolds `.env` from `.env.template` automatical
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_CLIENT_PORT` | 3000 | Frontend port |
-| `PYTHON_BACKEND_PORT` | 3010 | Backend API port |
+| `VITE_CLIENT_PORT` | 5679 | Frontend port |
+| `PYTHON_BACKEND_PORT` | 5678 | Backend API port |
 | `AUTH_MODE` | single | Authentication mode (single/multi) |
 | `REDIS_ENABLED` | false | Enable Redis cache (production) |
 | `DEBUG` | true | Debug mode |
@@ -155,8 +155,8 @@ When `VITE_AUTH_ENABLED=false` (the default):
 ### Port already in use
 Change the port in `.env`:
 ```bash
-VITE_CLIENT_PORT=3001
-PYTHON_BACKEND_PORT=3011
+VITE_CLIENT_PORT=6679
+PYTHON_BACKEND_PORT=6678
 ```
 
 ### Python dependencies fail

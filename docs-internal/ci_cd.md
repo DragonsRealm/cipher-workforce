@@ -87,7 +87,7 @@ Reusable `workflow_call` workflow with four independent jobs (no plan/change-det
 - `build-and-lint` — `pnpm install --frozen-lockfile` + `pnpm run build`, then client lint (`pnpm --filter react-flow-client run lint`), TypeScript check (`... run typecheck`), and frontend tests (`... run test`, vitest). Runs on `ubuntu-latest`.
 - `backend-tests` — `uv sync` + `uv run pytest tests/ -v` in `server/`. Whole suite, unsharded. Runs on `ubuntu-latest`.
 - `cli-tests` — `uv pip install --system pytest pytest-asyncio pyyaml` + `python -m pytest cli/tests/ -v`. Runs on `ubuntu-latest`.
-- `test-build-start` — cross-OS matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`, `fail-fast: false`). Runs `pnpm run build`, then a start smoke test. On Unix it backgrounds `pnpm run start`, polls `http://localhost:3010/health` for up to ~30 s, then `pnpm run stop`. On Windows it starts the supervisor as a background job, waits 15 s, and fails if the job already exited.
+- `test-build-start` — cross-OS matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`, `fail-fast: false`). Runs `pnpm run build`, then a start smoke test. On Unix it backgrounds `pnpm run start`, polls `http://localhost:5678/health` for up to ~30 s, then `pnpm run stop`. On Windows it starts the supervisor as a background job, waits 15 s, and fails if the job already exited.
 
 ---
 

@@ -836,7 +836,7 @@ End-to-end smoke (requires Stripe CLI installed and a Stripe account):
    "create a Stripe test customer with email rosy@sparrow.com"; the
    LLM emits a `stripeAction.run` tool call.
 7. **Signature failure.**
-   `curl -X POST -H "Stripe-Signature: t=0,v1=garbage" http://localhost:3010/webhook/stripe -d '{}'`
+   `curl -X POST -H "Stripe-Signature: t=0,v1=garbage" http://localhost:5678/webhook/stripe -d '{}'`
    returns 400; no event dispatched.
 8. **Logout.** Credentials Modal → Disconnect. Confirm
    `process_service.list_processes("_stripe_global")` is empty AND

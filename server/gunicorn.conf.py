@@ -12,7 +12,7 @@ import multiprocessing
 
 # Load from environment (same vars used by config.py)
 host = os.getenv("HOST", "0.0.0.0")
-port = os.getenv("PORT", "3010")
+port = os.getenv("PORT", "5678")
 workers_env = os.getenv("WORKERS", "0")  # 0 = auto-calculate
 log_level = os.getenv("LOG_LEVEL", "INFO").lower()
 debug = os.getenv("DEBUG", "false").lower() == "true"

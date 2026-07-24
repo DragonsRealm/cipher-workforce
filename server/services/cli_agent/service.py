@@ -167,7 +167,7 @@ class AICliService:
         port = mcp_port or int(
             os.environ.get(
                 "OPENCOMPANY_BACKEND_PORT",
-                os.environ.get("MACHINA_BACKEND_PORT", "3010"),
+                os.environ.get("MACHINA_BACKEND_PORT", "5678"),
             )
         )
         ctx = BatchContext(

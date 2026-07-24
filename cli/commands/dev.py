@@ -99,15 +99,28 @@ def dev_command(
     console.print(
         f"Mode:     {'Daemon (uvicorn)' if daemon else 'Development (uvicorn)'}"
     )
-    console.print(f"Ports:    {', '.join(str(p) for p in cfg.all_ports)}")
 
-    console.log("Freeing ports...")
+    # ``all_ports`` is the reserved-port set being cleared of stale
+    # orphans, NOT a list of services this command runs. Only the
+    # client + backend are spawned here; the backend starts optional
+    # daemons (WhatsApp, Temporal, ...) on demand.
+    console.log(
+        f"Freeing reserved ports ({', '.join(str(p) for p in cfg.all_ports)})..."
+    )
     free_all_ports(cfg)
     console.log("Ports ready")
 
     use_vite = _has_vite(root)
+    if use_vite:
+        console.print(f"Client:   Vite dev server at http://localhost:{cfg.client_port}")
+    else:
+        console.print(
+            f"Client:   built SPA served by the backend at http://localhost:{cfg.backend_port}"
+        )
+    console.print(f"Backend:  http://localhost:{cfg.backend_port}")
     console.print(
-        f"Client:   {'Vite dev server' if use_vite else 'served by backend (built SPA)'}"
+        "Backend-spawned on demand: WhatsApp "
+        f"(:{cfg.whatsapp_port}), Temporal (:{cfg.temporal_port} gRPC, :{cfg.temporal_ui_port} UI, when TEMPORAL_ENABLED)"
     )
     if force:
         console.print("Vite:     forced dependency re-bundle (--force)")

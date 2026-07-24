@@ -22,7 +22,7 @@ npm install -g @zeenie-ai/opencompany
 company start
 ```
 
-Open http://localhost:3010 and click the key icon (**API Credentials**) in the toolbar to connect your first AI provider.
+Open http://localhost:5678 and click the key icon (**API Credentials**) in the toolbar to connect your first AI provider.
 
 > **Upgrading from MachinaOS?** Existing `~/.machina` and checkout-local `.machina` state is detected when the new `.opencompany` location does not yet exist, so databases and deployment state are not stranded. The `machina` command remains available as a deprecated legacy alias; new scripts should use `company`.
 
@@ -37,7 +37,7 @@ pnpm run build
 pnpm run dev
 ```
 
-The `dev` task starts the Python backend, Vite client, WhatsApp service, and Temporal in parallel. See [SETUP.md](docs-internal/SETUP.md) and [SCRIPTS.md](docs-internal/SCRIPTS.md) for details, and [CONTRIBUTING.md](CONTRIBUTING.md) for the codebase map and contribution recipes.
+The `dev` task starts the Python backend and the Vite client; optional daemons (WhatsApp, Temporal) are spawned by the backend on demand. See [SETUP.md](docs-internal/SETUP.md) and [SCRIPTS.md](docs-internal/SCRIPTS.md) for details, and [CONTRIBUTING.md](CONTRIBUTING.md) for the codebase map and contribution recipes.
 
 </details>
 

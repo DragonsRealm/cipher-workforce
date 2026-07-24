@@ -35,7 +35,7 @@ def oauth():
     return TwitterOAuth(
         client_id="test-client-id",
         client_secret="test-client-secret",
-        redirect_uri="http://localhost:3010/api/twitter/callback",
+        redirect_uri="http://localhost:5678/api/twitter/callback",
     )
 
 
@@ -45,7 +45,7 @@ def public_oauth():
     twitter_oauth._oauth_states.clear()
     return TwitterOAuth(
         client_id="test-client-id",
-        redirect_uri="http://localhost:3010/api/twitter/callback",
+        redirect_uri="http://localhost:5678/api/twitter/callback",
     )
 
 
@@ -61,7 +61,7 @@ class TestAuthorizationUrl:
         assert params["code_challenge_method"] == ["S256"]
         assert params["response_type"] == ["code"]
         assert params["client_id"] == ["test-client-id"]
-        assert params["redirect_uri"] == ["http://localhost:3010/api/twitter/callback"]
+        assert params["redirect_uri"] == ["http://localhost:5678/api/twitter/callback"]
         assert "code_challenge" in params
         assert "state" in params
 

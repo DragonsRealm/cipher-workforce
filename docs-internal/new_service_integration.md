@@ -123,7 +123,7 @@ class ServiceOAuth:
         self,
         client_id: str,
         client_secret: str,
-        redirect_uri: str = "http://localhost:3010/api/{service}/callback",
+        redirect_uri: str = "http://localhost:5678/api/{service}/callback",
         scopes: Optional[List[str]] = None,
     ):
         self.client_id = client_id

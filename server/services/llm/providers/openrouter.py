@@ -34,7 +34,7 @@ class OpenRouterProvider(OpenAIProvider):
             "base_url": proxy_url or "https://openrouter.ai/api/v1",
             "max_retries": max(0, int(max_retries)),
             "default_headers": {
-                "HTTP-Referer": "http://localhost:3000",
+                "HTTP-Referer": "http://localhost:5678",
                 "X-Title": "OpenCompany",
             },
         }
@@ -69,7 +69,7 @@ class OpenRouterProvider(OpenAIProvider):
                 "https://openrouter.ai/api/v1/models",
                 headers={
                     "Authorization": f"Bearer {api_key}",
-                    "HTTP-Referer": "http://localhost:3000",
+                    "HTTP-Referer": "http://localhost:5678",
                     "X-Title": "OpenCompany",
                 },
                 timeout=15.0,

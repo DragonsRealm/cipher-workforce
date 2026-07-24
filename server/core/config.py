@@ -172,9 +172,9 @@ class Settings(BaseSettings):
         le=65535,
     )
     # Web UI port. ``temporal server start-dev`` defaults this to
-    # ``--port + 1000`` (i.e. 8233 alongside the default 7233 gRPC
-    # port); declared explicitly via ``--ui-port`` so the binding is
-    # intentional and surfaces in status snapshots.
+    # ``--port + 1000``; declared explicitly via ``--ui-port`` (5683 in
+    # the serial 5678-block) so the binding is intentional and surfaces
+    # in status snapshots.
     temporal_ui_port: int = Field(
         env="TEMPORAL_UI_PORT",
         ge=1024,
@@ -248,9 +248,9 @@ class Settings(BaseSettings):
     google_ai_api_key: Optional[str] = Field(default=None, env="GOOGLE_AI_API_KEY")
 
     # Node.js Executor Configuration
-    nodejs_executor_url: str = Field(default="http://localhost:3020", env="NODEJS_EXECUTOR_URL")
+    nodejs_executor_url: str = Field(default="http://localhost:5680", env="NODEJS_EXECUTOR_URL")
     nodejs_executor_timeout: int = Field(default=30, env="NODEJS_EXECUTOR_TIMEOUT", ge=5, le=300)
-    nodejs_executor_port: int = Field(default=3020, env="NODEJS_EXECUTOR_PORT", ge=1024, le=65535)
+    nodejs_executor_port: int = Field(default=5680, env="NODEJS_EXECUTOR_PORT", ge=1024, le=65535)
 
     # AI Proxy Configuration (Ollama-style proxy)
     ai_proxy_default_port: int = Field(default=11434, env="AI_PROXY_DEFAULT_PORT")
@@ -347,7 +347,7 @@ class Settings(BaseSettings):
     # session DB lives under data_dir, surviving pnpm install / version bumps)
     whatsapp_runtime_enabled: bool = Field(default=True, env="WHATSAPP_RUNTIME_ENABLED")
     whatsapp_data_subdir: str = Field(default="whatsapp", env="WHATSAPP_DATA_SUBDIR")
-    whatsapp_port: int = Field(default=9400, env="WHATSAPP_RPC_PORT", ge=1024, le=65535)
+    whatsapp_port: int = Field(default=5681, env="WHATSAPP_RPC_PORT", ge=1024, le=65535)
     whatsapp_binary_path: Optional[str] = Field(default=None, env="WHATSAPP_BINARY_PATH")
     # `localhost` is the only bind that Windows Firewall's loopback exception
     # silently allows. Override to "0.0.0.0" for container deployments.

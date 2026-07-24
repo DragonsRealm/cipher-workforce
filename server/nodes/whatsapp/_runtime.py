@@ -13,7 +13,7 @@ runs through ``asyncio.to_thread`` in ``_pre_spawn`` so the long
 ``npm install`` (~30 s) doesn't block the asyncio event loop —
 otherwise the ``StatusBroadcaster._refresh_all_services`` startup
 fan-out monopolises the loop during boot and uvicorn can't bind
-port 3010.
+the backend port.
 
 Subclasses :class:`BaseProcessSupervisor` for spawning, tree-kill, status
 snapshots, restart policy, and the singleton ``get_instance()`` accessor.
@@ -66,7 +66,7 @@ class WhatsAppRuntime(BaseProcessSupervisor):
 
     @property
     def port(self) -> int:
-        return int(getattr(self.settings, "whatsapp_port", 9400))
+        return int(getattr(self.settings, "whatsapp_port", 5681))
 
     @property
     def bind_host(self) -> str:
@@ -111,7 +111,7 @@ class WhatsAppRuntime(BaseProcessSupervisor):
         # blocks on ``subprocess.run`` for the duration of the install;
         # without this offload the startup ``_refresh_all_services``
         # fan-out monopolises the loop for ~30 s and uvicorn can't
-        # bind port 3010 (port-probe times out in the supervisor).
+        # bind the backend port (port-probe times out in the supervisor).
         # Idempotent — instant return when the binary already exists.
         resolved = await asyncio.to_thread(edgymeow_binary_path)
         if resolved is None:

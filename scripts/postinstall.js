@@ -128,7 +128,7 @@ async function main() {
     console.log('========================================');
     console.log('');
     console.log('Run: company start');
-    console.log('Open: http://localhost:3010');
+    console.log('Open: http://localhost:5678');
     console.log('');
 
   } catch (err) {

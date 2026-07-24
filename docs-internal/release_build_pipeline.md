@@ -114,7 +114,7 @@ Idempotent on re-runs (compileall only rewrites stale pyc; esbuild is determinis
 4. `cd server && uv run python -m compileall -q -j 0 services` → plain `__pycache__/*.pyc` present (no `.opt-1.pyc` — nothing loads those).
 5. Cold-start: clean install + `company start > start.log 2>&1` → `Application startup complete` at ≤+50s (was +66.9s).
 6. `npm pack --dry-run` → `server/nodejs/dist/index.js` included; no `__pycache__/`; tarball size ≤ v0.0.76.
-7. Smoke: `company start` → load http://localhost:3010 → run "AI Assistant" example → agent responds.
+7. Smoke: `company start` → load http://localhost:5678 → run "AI Assistant" example → agent responds.
 
 ## Out of scope (future work)
 

@@ -6,7 +6,7 @@ Documented root causes and fixes for errors encountered in OpenCompany developme
 
 ## 1. SQLAlchemy Import Hang (Windows)
 
-**Symptom**: Backend hangs at startup with no output after `Importing DI container + all services...`. The process is alive but never binds port 3010. `import sqlalchemy` blocks indefinitely.
+**Symptom**: Backend hangs at startup with no output after `Importing DI container + all services...`. The process is alive but never binds port 5678. `import sqlalchemy` blocks indefinitely.
 
 **Root cause**: Git worktrees nested inside the project root (e.g., `.claude/worktrees/`) cause Windows Defender real-time scanning to fan out across all worktree directories when Python loads `.pyd` (native DLL) files. SQLAlchemy has 5 Cython `.pyd` files (`collections`, `immutabledict`, `processors`, `resultproxy`, `util`) loaded sequentially during import. Defender's scan queue backs up across the worktree copies, blocking `LoadLibrary()` for minutes per file.
 
@@ -188,7 +188,7 @@ Also changed `receive_timeout=540` to `receive_timeout=None` on `ws_connect()` -
 
 **Symptom**: Backend logs show:
 ```
-WhatsApp RPC timeout - Go service not responding at ws://localhost:9400/ws/rpc
+WhatsApp RPC timeout - Go service not responding at ws://localhost:5681/ws/rpc
 ```
 
 WhatsApp service health check (`/health`) returns 200 OK, but the WebSocket RPC connection fails.
@@ -212,7 +212,7 @@ self.ws = await asyncio.wait_for(
 
 **Symptom**: After `pnpm run dev`, browser console shows repeated errors:
 ```
-GET http://localhost:3010/api/auth/status net::ERR_CONNECTION_REFUSED
+GET http://localhost:5678/api/auth/status net::ERR_CONNECTION_REFUSED
 Failed to check auth status (attempt 4/6): TypeError: Failed to fetch
 ```
 

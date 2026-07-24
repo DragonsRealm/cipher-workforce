@@ -228,7 +228,7 @@ class TestJavascriptExecutor:
     async def test_http_exception_wrapped_in_envelope(self, harness):
         _reset_nodejs_singleton()
         fake_client = MagicMock(name="NodeJSClient")
-        fake_client.execute = AsyncMock(side_effect=ConnectionRefusedError("Cannot connect to host localhost:3020"))
+        fake_client.execute = AsyncMock(side_effect=ConnectionRefusedError("Cannot connect to host localhost:5680"))
 
         with patch(
             "nodes.code._nodejs.get_nodejs_client",
@@ -237,7 +237,7 @@ class TestJavascriptExecutor:
             result = await harness.execute("javascriptExecutor", {"code": "output = 1"})
 
         harness.assert_envelope(result, success=False)
-        assert "localhost:3020" in result["error"]
+        assert "localhost:5680" in result["error"]
 
 
 # ============================================================================

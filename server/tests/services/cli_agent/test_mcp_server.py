@@ -228,7 +228,7 @@ class TestLockfile:
         path = lockfile_path(
             ide_lockfile_dir=tmp_path,
             pid=12345,
-            port=3010,
+            port=5678,
             ide_name="claude",
         )
         assert path.name == "12345.lock"
@@ -237,25 +237,25 @@ class TestLockfile:
         path = lockfile_path(
             ide_lockfile_dir=tmp_path,
             pid=12345,
-            port=3010,
+            port=5678,
             ide_name="gemini",
         )
         assert "12345" in path.name
-        assert "3010" in path.name
+        assert "5678" in path.name
         assert path.name.endswith(".json")
 
     def test_lockfile_payload_matches_vscode_shape(self, tmp_path):
         path = write_ide_lockfile(
             ide_lockfile_dir=tmp_path,
             pid=99999,
-            port=3010,
+            port=5678,
             token="abc123",
             workspace_dir=tmp_path / "ws",
             ide_name="claude",
         )
         payload = json.loads(path.read_text(encoding="utf-8"))
         # VSCode-style fields
-        assert payload["port"] == 3010
+        assert payload["port"] == 5678
         assert payload["authToken"] == "abc123"
         assert payload["ideName"] == "claude"
         assert "url" in payload
@@ -268,7 +268,7 @@ class TestLockfile:
         path = write_ide_lockfile(
             ide_lockfile_dir=tmp_path,
             pid=1,
-            port=3010,
+            port=5678,
             token="t",
             workspace_dir=tmp_path,
             ide_name="claude",
@@ -276,7 +276,7 @@ class TestLockfile:
         payload = json.loads(path.read_text(encoding="utf-8"))
         # FastMCP serves at `/mcp` of the sub-app, mounted at `/mcp/ide`.
         # The lockfile must advertise the absolute JSON-RPC endpoint.
-        assert payload["url"] == "http://127.0.0.1:3010/mcp/ide/mcp"
+        assert payload["url"] == "http://127.0.0.1:5678/mcp/ide/mcp"
 
     def test_remove_lockfile_safe_when_missing(self, tmp_path):
         # Should never raise
@@ -298,7 +298,7 @@ class TestLockfile:
         write_ide_lockfile(
             ide_lockfile_dir=tmp_path,
             pid=dead_pid,
-            port=3010,
+            port=5678,
             token="t",
             workspace_dir=tmp_path,
             ide_name="claude",
@@ -307,7 +307,7 @@ class TestLockfile:
         live_path = write_ide_lockfile(
             ide_lockfile_dir=tmp_path,
             pid=os.getpid(),
-            port=3010,
+            port=5678,
             token="t",
             workspace_dir=tmp_path,
             ide_name="claude",

@@ -143,7 +143,7 @@ def kill_port(port: int) -> KillResult:
     Post-kill recheck sleeps ``_POST_KILL_RECHECK_DELAY`` because Windows
     can lag a few hundred ms releasing the listener socket after the
     bound process dies — without this, ``temporal server start-dev``'s
-    UI port (8080) frequently re-reports as in-use immediately after the
+    UI port frequently re-reports as in-use immediately after the
     gRPC port kill, even though the kill on temporal.exe (one process
     binds both ports — per docs.temporal.io/cli/server) succeeded.
     """

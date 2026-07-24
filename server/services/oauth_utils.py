@@ -7,9 +7,9 @@ via ``register_oauth_callback_path("<provider>", "/api/<provider>/callback")``
 from each plugin's ``__init__.py``); the base URL (scheme + host + port) comes
 from the connection itself.
 
-    ws://localhost:3010/ws/status    -> http://localhost:3010/api/google/callback
+    ws://localhost:5678/ws/status    -> http://localhost:5678/api/google/callback
     wss://flow.zeenie.xyz/ws/status  -> https://flow.zeenie.xyz/api/google/callback
-    http://localhost:3010/api/google -> http://localhost:3010/api/google/callback
+    http://localhost:5678/api/google -> http://localhost:5678/api/google/callback
 """
 
 from urllib.parse import urlparse
@@ -41,7 +41,7 @@ def get_redirect_uri(connection, provider: str) -> str:
         provider: Lowercase plugin id (``"google"``, ``"twitter"``, ...).
 
     Returns:
-        Full redirect URI, e.g. ``http://localhost:3010/api/google/callback``.
+        Full redirect URI, e.g. ``http://localhost:5678/api/google/callback``.
         Falls back to ``/api/<provider>/callback`` if the plugin hasn't
         registered an explicit path (the default for the existing 8+ plugins).
     """

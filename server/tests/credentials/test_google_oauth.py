@@ -24,7 +24,7 @@ def oauth():
     return GoogleOAuth(
         client_id="test-client-id.apps.googleusercontent.com",
         client_secret="test-client-secret",
-        redirect_uri="http://localhost:3010/api/google/callback",
+        redirect_uri="http://localhost:5678/api/google/callback",
     )
 
 

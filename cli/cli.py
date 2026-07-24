@@ -195,7 +195,7 @@ def _deploy_up(
     source: str = typer.Option("local", "--source", help="Install source: local (npm pack) or release (npm registry)."),
     version: str = typer.Option("latest", "--version", help="opencompany version when --source release."),
     machine_type: str = typer.Option("e2-standard-2", "--machine-type", help="VM size."),
-    port: int = typer.Option(8080, "--port", help="Public port the app binds + the firewall opens."),
+    port: int = typer.Option(5678, "--port", help="Public port the app binds + the firewall opens."),
     allow_cidr: str = typer.Option("0.0.0.0/0", "--allow-cidr", help="Firewall source range (restrict to your IP/32)."),
     region: str | None = typer.Option(None, "--region", help="Cloud region (provider default if omitted)."),
     zone: str | None = typer.Option(None, "--zone", help="Cloud zone (provider default if omitted)."),

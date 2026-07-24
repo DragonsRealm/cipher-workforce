@@ -33,7 +33,7 @@ pytestmark = pytest.mark.credentials
 class _FakeWebSocket:
     """Stand-in for starlette.WebSocket exposing only base_url + client_state."""
 
-    def __init__(self, base_url: str = "ws://localhost:3010/ws/status"):
+    def __init__(self, base_url: str = "ws://localhost:5678/ws/status"):
         self.base_url = base_url
         # mimic starlette WebSocketState.CONNECTED
         self.client_state = SimpleNamespace(name="CONNECTED")

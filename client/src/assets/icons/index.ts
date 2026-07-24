@@ -104,8 +104,8 @@ export const resolveIcon = (icon: string | undefined | null): string | null => {
     return ICON_REGISTRY[icon.slice('asset:'.length)] ?? null;
   }
   if (icon.startsWith('/api/')) {
-    // Backend-served icon endpoint. In dev the FE runs on Vite:3000 and
-    // the backend on :3010, so a bare relative path would hit the Vite
+    // Backend-served icon endpoint. In dev the FE runs on Vite:5679 and
+    // the backend on :5678, so a bare relative path would hit the Vite
     // server. Prefix with PYTHON_BASE_URL (empty string in prod, full
     // localhost URL in dev) so the browser fetches the right origin.
     return `${API_CONFIG.PYTHON_BASE_URL}${icon}`;

@@ -24,19 +24,19 @@ def _conn(base_url: str):
 
 class TestGetBaseUrl:
     def test_ws_scheme_becomes_http(self):
-        assert get_base_url(_conn("ws://localhost:3010/ws/status")) == "http://localhost:3010"
+        assert get_base_url(_conn("ws://localhost:5678/ws/status")) == "http://localhost:5678"
 
     def test_wss_scheme_becomes_https(self):
         assert get_base_url(_conn("wss://flow.zeenie.xyz/ws/status")) == "https://flow.zeenie.xyz"
 
     def test_http_scheme_preserved(self):
-        assert get_base_url(_conn("http://localhost:3010/api/google")) == "http://localhost:3010"
+        assert get_base_url(_conn("http://localhost:5678/api/google")) == "http://localhost:5678"
 
     def test_https_scheme_preserved(self):
         assert get_base_url(_conn("https://example.com/anything")) == "https://example.com"
 
     def test_strips_trailing_slash(self):
-        assert get_base_url(_conn("http://localhost:3010/")) == "http://localhost:3010"
+        assert get_base_url(_conn("http://localhost:5678/")) == "http://localhost:5678"
 
     def test_preserves_non_default_port(self):
         assert get_base_url(_conn("http://localhost:8080/anything")) == "http://localhost:8080"
@@ -51,8 +51,8 @@ class TestGetRedirectUri:
     @patch("services.oauth_utils.get_oauth_callback_path")
     def test_google_dev_localhost(self, mock_lookup):
         mock_lookup.return_value = "/api/google/callback"
-        uri = get_redirect_uri(_conn("ws://localhost:3010/ws/status"), "google")
-        assert uri == "http://localhost:3010/api/google/callback"
+        uri = get_redirect_uri(_conn("ws://localhost:5678/ws/status"), "google")
+        assert uri == "http://localhost:5678/api/google/callback"
         mock_lookup.assert_called_once_with("google")
 
     @patch("services.oauth_utils.get_oauth_callback_path")
@@ -66,8 +66,8 @@ class TestGetRedirectUri:
         """`get_oauth_callback_path` (the real one, not mocked) falls
         back to ``/api/<provider>/callback`` for any unregistered
         provider. Test the integrated path end-to-end."""
-        uri = get_redirect_uri(_conn("http://localhost:3010/anything"), "newprovider")
-        assert uri == "http://localhost:3010/api/newprovider/callback"
+        uri = get_redirect_uri(_conn("http://localhost:5678/anything"), "newprovider")
+        assert uri == "http://localhost:5678/api/newprovider/callback"
 
     def test_paths_registered_by_plugins(self):
         """Smoke test: the real plugin packages must register the

@@ -43,7 +43,7 @@ class JavaScriptExecutorNode(CodeExecutorBase):
             # tool can substitute.
             raise NodeUserError(
                 "JavaScript executor is not running (cannot reach the "
-                "Node.js sidecar on localhost:3020). Start the dev runner "
+                "Node.js sidecar on localhost:5680). Start the dev runner "
                 "(it spawns the Node executor automatically), or fall back "
                 "to python_executor for similar logic. Underlying: "
                 f"{exc}"

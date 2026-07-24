@@ -89,7 +89,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: parseInt(getEnv('VITE_CLIENT_PORT', '3000')),
+      port: parseInt(getEnv('VITE_CLIENT_PORT', '5679')),
       strictPort: false,
       host: true
     },

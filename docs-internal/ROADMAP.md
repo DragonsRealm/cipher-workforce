@@ -381,7 +381,7 @@ When `TEMPORAL_ENABLED=true`, each workflow node executes as an independent Temp
 #### Configuration
 ```env
 TEMPORAL_ENABLED=true
-TEMPORAL_SERVER_ADDRESS=localhost:7233
+TEMPORAL_SERVER_ADDRESS=localhost:5682
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TASK_QUEUE=machina-tasks
 ```

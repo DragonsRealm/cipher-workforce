@@ -545,7 +545,7 @@ class TemporalWorkerPool:
 
 
 async def run_standalone_worker(
-    server_address: str = "localhost:7233",
+    server_address: str = "localhost:5682",
     namespace: str = "default",
     task_queue: str = "machina-tasks",
     pool_size: int = 100,
