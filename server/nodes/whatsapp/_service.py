@@ -366,6 +366,18 @@ async def get_client(force_reconnect: bool = False, *, spawn: bool = True) -> RP
 
 async def handle_whatsapp_status() -> dict:
     """Get WhatsApp connection status via direct RPC and broadcast to all clients."""
+    # Supervisor is the source of truth: a dormant runtime means "not
+    # running" — answer directly, no RPC client, no connect attempt.
+    from nodes.whatsapp import get_whatsapp_runtime
+
+    if not get_whatsapp_runtime().is_running():
+        return {
+            "success": False,
+            "error": "WhatsApp service not running",
+            "connected": False,
+            "running": False,
+            "timestamp": time.time(),
+        }
     try:
         client = await get_client(spawn=False)
         status_data = await client.call("status")
@@ -406,6 +418,15 @@ async def handle_whatsapp_connected_phone() -> dict:
     Returns the phone number of the currently connected WhatsApp account,
     extracted from the device JID.
     """
+    from nodes.whatsapp import get_whatsapp_runtime
+
+    if not get_whatsapp_runtime().is_running():
+        return {
+            "success": False,
+            "error": "WhatsApp service not running",
+            "connected_phone": None,
+            "timestamp": time.time(),
+        }
     try:
         client = await get_client(spawn=False)
         status_data = await client.call("status")

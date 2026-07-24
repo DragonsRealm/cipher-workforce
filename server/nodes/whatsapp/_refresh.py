@@ -34,11 +34,17 @@ async def refresh_whatsapp_status(broadcaster: "StatusBroadcaster") -> None:
     with tracer.start_as_current_span("broadcaster.refresh_whatsapp") as span:
         try:
             from ._events import broadcast_whatsapp_status
+            from ._runtime import get_whatsapp_runtime
             from ._service import get_client
 
-            # Passive probe: never boot the optional WhatsApp runtime just to
-            # report its status. Nodes and explicit start/QR commands spawn it
-            # on demand via get_client(spawn=True).
+            # The backend supervises the daemon itself, so the supervisor is
+            # the source of truth: dormant runtime => nothing to refresh.
+            # No connect attempt, no error path. Nodes and explicit start/QR
+            # commands spawn it on demand via get_client(spawn=True).
+            if not get_whatsapp_runtime().is_running():
+                span.set_attribute("running", False)
+                return
+
             client = await get_client(spawn=False)
             status_data = await client.call("status")
 
