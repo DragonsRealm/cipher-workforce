@@ -767,7 +767,12 @@ class TestUIHintsInNodeSpec:
         assert hints.get("hideInputSection") is True
         assert hints.get("hideOutputSection") is True
 
-    def test_task_manager_surfaces_span_the_full_parameter_panel(self):
+    def test_task_manager_panel_is_exclusive_to_the_task_manager_node(self):
+        """The MiddleSection dispatch is winner-takes-all: a node carrying
+        isTaskManagerPanel renders the task board INSTEAD of its parameter
+        form. That's correct for the taskManager tool node (no meaningful
+        params) but must never leak onto the team leads — it would make
+        their prompt / provider / model form unreachable in the UI."""
         hints = get_node_spec("taskManager").get("uiHints", {})
         assert hints.get("isTaskManagerPanel") is True
         assert hints.get("hideInputSection") is True
@@ -775,7 +780,7 @@ class TestUIHintsInNodeSpec:
 
         for node_type in ("orchestrator_agent", "ai_employee"):
             lead_hints = get_node_spec(node_type).get("uiHints", {})
-            assert lead_hints.get("isTaskManagerPanel") is True
+            assert lead_hints.get("isTaskManagerPanel") is not True
             assert lead_hints.get("hideInputSection") is not True
             assert lead_hints.get("hideOutputSection") is not True
 
