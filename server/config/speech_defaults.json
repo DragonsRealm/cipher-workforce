@@ -1,6 +1,12 @@
 {
   "_comment": "Per-provider speech capabilities. Sibling of llm_defaults.json and read the same way: services/speech/config.py loads this once at import and every capability lookup goes through it, so shared code never branches on a provider name. Values here were verified against live official docs; see docs-internal/speech_provider_rfc.md section 7 for the sources and for the handful of items the docs do not state. Per-model overrides use the same {'model-id': value, '_default': value} shape as llm_defaults.json's max_output_tokens.",
   "version": "1.0",
+  "_common_languages_comment": "Fallback for the Language dropdown when a provider does not declare a closed list of its own. OpenAI/Whisper, Deepgram and Groq accept far more codes than these; this is a convenience shortlist, and 'Auto-detect' (empty value) is always offered first. A provider WITH a closed set (Sarvam) declares `languages` in its own block and that wins.",
+  "common_languages": [
+    "en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "uk", "tr",
+    "ar", "he", "fa", "hi", "bn", "ta", "te", "ur", "id", "vi", "th",
+    "zh", "ja", "ko"
+  ],
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com/v1",
@@ -142,8 +148,10 @@
         },
         "_smart_format_comment": "smart_format supersedes punctuate and additionally applies paragraphing plus number/date/currency formatting.",
         "default_smart_format": true,
-        "_max_upload_comment": "Deepgram publishes no cloud file-size or duration cap. The 25 MB figure in circulation belongs to their self-hosted SageMaker docs and does not apply here, so no limit is asserted; services.media's read cap is the only ceiling.",
-        "max_upload_bytes": null,
+        "_max_upload_comment": "VERIFIED from the Limits section of the pre-recorded-audio docs: 2 GB maximum file size. That is far above services.media's own 25 MiB read cap, which is therefore the binding limit in practice — the value is recorded for accuracy, not because it will ever be hit here. (An earlier revision claimed no cap was published; that was wrong.)",
+        "max_upload_bytes": 2147483648,
+        "_max_duration_comment": "ALSO verified, and this one bites: a synchronous request over 10 minutes of audio (Nova/Base/Enhanced) or 20 minutes (Whisper) returns 504 Gateway Timeout rather than a transcript. Long recordings need Deepgram's callback flow, which this node does not implement.",
+        "max_duration_seconds": 600,
         "billed_unit": "minutes"
       }
     },

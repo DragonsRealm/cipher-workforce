@@ -122,18 +122,34 @@ class TestCapabilityResolution:
             "openai", "gpt-4o-mini-transcribe-2025-12-15"
         ) == ["json", "text"]
 
-    def test_declared_null_is_distinguishable_from_absent(self):
-        """Deepgram declares no upload cap; that is a fact, not a gap."""
+    def test_declared_null_is_distinguishable_from_absent(self, monkeypatch):
+        """"Declared as unknown" and "never configured" are different facts.
+
+        Exercised against a synthetic block rather than a real provider, so
+        the mechanism stays tested when a vendor publishes a limit it
+        previously did not.
+        """
         from nodes.speech import _config
 
-        assert (
-            _config.capability("deepgram", "stt", "max_upload_bytes", default="ABSENT")
-            is None
+        monkeypatch.setitem(
+            _config.SPEECH_DEFAULTS["providers"],
+            "_probe",
+            {"stt": {"declared_null": None}},
         )
-        assert (
-            _config.capability("deepgram", "stt", "nonexistent", default="ABSENT")
-            == "ABSENT"
-        )
+        assert _config.capability("_probe", "stt", "declared_null", default="ABSENT") is None
+        assert _config.capability("_probe", "stt", "absent", default="ABSENT") == "ABSENT"
+
+    def test_deepgram_limits_match_the_published_ones(self):
+        """Both are documented, and the duration one bites in practice.
+
+        An earlier revision asserted Deepgram published no cap at all. It
+        does: 2 GB, and a 10-minute synchronous ceiling above which the API
+        returns 504 rather than a transcript.
+        """
+        from nodes.speech import _config
+
+        assert _config.capability("deepgram", "stt", "max_upload_bytes") == 2 * 1024**3
+        assert _config.capability("deepgram", "stt", "max_duration_seconds") == 600
 
     def test_boolean_capabilities_default_permissive(self):
         from nodes.speech import _config

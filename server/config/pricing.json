@@ -266,21 +266,21 @@
       "_default": 0.0000226
     },
     "elevenlabs": {
-      "_description": "Text-to-speech, billed per CHARACTER of input. ElevenLabs prices by subscription tier rather than by a flat published per-character rate, so this is the Creator-tier effective rate (~$0.30 per 1,000 characters) and is an ESTIMATE. Operators on another tier should edit this value — the node reports the character count truthfully either way.",
-      "_source": "https://elevenlabs.io/pricing",
+      "_description": "Text-to-speech, billed per CHARACTER of input. VERIFIED against the published API rate card: $0.10 per 1,000 characters for Multilingual v2/v3 (eleven_multilingual_v2 is the default model here) and $0.05 per 1,000 for Flash/Turbo. This table has no per-model axis, so the higher multilingual rate is used — an install running mostly Flash should halve it. Plans include a character quota; overage is charged at these same rates, so this is the marginal cost rather than the average.",
+      "_source": "https://elevenlabs.io/pricing/api",
       "_updated": "2026-07",
-      "text_to_speech": 0.0003,
-      "_default": 0.0003
+      "text_to_speech": 0.0001,
+      "_default": 0.0001
     },
     "deepgram": {
-      "_description": "Speech-to-text, billed per MINUTE of audio. Pay-as-you-go rate for the nova-3 family. The node converts measured seconds to minutes before recording, so resource_count here is minutes, not seconds.",
+      "_description": "Speech-to-text, billed per MINUTE of audio. VERIFIED Pay-As-You-Go rate for Nova-3 Monolingual pre-recorded ($0.0077/min); Nova-3 Multilingual is $0.0092/min. The node converts measured seconds to minutes before recording, so resource_count here is minutes, not seconds.",
       "_source": "https://deepgram.com/pricing",
       "_updated": "2026-07",
-      "speech_to_text": 0.0043,
-      "_default": 0.0043
+      "speech_to_text": 0.0077,
+      "_default": 0.0077
     },
     "openai": {
-      "_description": "OpenAI's /audio/* routes only. These are NOT token-priced, so they live here rather than under `llm.openai` — the two blocks are separate namespaces and do not collide. text_to_speech bills per CHARACTER of input ($0.60 per 1M characters for gpt-4o-mini-tts, the default model; tts-1 is ~25x that, and this table has no per-model axis, so a tts-1-heavy install should raise this value). speech_to_text bills per SECOND ($0.006/minute for whisper-1).",
+      "_description": "OpenAI's /audio/* routes only. These live here rather than under `llm.openai` — the two blocks are separate namespaces and do not collide. speech_to_text bills per SECOND and is accurate: $0.006/minute (gpt-4o-transcribe and whisper-1) = $0.0001/sec; gpt-4o-mini-transcribe is half that. text_to_speech UNDER-REPORTS and cannot fully be fixed in this schema: gpt-4o-mini-tts charges $0.60 per 1M INPUT characters (the figure below) PLUS $12 per 1M audio OUTPUT tokens, which usually dominates — OpenAI's own all-in estimate is ~$0.015/minute of speech. This table bills per character with no output-token axis, so an operator who wants the total reflected should raise text_to_speech to roughly 0.0000167 (that estimate at ~900 characters/minute of speech).",
       "_source": "https://openai.com/api/pricing/",
       "_updated": "2026-07",
       "text_to_speech": 0.0000006,

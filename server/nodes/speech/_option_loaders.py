@@ -55,6 +55,75 @@ async def load_speech_models(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     return options
 
 
+async def load_speech_languages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Language codes for the selected provider and direction.
+
+    A provider with a closed set (Sarvam accepts exactly 11 locales, and
+    rejects anything else) serves its own list. Everything else falls back to
+    the shared shortlist in ``speech_defaults.json`` — Whisper and Deepgram
+    accept far more codes than that, so the list is a convenience rather than
+    a constraint, and "Auto-detect" leads so the common case is one click.
+    """
+    direction = _direction_for(params)
+    provider = _selected_provider(params, direction)
+    if not provider:
+        return []
+
+    codes = speech_config.capability(provider, direction, "languages", default=None)
+    if not codes:
+        codes = speech_config.SPEECH_DEFAULTS.get("common_languages") or []
+
+    options: List[Dict[str, Any]] = [
+        {"value": "", "label": "Auto-detect", "description": "Let the provider decide"}
+    ]
+    options.extend({"value": code, "label": code} for code in codes)
+    return options
+
+
+async def load_speech_formats(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Output containers the selected synthesis provider accepts."""
+    provider = _selected_provider(params, speech_config.TTS)
+    if not provider:
+        return []
+
+    default = speech_config.capability(
+        provider, speech_config.TTS, "default_output_format", default=""
+    )
+    options: List[Dict[str, Any]] = []
+    for fmt in speech_config.output_formats(provider):
+        option: Dict[str, Any] = {"value": fmt, "label": fmt}
+        if fmt == default:
+            option["description"] = "Provider default"
+        options.append(option)
+    return options
+
+
+async def load_speech_sample_rates(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Sample rates, for the providers that expose the choice at all.
+
+    Empty for providers that do not — the field is gated by
+    ``displayOptions`` so it should not be visible in that case anyway, but
+    an empty list is the honest answer rather than a fabricated one.
+    """
+    provider = _selected_provider(params, speech_config.TTS)
+    if not provider:
+        return []
+
+    rates = speech_config.capability(
+        provider, speech_config.TTS, "sample_rates", default=[]
+    )
+    default = speech_config.capability(
+        provider, speech_config.TTS, "default_sample_rate", default=None
+    )
+    options: List[Dict[str, Any]] = []
+    for rate in rates or []:
+        option: Dict[str, Any] = {"value": rate, "label": f"{rate} Hz"}
+        if rate == default:
+            option["description"] = "Provider default"
+        options.append(option)
+    return options
+
+
 async def load_speech_voices(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Voices for the selected synthesis provider.
 

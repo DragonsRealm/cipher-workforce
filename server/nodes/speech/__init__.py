@@ -35,7 +35,13 @@ from __future__ import annotations
 from services.node_output_schemas import register_output_schema
 from services.ws_handler_registry import register_option_loader
 
-from ._option_loaders import load_speech_models, load_speech_voices
+from ._option_loaders import (
+    load_speech_formats,
+    load_speech_languages,
+    load_speech_models,
+    load_speech_sample_rates,
+    load_speech_voices,
+)
 from .speech_to_text import SpeechToTextNode, SpeechToTextOutput
 from .text_to_speech import TextToSpeechNode, TextToSpeechOutput
 
@@ -48,6 +54,9 @@ register_output_schema(SpeechToTextNode.type, SpeechToTextOutput)
 # the Params fields or `test_node_spec.py` fails.
 register_option_loader("speechModels", load_speech_models)
 register_option_loader("speechVoices", load_speech_voices)
+register_option_loader("speechLanguages", load_speech_languages)
+register_option_loader("speechFormats", load_speech_formats)
+register_option_loader("speechSampleRates", load_speech_sample_rates)
 
 __all__ = [
     "SpeechToTextNode",

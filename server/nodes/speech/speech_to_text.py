@@ -84,6 +84,7 @@ class SpeechToTextParams(BaseModel):
     language: str = Field(
         default="",
         description="Language hint (e.g. en, hi-IN). Leave blank to auto-detect.",
+        json_schema_extra={"loadOptionsMethod": "speechLanguages"},
     )
     translate: bool = Field(
         default=False,
@@ -104,6 +105,7 @@ class SpeechToTextParams(BaseModel):
             'untouched — e.g. {"keyterm": ["invoice"]} for Deepgram, '
             '{"mode": "codemix"} for Sarvam, {"response_format": "text"} for OpenAI.'
         ),
+        json_schema_extra={"editor": "json", "rows": 4},
     )
 
     model_config = {"extra": "ignore"}

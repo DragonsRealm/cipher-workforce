@@ -96,6 +96,7 @@ class TextToSpeechParams(BaseModel):
             "Language or locale code. Required by Sarvam (e.g. hi-IN); "
             "auto-detected by the others."
         ),
+        json_schema_extra={"loadOptionsMethod": "speechLanguages"},
     )
     speed: Optional[float] = Field(
         default=None,
@@ -107,10 +108,18 @@ class TextToSpeechParams(BaseModel):
     output_format: str = Field(
         default="",
         description="Audio format. Leave blank for the provider default.",
+        json_schema_extra={"loadOptionsMethod": "speechFormats"},
     )
     sample_rate: Optional[int] = Field(
         default=None,
-        description="Output sample rate in Hz, where the provider supports it.",
+        description="Output sample rate in Hz.",
+        # Only Sarvam exposes the choice; elsewhere the rate is fixed by
+        # `output_format`, so an inert box would imply a control that does
+        # not exist.
+        json_schema_extra={
+            "loadOptionsMethod": "speechSampleRates",
+            "displayOptions": {"show": {"provider": ["sarvam"]}},
+        },
     )
     provider_options: Dict[str, Any] = Field(
         default_factory=dict,
@@ -119,6 +128,7 @@ class TextToSpeechParams(BaseModel):
             'untouched — e.g. {"stability": 0.6} for ElevenLabs, '
             '{"pitch": 0.2} for Sarvam, {"instructions": "..."} for OpenAI.'
         ),
+        json_schema_extra={"editor": "json", "rows": 4},
     )
 
     model_config = {"extra": "ignore"}
