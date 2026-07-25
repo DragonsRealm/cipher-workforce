@@ -41,13 +41,100 @@ def test_gemini_schema_normalizes_nullable_and_drops_unsupported_metadata():
                     "type": ["string", "null"],
                     "default": None,
                     "examples": ["celsius"],
-                }
+                    "displayOptions": {"show": {"operation": ["convert"]}},
+                    "placeholder": "celsius",
+                    "rows": 3,
+                },
+                # Property names are data, not schema keywords. A
+                # structure-aware filter must retain this field even though
+                # the Gemini Schema model does not accept the ``default``
+                # annotation keyword.
+                "default": {
+                    "type": "string",
+                    "displayOptions": {"show": {"advanced": [True]}},
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "widget": "tags",
+                        "displayOptions": {"show": {"advanced": [True]}},
+                    },
+                },
+                "settings": {
+                    "type": "object",
+                    "additionalProperties": False,
+                },
             },
         },
         provider="gemini",
     )
     unit = compiled["properties"]["unit"]
     assert unit == {"type": "string", "nullable": True}
+    assert compiled["properties"]["default"] == {"type": "string"}
+    assert compiled["properties"]["tags"] == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
+    assert compiled["properties"]["settings"]["additionalProperties"] is False
+
+
+def test_gemini_compiled_pydantic_ui_schema_is_accepted_by_sdk():
+    """Regression: real Pydantic schemas must form a valid Gemini config."""
+
+    from typing import Literal
+
+    from google.genai import types
+    from pydantic import BaseModel, Field
+
+    class FileModifyParams(BaseModel):
+        operation: str = "write"
+        content: str = Field(
+            default="",
+            json_schema_extra={
+                "displayOptions": {"show": {"operation": ["write"]}},
+                "rows": 6,
+                "placeholder": "File contents",
+            },
+        )
+        replace_all: bool = Field(
+            default=False,
+            json_schema_extra={
+                "displayOptions": {"show": {"operation": ["edit"]}},
+                "hidden": True,
+            },
+        )
+        memory: Literal[128, 256] = 128
+
+    parameters = compile_tool_schema(
+        FileModifyParams.model_json_schema(),
+        provider="gemini",
+    )
+    config = types.GenerateContentConfig(
+        tools=[
+            {
+                "function_declarations": [
+                    {
+                        "name": "file_modify",
+                        "description": "Write or edit a file",
+                        "parameters": parameters,
+                    }
+                ]
+            }
+        ]
+    )
+
+    declaration = config.tools[0].function_declarations[0]
+    assert declaration.parameters_json_schema is None
+    schema = declaration.parameters
+    assert schema is not None
+    assert set(schema.properties) == {
+        "operation",
+        "content",
+        "replace_all",
+        "memory",
+    }
+    assert schema.properties["memory"].enum == ["128", "256"]
 
 
 def test_gemini_schema_preserves_literals_enums_and_nested_nullable_unions():

@@ -248,6 +248,31 @@ class TestGeminiProvider:
         assert contents[0]["parts"][0]["function_response"]["id"] == "call-1"
         assert contents[0]["parts"][1]["function_response"]["id"] == "call-2"
 
+    def test_tool_def_compiles_numeric_enums_for_sdk_schema(self, provider):
+        tool = ToolDef(
+            name="allocate",
+            description="Allocate memory",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "memory": {
+                        "type": "integer",
+                        "enum": [128, 256],
+                        "displayOptions": {"show": {"mode": ["advanced"]}},
+                    }
+                },
+            },
+        )
+
+        api_tool = provider._to_api_tool(tool)
+        declaration = api_tool["function_declarations"][0]
+
+        assert "parameters_json_schema" not in declaration
+        assert declaration["parameters"]["properties"]["memory"] == {
+            "type": "integer",
+            "enum": ["128", "256"],
+        }
+
     def test_normalize_text(self, provider):
         part = MagicMock(thought=False, function_call=None, text="Hello")
         candidate = MagicMock()
