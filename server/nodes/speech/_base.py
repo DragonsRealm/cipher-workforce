@@ -6,106 +6,17 @@ parts both nodes need and neither should own.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple, Union, get_args, get_origin
+from typing import Any, Dict, Optional, Tuple
 
 from core.logging import get_logger
 from services.media import coerce_file_param, read_media_bytes, resolve_media
 from services.media.inspect import inspect_audio
-from services.plugin import NodeContext, NodeUserError
+from services.plugin import NodeContext, NodeUserError, coerce_blank_params  # noqa: F401
 
 from . import _config as speech_config
 
 logger = get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Parameter coercion
-# ---------------------------------------------------------------------------
-#
-# The parameter panel stores "" for a field the user has cleared or never
-# filled, whatever the declared type. For a `str` field that is harmless, but
-# `""` against `Optional[float]`, `bool` or `Dict[str, Any]` is a hard
-# validation error -- "Input should be a valid dictionary" being the one that
-# surfaced first.
-#
-# It is not enough to fix the dict field: `speed`, `sample_rate`, `translate`,
-# `diarize` and `timestamps` all fail the same way. So the rule is general --
-# a blank string against a field that cannot hold a string means "unset", and
-# is dropped so the field's own default applies.
-#
-# Same class of problem the repo already solves per-node with
-# `AndroidServiceParams._coerce_parameters` and `WriteTodosParams._coerce_todos`;
-# this is the reusable form.
-
-
-def _accepts_str(annotation: Any) -> bool:
-    """Whether a blank string is a legitimate value for this annotation.
-
-    `Dict[str, Any]` is the case worth spelling out: its `get_args` are
-    `(str, Any)`, so a naive "is str among the args" check would wrongly
-    conclude a dict field accepts a string. Container origins are rejected
-    before the args are consulted.
-    """
-    if annotation is Any or annotation is str:
-        return True
-    origin = get_origin(annotation)
-    if origin is Union:
-        return any(_accepts_str(arg) for arg in get_args(annotation))
-    if origin is not None:
-        return False
-    return False
-
-
-def coerce_blank_params(cls: Any, values: Any, *, object_fields: Sequence[str] = ()) -> Any:
-    """Normalize panel-supplied blanks before Pydantic validates them.
-
-    Fields named in ``object_fields`` additionally accept a JSON **object**
-    string, because the panel has no object widget and renders them as a text
-    input -- so a user who types `{"instructions": "cheerful"}` gets what they
-    plainly meant rather than a type error.
-    """
-    if not isinstance(values, dict):
-        return values
-
-    cleaned: Dict[str, Any] = {}
-    for key, value in values.items():
-        if key in object_fields:
-            cleaned[key] = _coerce_object(key, value)
-            continue
-
-        field = cls.model_fields.get(key)
-        blank = isinstance(value, str) and not value.strip()
-        if blank and field is not None and not _accepts_str(field.annotation):
-            continue  # drop -> the field default applies
-        cleaned[key] = value
-    return cleaned
-
-
-def _coerce_object(key: str, value: Any) -> Dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if value is None:
-        return {}
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-        except ValueError as exc:
-            raise ValueError(
-                f"{key} must be a JSON object, e.g. "
-                '{"instructions": "speak cheerfully"}. Could not parse it: '
-                f"{exc}."
-            ) from exc
-        if isinstance(parsed, dict):
-            return parsed
-        raise ValueError(
-            f"{key} must be a JSON object, not a {type(parsed).__name__}."
-        )
-    raise ValueError(f"{key} must be a JSON object, not a {type(value).__name__}.")
 
 
 async def provider_api_key(ctx: NodeContext, provider: str) -> str:

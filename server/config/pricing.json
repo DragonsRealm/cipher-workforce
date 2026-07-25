@@ -265,6 +265,13 @@
       "speech_to_text": 0.00009417,
       "_default": 0.0000226
     },
+    "deepl": {
+      "_description": "Translation, billed per CHARACTER. DeepL API Pro is $25 per 1M characters on top of a fixed monthly fee, which this per-character figure represents; the API Free tier gives 500K characters/month at no cost, so an install on Free is over-reported. DeepL returns billed_characters per translation and the node reports THAT rather than counting input, so the character count is the provider's own.",
+      "_source": "https://www.deepl.com/pro-api",
+      "_updated": "2026-07",
+      "translate": 0.000025,
+      "_default": 0.000025
+    },
     "elevenlabs": {
       "_description": "Text-to-speech, billed per CHARACTER of input. VERIFIED against the published API rate card: $0.10 per 1,000 characters for Multilingual v2/v3 (eleven_multilingual_v2 is the default model here) and $0.05 per 1,000 for Flash/Turbo. This table has no per-model axis, so the higher multilingual rate is used — an install running mostly Flash should halve it. Plans include a character quota; overage is charged at these same rates, so this is the marginal cost rather than the average.",
       "_source": "https://elevenlabs.io/pricing/api",
@@ -399,6 +406,9 @@
       "speech_to_text": "speech_to_text"
     },
     "_comment_speech": "Every speech provider needs an entry here as well as in api_pricing: calculate_api_cost() returns a zero cost SILENTLY when an action has no operation_map entry, so a missing line reads as 'free' rather than as an error.",
+    "deepl": {
+      "translate": "translate"
+    },
     "elevenlabs": {
       "text_to_speech": "text_to_speech"
     },

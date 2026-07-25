@@ -1,0 +1,105 @@
+{
+  "_comment": "Per-provider text-language capabilities. Read by nodes/translate/_config.py exactly as speech_defaults.json is read by nodes/speech/_config.py: loaded once at import, every capability question answered from here, so no shared code branches on a provider name. Three capability blocks per provider — translate / transliterate / detect — and which blocks exist is advisory only; registry membership is the authority.",
+  "version": "1.0",
+
+  "_common_languages_comment": "Fallback for the language dropdowns when a provider does not declare a closed list. LLM-backed providers accept essentially any language, so this is a convenience shortlist rather than a constraint.",
+  "common_languages": [
+    "en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "uk", "tr",
+    "ar", "he", "fa", "hi", "bn", "ta", "te", "ur", "id", "vi", "th",
+    "zh", "ja", "ko"
+  ],
+
+  "providers": {
+    "deepl": {
+      "_comment": "Translation only — DeepL ships no transliteration or standalone language-ID product, so it registers into one registry and is unreachable from the other two nodes. That asymmetry is the reason this layer has three registries rather than one with capability flags.",
+      "base_url": "https://api.deepl.com/v2",
+      "_free_base_url_comment": "Free keys end in ':fx' and MUST use the api-free host; the pro host rejects them with 403. The provider picks the host from the key suffix, so a user never has to know which they hold.",
+      "free_base_url": "https://api-free.deepl.com/v2",
+      "credential_id": "deepl",
+      "translate": {
+        "endpoint": "/translate",
+        "languages_endpoint": "/languages",
+        "default_model": "quality_optimized",
+        "models": ["quality_optimized", "prefer_quality_optimized", "latency_optimized"],
+        "_formality_comment": "Only supported on some target languages; DeepL 400s on the rest, so 'prefer_' variants are the safe choice.",
+        "formality_options": ["default", "prefer_more", "prefer_less", "more", "less"],
+        "_languages_comment": "Fetched live from /languages, which is authoritative and changes without notice. This list is only the cold-start fallback for the dropdown.",
+        "languages": [
+          "BG", "CS", "DA", "DE", "EL", "EN-GB", "EN-US", "ES", "ET", "FI",
+          "FR", "HU", "ID", "IT", "JA", "KO", "LT", "LV", "NB", "NL",
+          "PL", "PT-BR", "PT-PT", "RO", "RU", "SK", "SL", "SV", "TR", "UK", "ZH"
+        ],
+        "default_target_language": "EN-US",
+        "_billing_comment": "DeepL returns billed_characters per translation, so the node reports the provider's own figure rather than counting input itself.",
+        "billed_unit": "characters",
+        "max_input_chars": 128000
+      }
+    },
+
+    "sarvam": {
+      "_comment": "Indic-first, and the only provider here serving all three capabilities over dedicated REST endpoints. Ported from the retired sarvamTranslate / sarvamTransliterate / sarvamDetectLanguage nodes.",
+      "base_url": "https://api.sarvam.ai",
+      "credential_id": "sarvam",
+      "translate": {
+        "endpoint": "/translate",
+        "default_model": "sarvam-translate:v1",
+        "models": ["sarvam-translate:v1", "mayura:v1"],
+        "_max_input_comment": "Enforced client-side so the LLM gets an actionable message instead of an opaque 422.",
+        "max_input_chars": {
+          "mayura:v1": 1000,
+          "_default": 2000
+        },
+        "_languages_comment": "sarvam-translate:v1 covers all 22; mayura:v1 covers the 10-language core plus English. The wider set is the default because the default model supports it.",
+        "languages": {
+          "mayura:v1": ["bn-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN", "pa-IN", "ta-IN", "te-IN"],
+          "_default": [
+            "as-IN", "bn-IN", "brx-IN", "doi-IN", "en-IN", "gu-IN", "hi-IN",
+            "kn-IN", "kok-IN", "ks-IN", "mai-IN", "ml-IN", "mni-IN", "mr-IN",
+            "ne-IN", "od-IN", "pa-IN", "sa-IN", "sat-IN", "sd-IN", "ta-IN",
+            "te-IN", "ur-IN"
+          ]
+        },
+        "default_target_language": "hi-IN",
+        "modes": ["formal", "modern-colloquial", "classic-colloquial", "code-mixed"],
+        "billed_unit": "characters"
+      },
+      "transliterate": {
+        "endpoint": "/transliterate",
+        "default_model": "mayura:v1",
+        "models": ["mayura:v1"],
+        "languages": ["bn-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN", "pa-IN", "ta-IN", "te-IN"],
+        "default_target_language": "hi-IN",
+        "scripts": ["roman", "fully-native", "spoken-form-in-native"],
+        "max_input_chars": 1000,
+        "billed_unit": "characters"
+      },
+      "detect": {
+        "endpoint": "/text-lid",
+        "max_input_chars": 1000,
+        "billed_unit": "characters"
+      }
+    },
+
+    "openai": {
+      "_comment": "LLM-backed rather than a dedicated translation API. Serves all three capabilities by prompting through ChatUnifier, which is why its billing unit is TOKENS, not characters — the ChatUnifier path already records token cost under llm.openai, so this layer records nothing and would otherwise double-count. Proves the Protocol does not care what a provider does internally.",
+      "credential_id": "openai",
+      "billed_unit": "tokens",
+      "translate": {
+        "default_model": "gpt-4o-mini",
+        "models": ["gpt-4o-mini", "gpt-4.1", "gpt-5.2"],
+        "default_target_language": "en",
+        "billed_unit": "tokens"
+      },
+      "transliterate": {
+        "default_model": "gpt-4o-mini",
+        "models": ["gpt-4o-mini", "gpt-4.1", "gpt-5.2"],
+        "billed_unit": "tokens"
+      },
+      "detect": {
+        "default_model": "gpt-4o-mini",
+        "models": ["gpt-4o-mini", "gpt-4.1", "gpt-5.2"],
+        "billed_unit": "tokens"
+      }
+    }
+  }
+}
