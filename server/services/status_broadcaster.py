@@ -13,6 +13,49 @@ from opentelemetry import trace
 from core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Above this, a node output is replaced by a stub in the retained status
+# cache. Generous on purpose: the cache exists so a reconnecting client can
+# see what the last run produced, and almost every real output fits well
+# under it. It is a leak bound, not a display limit.
+_CACHED_OUTPUT_MAX_BYTES = 64 * 1024
+
+
+def _elide_for_cache(output: Any) -> Any:
+    """Return ``output``, or a small stub when it is too large to retain.
+
+    ``StatusBroadcaster._status`` is never evicted and is replayed in full to
+    every newly connecting client. Without this, one large node output is held
+    for the process lifetime *and* re-sent on every page load — the same bytes,
+    indefinitely.
+
+    Only the cached copy is elided; the live broadcast is untouched, so the
+    user who ran the node still sees the whole thing. A client that reconnects
+    later sees the stub and can refetch the real output from ``node_outputs``,
+    which is the durable store.
+    """
+    if output is None:
+        return output
+    try:
+        import orjson
+
+        size = len(orjson.dumps(output, default=str))
+    except Exception:
+        # Unsizeable means unknown, and unknown is not a reason to discard.
+        return output
+
+    if size <= _CACHED_OUTPUT_MAX_BYTES:
+        return output
+
+    logger.debug("eliding large node output from the status cache", size_bytes=size)
+    return {
+        "_elided": True,
+        "_size_bytes": size,
+        "_note": (
+            "Output too large to retain in the live status cache. The full "
+            "value is in node_outputs."
+        ),
+    }
 tracer = trace.get_tracer(__name__)
 
 
@@ -686,11 +729,20 @@ class StatusBroadcaster:
         )
 
     async def update_node_output(self, node_id: str, output: Any, workflow_id: Optional[str] = None):
-        """Update a node's output data and broadcast."""
+        """Update a node's output data and broadcast.
+
+        The **broadcast carries the full output** — the user who just ran the
+        node sees exactly what it produced. What gets *cached* may be elided:
+        ``self._status`` is never evicted and is replayed in full to every
+        newly connecting client, so a large output otherwise costs memory for
+        the process lifetime and is re-sent on every page load, forever.
+
+        Eliding only the cache keeps the live view intact while bounding both.
+        """
         if node_id not in self._status["nodes"]:
             self._status["nodes"][node_id] = {"status": "idle", "data": {}}
 
-        self._status["nodes"][node_id]["output"] = output
+        self._status["nodes"][node_id]["output"] = _elide_for_cache(output)
         if workflow_id:
             self._status["nodes"][node_id]["workflow_id"] = workflow_id
 

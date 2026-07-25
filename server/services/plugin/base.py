@@ -27,6 +27,10 @@ from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
 from core.logging import get_logger, log_context
+from services.media.limits import (
+    TEMPORAL_PAYLOAD_ERROR_BYTES,
+    TEMPORAL_PAYLOAD_WARN_BYTES,
+)
 from services.plugin.connection import Connection
 from services.plugin.context import NodeContext
 from services.plugin.credential import Credential
@@ -614,14 +618,73 @@ class BaseNode:
         stores (callers convert it to the standard error envelope).
         """
         if isinstance(result, BaseModel):
-            return result.model_dump(mode="json")
-        if isinstance(result, dict) and self.Output is not _EmptyOutput:
+            payload = result.model_dump(mode="json")
+        elif isinstance(result, dict) and self.Output is not _EmptyOutput:
             # ``exclude_unset`` preserves the producer's exact key set —
             # declared-but-absent Optional fields must not materialise as
             # ``None`` keys in the payload (validate + coerce + serialize,
             # without reshaping what the operation chose to return).
-            return self.Output.model_validate(result).model_dump(mode="json", exclude_unset=True)
-        return result
+            payload = self.Output.model_validate(result).model_dump(
+                mode="json", exclude_unset=True
+            )
+        else:
+            payload = result
+
+        self._check_result_size(payload)
+        return payload
+
+    def _check_result_size(self, payload: Any) -> None:
+        """Warn on a large node result; refuse one Temporal cannot carry.
+
+        A node result is not stored once. It is written to ``node_outputs``
+        three times, broadcast twice, retained in the status cache, aggregated
+        into the workflow result, copied into **every downstream activity's
+        input**, and — when the node is ``usable_as_tool`` — serialized into an
+        LLM message.
+
+        Two thresholds, and the difference between them matters:
+
+        * At the **warning** threshold this only logs. Some existing nodes
+          legitimately return hundreds of KB (a parsed document, a long
+          transcript) and breaking them would be a regression.
+        * At the **error** threshold it raises. That is not a new failure: a
+          payload over Temporal's limit is rejected by the converter anyway.
+          What changes is *how* it fails — ``NodeUserError`` is already in
+          ``NON_RETRYABLE_ERROR_TYPES``, so instead of three attempts that
+          re-run the work (and re-bill whatever produced it) before reporting
+          a generic converter error, the run stops immediately with a message
+          naming the node and the size.
+
+        This is also why no Temporal-internal error type had to be named: the
+        payload never reaches the converter. The installed SDK enforces the
+        limit in its Rust core and exposes no Python class to add to a
+        non-retryable list, so catching it there was not possible anyway.
+        """
+        if payload is None:
+            return
+        try:
+            import orjson
+
+            size = len(orjson.dumps(payload, default=str))
+        except Exception:
+            # Sizing is diagnostics; never fail a result over it.
+            return
+
+        if size >= TEMPORAL_PAYLOAD_ERROR_BYTES:
+            raise NodeUserError(
+                f"{self.type} returned {size // 1024} KB, over the "
+                f"{TEMPORAL_PAYLOAD_ERROR_BYTES // (1024 * 1024)} MB the "
+                "workflow engine can carry. Large data belongs in the "
+                "workspace: write it to a file and return a reference "
+                "(see services/media for the audio case)."
+            )
+        if size >= TEMPORAL_PAYLOAD_WARN_BYTES:
+            logger.warning(
+                "large node result",
+                node_type=self.type,
+                size_bytes=size,
+                limit_bytes=TEMPORAL_PAYLOAD_ERROR_BYTES,
+            )
 
     def _wrap_success(self, *, start_time: float, result: Any) -> Dict[str, Any]:
         """95%-universal return shape. Subclasses (ToolNode) override."""
