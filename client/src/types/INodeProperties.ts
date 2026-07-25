@@ -208,6 +208,8 @@ export interface INodeUIHints {
   isTaskManagerPanel?: boolean;
   /** MiddleSection: render live managed-process inspection and controls. */
   isProcessManagerPanel?: boolean;
+  /** MiddleSection: render the workspace file browser (drag files to params). */
+  isFileManagerPanel?: boolean;
   /** Special-case panel for gmaps_create with map preview. */
   showLocationPanel?: boolean;
   /** ConsolePanel: this node is a chat-message target. */
