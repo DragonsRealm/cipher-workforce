@@ -115,7 +115,7 @@ export const AI_PROVIDER_META: Record<string, { iconRef: string; Icon: React.FC<
   kimi:       { iconRef: 'lobehub:Kimi',       Icon: KimiIcon,       color: dracula.purple,   label: 'Kimi' },
   mistral:    { iconRef: 'lobehub:Mistral',    Icon: MistralIcon,    color: dracula.pink,     label: 'Mistral' },
   // No lobehub brand — iconRef points at the backend-served SVG instead.
-  sarvam:     { iconRef: '/api/schemas/credentials/sarvam/icon', Icon: SarvamIcon, color: '#F97316', label: 'Sarvam AI' },
+  sarvam:     { iconRef: '/api/schemas/credentials/sarvam/icon', Icon: SarvamIcon, color: '#6A88E2', label: 'Sarvam AI' },
   ollama:     { iconRef: 'lobehub:Ollama',     Icon: OllamaIcon,     color: dracula.foreground, label: 'Ollama' },
   lmstudio:   { iconRef: 'lobehub:LmStudio',   Icon: LmStudioIcon,   color: solarized.cyan,   label: 'LM Studio' },
 };

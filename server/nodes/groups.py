@@ -57,5 +57,5 @@ register_group(key="scraper", metadata={"label": "Scrapers", "icon": "🕸", "co
 register_group(key="filesystem", metadata={"label": "Filesystem", "icon": "📁", "color": "#8be9fd", "visibility": "dev"})
 register_group(key="service", metadata={"label": "Services", "icon": "⚙️", "color": "#50fa7b", "visibility": "dev"})
 register_group(key="text", metadata={"label": "Text", "icon": "📝", "color": "#bd93f9", "visibility": "dev"})
-register_group(key="language", metadata={"label": "Language & Speech", "icon": "🗣️", "color": "#F97316", "visibility": "dev"})
+register_group(key="language", metadata={"label": "Language & Speech", "icon": "🗣️", "color": "#6A88E2", "visibility": "dev"})
 register_group(key="memory", metadata={"label": "Memory", "icon": "💾", "color": "#f1fa8c", "visibility": "dev"})

@@ -209,8 +209,44 @@ in `AIProviderIcons.tsx` for the direct-FC consumers. Skills inherit the same
 icons automatically: `_parse_skill_metadata` tries `get_plugin_icon_path`
 before `visuals.json`.
 
-The shipped SVGs are a **geometric placeholder** in `#F97316`, not Sarvam's
-official mark. Replacing those three files is the whole change.
+### The mark itself
+
+The three SVGs carry Sarvam's **official mandala mark**, taken verbatim from
+their published brand asset
+(`https://assets.sarvam.ai/assets/brand/logos/sarvam-logo-black.svg`) — the
+same geometry they ship as `sarvam.ai/favicon.svg`. Path data was extracted
+programmatically, not redrawn.
+
+Sarvam is a **monochrome-logo brand**: the mark is pure black or pure white,
+with no coloured variant. That is a problem here, because the frontend
+requests `/api/schemas/nodes/<type>/icon` with **no `?variant=` parameter**
+(the backend supports `light` / `dark` and `icon.dark.svg`, but nothing calls
+it). A single monochrome file would therefore be invisible on roughly half of
+the twelve themes.
+
+So the mark is composed onto a rounded tile in Sarvam's primary navy
+`#1E2033`, drawn in white — the same "avatar" treatment `@lobehub/icons` uses
+for OpenAI, Groq, OpenRouter, Ollama and LM Studio, five of which this repo
+already renders. That gives guaranteed contrast on every theme from one file,
+with no reliance on `prefers-color-scheme` (which tracks the OS, not the app's
+`data-theme`).
+
+If the frontend ever starts requesting `?variant=`, dropping Sarvam's white
+logo in as `icon.dark.svg` and the navy one as `icon.svg` would be the more
+faithful treatment.
+
+### Colours
+
+| Token | Value | Source |
+|---|---|---|
+| Icon tile | `#1E2033` | Sarvam's primary navy — their body text colour and hero gradient base |
+| Icon mark | `#FFFFFF` | The official white logo |
+| Node accent / palette group / catalogue | `#6A88E2` | Sarvam's interactive accent (their `#4250D5` → `#6A88E2` control gradient) |
+
+The navy is deliberately *not* reused as the node accent: `--node-color`
+drives the canvas node's border, and `#1E2033` is darker than the dark-theme
+canvas background, so the border would disappear. The accent blue reads on
+both light and dark surfaces.
 
 ---
 
