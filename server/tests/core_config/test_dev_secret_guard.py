@@ -130,7 +130,7 @@ class TestSettingsConstruction:
             "cors_origins": ["http://localhost:3001"],
             "workflow_db_filename": "workflow.db",
             "temporal_enabled": False,
-            "temporal_server_address": "localhost:5682",
+            "temporal_server_address": "localhost:5681",
             "temporal_namespace": "default",
             "temporal_task_queue": "machina-tasks",
             "temporal_per_type_dispatch": True,

@@ -30,7 +30,7 @@ from services.temporal.client import (
 
 
 def _make_wrapper(*, attempts: int = 5, delay: float = 0.0, timeout: float = 1.0) -> TemporalClientWrapper:
-    w = TemporalClientWrapper("localhost:5682", "default")
+    w = TemporalClientWrapper("localhost:5681", "default")
     # Override the MagicMock values the stubbed Settings produced.
     w._health_check_attempts = attempts
     w._health_check_delay_seconds = delay

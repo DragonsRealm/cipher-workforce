@@ -31,7 +31,7 @@ def _agen(items=None, raise_exc=None):
 
 
 def _make_wrapper(client: MagicMock, *, attempts: int = 4) -> TemporalClientWrapper:
-    w = TemporalClientWrapper("localhost:5682", "default")
+    w = TemporalClientWrapper("localhost:5681", "default")
     w._client = client
     w._sweep_attempts = attempts
     w._sweep_backoff_seconds = 0.0
