@@ -424,6 +424,83 @@ def test_detail_extraction_failure_does_not_drop_the_message():
     assert data.get("voice") is None
 
 
+# ---------------------------------------------------------------------------
+# polling error severity
+# ---------------------------------------------------------------------------
+
+
+def test_conflict_is_a_throttled_warning_not_an_error(caplog):
+    """A second getUpdates consumer is self-healing, so it must not read as
+    fatal — and it must not re-log on every ~6s retry."""
+    from telegram.error import Conflict
+
+    service = TelegramService()
+    with caplog.at_level("DEBUG", logger="nodes.telegram._service"):
+        for _ in range(25):
+            service._on_polling_error(Conflict("terminated by other getUpdates request"))
+
+    conflict_records = [r for r in caplog.records if "getUpdates consumer" in r.message]
+    assert len(conflict_records) == 1, "25 retries must collapse to one line"
+    assert conflict_records[0].levelname == "WARNING"
+    # The operator needs to know it recovers by itself and that sending works.
+    assert "recovers" in conflict_records[0].message
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+def test_suppressed_conflicts_are_counted_on_the_next_emission(caplog, monkeypatch):
+    from telegram.error import Conflict
+    from nodes.telegram import _service as mod
+
+    service = TelegramService()
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mod.time, "monotonic", lambda: clock["t"])
+
+    with caplog.at_level("DEBUG", logger="nodes.telegram._service"):
+        for _ in range(5):
+            service._on_polling_error(Conflict("x"))
+        clock["t"] += mod._POLLING_WARN_INTERVAL_S + 1
+        service._on_polling_error(Conflict("x"))
+
+    lines = [r.message for r in caplog.records if "getUpdates consumer" in r.message]
+    assert len(lines) == 2
+    assert "repeated 4x" in lines[1]
+
+
+def test_network_and_rate_limit_stay_debug(caplog):
+    from telegram.error import NetworkError, RetryAfter
+
+    service = TelegramService()
+    with caplog.at_level("DEBUG", logger="nodes.telegram._service"):
+        service._on_polling_error(NetworkError("connection reset"))
+        service._on_polling_error(RetryAfter(30))
+
+    assert not [r for r in caplog.records if r.levelname in ("WARNING", "ERROR")]
+
+
+def test_unexpected_polling_errors_still_log_at_error(caplog):
+    service = TelegramService()
+    with caplog.at_level("DEBUG", logger="nodes.telegram._service"):
+        service._on_polling_error(RuntimeError("something genuinely broken"))
+
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "something genuinely broken" in errors[0].message
+
+
+def test_transient_and_fatal_polling_messages_are_distinguishable():
+    """Both paths used to emit the identical '[Telegram] Polling error:'
+    string despite opposite consequences — one retries, the other marks the
+    bot disconnected."""
+    import inspect
+
+    from nodes.telegram._service import TelegramService as Svc
+
+    callback_src = inspect.getsource(Svc._on_polling_error)
+    loop_src = inspect.getsource(Svc._run_polling)
+    assert "bot disconnected" in loop_src
+    assert "bot disconnected" not in callback_src
+
+
 def test_media_content_types_covers_every_downloadable_kind():
     assert _MEDIA_CONTENT_TYPES == {
         "photo",

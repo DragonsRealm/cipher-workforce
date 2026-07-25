@@ -42,11 +42,12 @@ import asyncio
 import logging
 import mimetypes
 import os
+import time
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from telegram import Bot, Update
-from telegram.error import BadRequest, NetworkError
+from telegram.error import BadRequest, Conflict, NetworkError, RetryAfter
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 from telegram.helpers import escape_markdown
 
@@ -67,6 +68,11 @@ logger = logging.getLogger(__name__)
 # never silently loses content.
 _TG_TEXT_LIMIT = 4096
 _TG_CAPTION_LIMIT = 1024
+
+# How often a recurring, self-healing polling condition may re-log. Telegram
+# re-emits Conflict on every getUpdates retry (~6s) for as long as another
+# consumer holds the token, which is unactionable after the first line.
+_POLLING_WARN_INTERVAL_S = 60.0
 
 
 def _tg_len(text: str) -> int:
@@ -372,6 +378,9 @@ class TelegramService(ServiceSingleton):
         self._polling_task: Optional[asyncio.Task] = None
         self._bot_info: Dict[str, Any] = {}
         self._owner_chat_id: Optional[int] = None
+        # Throttle state for recurring polling conditions (see _log_throttled).
+        self._polling_error_counts: Dict[str, int] = {}
+        self._polling_error_last_log: Dict[str, float] = {}
 
     @classmethod
     async def reset_instance(cls):  # type: ignore[override]
@@ -596,9 +605,53 @@ class TelegramService(ServiceSingleton):
     # Polling loop
     # =========================================================================
 
+    def _log_throttled(self, key: str, message: str) -> None:
+        """Log ``message`` at WARNING at most once per interval per ``key``.
+
+        Suppressed repeats are counted and reported on the next emission, so
+        a condition that recurs on every poll retry is visible without
+        flooding the console.
+        """
+        now = time.monotonic()
+        last = self._polling_error_last_log.get(key)
+        if last is not None and (now - last) < _POLLING_WARN_INTERVAL_S:
+            self._polling_error_counts[key] = self._polling_error_counts.get(key, 0) + 1
+            return
+        suppressed = self._polling_error_counts.pop(key, 0)
+        if suppressed and last is not None:
+            message = f"{message} (repeated {suppressed}x in the last {int(now - last)}s)"
+        self._polling_error_last_log[key] = now
+        logger.warning(message)
+
     def _on_polling_error(self, error) -> None:
+        """python-telegram-bot ``error_callback`` for the getUpdates loop.
+
+        Everything reaching here is a *polling attempt* failure that PTB
+        retries on its own — the bot stays connected and the loop keeps
+        running. Only genuinely unexpected errors deserve ERROR; the two
+        common transients would otherwise repeat every few seconds forever
+        and read as fatal when nothing is broken.
+        """
         if isinstance(error, NetworkError):
             logger.debug(f"[Telegram] Network error during polling (auto-retrying): {error}")
+        elif isinstance(error, Conflict):
+            # Telegram allows exactly one getUpdates consumer per token.
+            # Emitted on every retry (~6s) for as long as the other consumer
+            # holds the slot, so it is throttled: the first line is the
+            # actionable one, the rest are noise.
+            self._log_throttled(
+                "conflict",
+                "[Telegram] Another getUpdates consumer holds this bot token, so "
+                "inbound messages are paused. Polling keeps retrying and recovers "
+                "on its own once the other consumer stops. The bot stays "
+                "connected and sending still works. Usual causes: a second dev "
+                "server or deployed instance using the same token, or the previous "
+                "run's long poll still draining (up to 30s after a restart).",
+            )
+        elif isinstance(error, RetryAfter):
+            # Flow control, not a failure: PTB sleeps for the requested
+            # window and resumes.
+            logger.debug(f"[Telegram] Rate limited during polling (auto-retrying): {error}")
         else:
             logger.error(f"[Telegram] Polling error: {error}")
 
@@ -617,7 +670,10 @@ class TelegramService(ServiceSingleton):
             logger.info("[Telegram] Polling cancelled")
             raise
         except Exception as e:
-            logger.error(f"[Telegram] Polling error: {e}")
+            # Distinct wording from _on_polling_error on purpose: reaching
+            # here means the loop itself died and the bot is now marked
+            # disconnected, which the retryable per-attempt failures are not.
+            logger.error(f"[Telegram] Polling loop stopped, bot disconnected: {e}")
             self._connected = False
             await self._broadcast_status()
 
@@ -947,7 +1003,7 @@ class TelegramService(ServiceSingleton):
         head, tail = _split_head(caption, _TG_CAPTION_LIMIT) if caption else ("", "")
         if tail:
             logger.info(
-                "[Telegram] Caption is %d units (cap %d) — remainder threaded as a follow-up",
+                "[Telegram] Caption is %d units (cap %d); remainder threaded as a follow-up",
                 _tg_len(caption or ""),
                 _TG_CAPTION_LIMIT,
             )
