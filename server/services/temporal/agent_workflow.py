@@ -56,7 +56,11 @@ from temporalio.workflow import ActivityCancellationType, ParentClosePolicy
 
 from services.node_registry import get_node_class
 
-from ._retry_policies import DEFAULT_ACTIVITY_RETRY, LLM_STEP_RETRY
+from ._retry_policies import (
+    DEFAULT_ACTIVITY_RETRY,
+    DELEGATION_CLEANUP_RETRY,
+    LLM_STEP_RETRY,
+)
 from .workflow import AGENT_WORKFLOW_TYPES
 
 
@@ -105,11 +109,6 @@ def _default_max_iterations() -> int:
 # non_retryable_error_types include ``NodeUserError`` — user-correctable
 # failures inside the LLM step fail fast instead of burning 3 retries.
 AGENT_ACTIVITY_RETRY: RetryPolicy = DEFAULT_ACTIVITY_RETRY
-DELEGATION_CLEANUP_RETRY: RetryPolicy = RetryPolicy(
-    initial_interval=timedelta(seconds=1),
-    maximum_interval=timedelta(seconds=30),
-    maximum_attempts=10,
-)
 
 # Temporal patch marker for per-call command identity and duplicate-name
 # validation. Existing histories must retain their recorded activity/child

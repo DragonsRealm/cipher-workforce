@@ -92,9 +92,26 @@ LLM_STEP_RETRY: RetryPolicy = RetryPolicy(
 )
 
 
+# Terminal-cleanup policy for delegated-task teardown (persisting a
+# cancellation, releasing a subagent permit). These run while the workflow
+# is already unwinding, so giving up early leaks a permit or leaves a task
+# row stuck in a non-terminal state — a durable, user-visible defect that a
+# later retry genuinely can fix. Hence a longer budget than the 3-attempt
+# default. Deliberately NOT carrying ``non_retryable_error_types``: the
+# cleanup activities are idempotent by construction and a NodeUserError here
+# means the cleanup itself is broken, which should still be retried while
+# the worker is alive.
+DELEGATION_CLEANUP_RETRY: RetryPolicy = RetryPolicy(
+    initial_interval=timedelta(seconds=1),
+    maximum_interval=timedelta(seconds=30),
+    maximum_attempts=10,
+)
+
+
 __all__ = [
     "NON_RETRYABLE_ERROR_TYPES",
     "DEFAULT_ACTIVITY_RETRY",
     "QUICK_ACTIVITY_RETRY",
     "LLM_STEP_RETRY",
+    "DELEGATION_CLEANUP_RETRY",
 ]

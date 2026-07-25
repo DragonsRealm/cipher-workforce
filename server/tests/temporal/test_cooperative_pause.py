@@ -840,13 +840,21 @@ async def test_agent_acquire_cancellation_type_is_replay_patch_guarded(
 
 @pytest.mark.parametrize(
     "failing_cleanup",
-    [None, "agent.finish_delegation.v1", "agent.release_subagent_permit.v1"],
+    [None, "agent.cancel_delegation.v1", "agent.release_subagent_permit.v1"],
 )
 @pytest.mark.asyncio
 async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
     monkeypatch,
     failing_cleanup,
 ):
+    """Cancellation persists a terminal state and releases the permit.
+
+    The terminal transition goes through the dedicated
+    ``agent.cancel_delegation.v1`` activity, not ``finish_delegation`` — the
+    normal finish path applies the retry/requeue policy, which must not run
+    for a cancelled task. Cleanup failures are logged and swallowed so the
+    CancelledError still propagates.
+    """
     from services.temporal import agent_workflow as agent_module
 
     temporal_workflow = agent_module.workflow
@@ -881,7 +889,7 @@ async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
         if name == failing_cleanup:
             raise RuntimeError(f"{name} failed")
         if name in {
-            "agent.finish_delegation.v1",
+            "agent.cancel_delegation.v1",
             "agent.release_subagent_permit.v1",
         }:
             return {}
@@ -915,10 +923,13 @@ async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
     terminal = next(
         payload
         for name, payload in calls
-        if name == "agent.finish_delegation.v1"
+        if name == "agent.cancel_delegation.v1"
     )
-    assert terminal["success"] is False
-    assert terminal["error"] == "Delegated task workflow cancelled"
+    assert terminal["reason"] == "Delegated task workflow cancelled"
+    assert terminal["terminal_event_id"] == "task-1:terminal"
+    # The normal finish path applies retry/requeue policy and must never run
+    # for a cancellation.
+    assert not any(name == "agent.finish_delegation.v1" for name, _ in calls)
     assert any(
         name == "agent.release_subagent_permit.v1"
         for name, _payload in calls
