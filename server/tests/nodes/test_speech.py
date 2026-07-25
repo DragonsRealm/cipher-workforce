@@ -533,6 +533,99 @@ class TestNodeContract:
         assert "elevenlabs" in result["error"]
 
 
+class TestPanelBlankCoercion:
+    """The parameter panel stores "" for any field the user cleared.
+
+    Against `str` that is harmless, but against `Optional[float]`, `bool` or
+    `Dict[str, Any]` it is a hard validation error — which is how this first
+    surfaced, as "Invalid parameters: Input should be a valid dictionary" on
+    every run of a freshly-dropped node. Six fields across the two nodes are
+    affected, so the fix is general rather than per-field.
+    """
+
+    @pytest.mark.parametrize(
+        "params_cls,payload",
+        [
+            (
+                "tts",
+                {"text": "hi", "speed": "", "sample_rate": "", "provider_options": ""},
+            ),
+            (
+                "stt",
+                {
+                    "audio_file": "a.wav",
+                    "translate": "",
+                    "diarize": "",
+                    "timestamps": "",
+                    "provider_options": "",
+                },
+            ),
+        ],
+    )
+    def test_blank_strings_fall_back_to_defaults(self, params_cls, payload):
+        from nodes.speech.speech_to_text import SpeechToTextParams
+        from nodes.speech.text_to_speech import TextToSpeechParams
+
+        cls = TextToSpeechParams if params_cls == "tts" else SpeechToTextParams
+        model = cls(**payload)
+        assert model.provider_options == {}
+
+    def test_json_object_string_is_parsed(self):
+        """The panel has no object widget, so this arrives as typed text."""
+        from nodes.speech.text_to_speech import TextToSpeechParams
+
+        model = TextToSpeechParams(
+            text="hi", provider_options='{"instructions": "cheerful"}'
+        )
+        assert model.provider_options == {"instructions": "cheerful"}
+
+    def test_a_real_dict_passes_through(self):
+        from nodes.speech.text_to_speech import TextToSpeechParams
+
+        assert TextToSpeechParams(
+            text="hi", provider_options={"pitch": 0.2}
+        ).provider_options == {"pitch": 0.2}
+
+    @pytest.mark.parametrize("bad", ["[1, 2]", "not json at all", '"a string"'])
+    def test_non_object_json_is_rejected_with_a_usable_message(self, bad):
+        from pydantic import ValidationError
+
+        from nodes.speech.text_to_speech import TextToSpeechParams
+
+        with pytest.raises(ValidationError, match="JSON object"):
+            TextToSpeechParams(text="hi", provider_options=bad)
+
+    def test_string_fields_are_untouched(self):
+        """Only fields that CANNOT hold a string get the blank treatment.
+
+        Dropping a blank `text` would turn a min_length error into a
+        confusing "field required".
+        """
+        from pydantic import ValidationError
+
+        from nodes.speech.text_to_speech import TextToSpeechParams
+
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            TextToSpeechParams(text="")
+
+    def test_a_dropped_node_validates_with_its_own_defaults(self):
+        """Regression for the reported failure: drop node, hit Run."""
+        from services.node_registry import get_node_class
+
+        defaults = {
+            name: field.default
+            for name, field in get_node_class("textToSpeech").Params.model_fields.items()
+        }
+        defaults["text"] = "hello"
+        # PydanticUndefined for default_factory fields is what the panel would
+        # store as "" — simulate that rather than the sentinel.
+        payload = {
+            k: ("" if repr(v).startswith("PydanticUndefined") else v)
+            for k, v in defaults.items()
+        }
+        get_node_class("textToSpeech").Params(**payload)
+
+
 class TestAudioInputContainment:
     """The Sarvam STT node read the credential store. This must not."""
 

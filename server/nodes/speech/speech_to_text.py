@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
 
@@ -29,6 +29,7 @@ from ..model._credentials import GroqCredential, OpenAICredential, SarvamCredent
 from . import _config as speech_config
 from . import _unifier
 from ._base import (
+    coerce_blank_params,
     measure_seconds,
     provider_api_key,
     read_audio_input,
@@ -99,12 +100,20 @@ class SpeechToTextParams(BaseModel):
     provider_options: Dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Vendor-specific options passed through untouched — e.g. Deepgram "
-            "keyterm/redact, Sarvam mode, OpenAI response_format."
+            "Vendor-specific options as a JSON object, passed through "
+            'untouched — e.g. {"keyterm": ["invoice"]} for Deepgram, '
+            '{"mode": "codemix"} for Sarvam, {"response_format": "text"} for OpenAI.'
         ),
     )
 
     model_config = {"extra": "ignore"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_panel_blanks(cls, values: Any) -> Any:
+        # The panel stores "" for any cleared field, which is a hard type
+        # error against the three booleans and `provider_options`.
+        return coerce_blank_params(cls, values, object_fields=("provider_options",))
 
 
 class SpeechToTextOutput(BaseModel):

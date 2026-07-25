@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from services.media import AudioRef, write_audio
 from services.plugin import ActionNode, NodeContext, NodeUserError, Operation, TaskQueue
@@ -35,7 +35,12 @@ from services.plugin import ActionNode, NodeContext, NodeUserError, Operation, T
 from ..model._credentials import OpenAICredential, SarvamCredential
 from . import _config as speech_config
 from . import _unifier
-from ._base import provider_api_key, require_provider, track_usage
+from ._base import (
+    coerce_blank_params,
+    provider_api_key,
+    require_provider,
+    track_usage,
+)
 from ._credentials import ElevenLabsCredential
 from ._protocol import TtsRequest
 from ._registry import tts_providers
@@ -110,13 +115,20 @@ class TextToSpeechParams(BaseModel):
     provider_options: Dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Vendor-specific options passed through untouched — e.g. "
-            "ElevenLabs stability/similarity_boost, Sarvam pitch/loudness, "
-            "OpenAI instructions."
+            "Vendor-specific options as a JSON object, passed through "
+            'untouched — e.g. {"stability": 0.6} for ElevenLabs, '
+            '{"pitch": 0.2} for Sarvam, {"instructions": "..."} for OpenAI.'
         ),
     )
 
     model_config = {"extra": "ignore"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_panel_blanks(cls, values: Any) -> Any:
+        # The panel stores "" for any cleared field, which is a hard type
+        # error against `speed`, `sample_rate` and `provider_options`.
+        return coerce_blank_params(cls, values, object_fields=("provider_options",))
 
 
 class TextToSpeechOutput(BaseModel):
