@@ -109,7 +109,9 @@ class GalleryNode(ActionNode):
             )
 
         rows = result["entries"]
-        files = [to_file_ref(r, ctx.workflow_id) for r in rows if not r["is_dir"]]
+        # The listing already carries a finished ref per row — building a
+        # second one here would be two places to keep in step.
+        files = [r["ref"] for r in rows if not r["is_dir"]]
         directories = [r["path"] for r in rows if r["is_dir"]]
 
         return GalleryOutput(

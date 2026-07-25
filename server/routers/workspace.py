@@ -34,21 +34,12 @@ from core.container import container
 from core.database import Database
 from core.logging import get_logger
 from services.media import MEDIA_MAX_UPLOAD_BYTES, AudioRef, write_audio
+from services.media.preview import serves_inline
 from services.media.workspace import UPLOAD_SUBDIR
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
-
-# Types a browser may render in place. Everything else downloads.
-#
-# `text/html` and `image/svg+xml` are excluded deliberately and must stay
-# excluded: `shell`, `fileDownloader` and `fileModify` can all write
-# arbitrary files into a workspace, so serving attacker-authored markup
-# inline from the app origin would be stored XSS with access to the session
-# cookie. Both types are script-bearing.
-_INLINE_PREFIXES = ("audio/", "image/", "video/")
-_NEVER_INLINE = {"image/svg+xml", "text/html", "text/xml", "application/xhtml+xml"}
 
 # Bounded so a hostile Content-Length cannot make us allocate; the running
 # total is what enforces the cap, not the declared length.
@@ -106,8 +97,7 @@ async def serve_workspace_file(
     target = _resolve(root, file_path)
 
     media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-    inline = media_type.startswith(_INLINE_PREFIXES) and media_type not in _NEVER_INLINE
-    disposition = "inline" if inline else "attachment"
+    disposition = "inline" if serves_inline(media_type) else "attachment"
 
     return FileResponse(
         target,

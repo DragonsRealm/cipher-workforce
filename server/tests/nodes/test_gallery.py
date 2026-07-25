@@ -310,3 +310,118 @@ class TestWorkspaceContainmentOfSymlinks:
         result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
 
         assert "escape.txt" not in [entry["name"] for entry in result["entries"]]
+
+
+class TestRowsAreSelfSufficient:
+    """The panel renders; it must not have to re-derive anything.
+
+    Both fields here exist to delete a copy of a server rule that had been
+    living in TypeScript: one hand-assembling a Pydantic model that forbids
+    unknown fields, the other second-guessing the route's disposition.
+    """
+
+    async def test_every_file_row_carries_a_finished_reference(self, workspace):
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+
+        for entry in result["entries"]:
+            if entry["is_dir"]:
+                # There is no FileRef to a directory; null is what stops a
+                # client offering to drag one somewhere.
+                assert entry["ref"] is None
+            else:
+                assert entry["ref"] == to_file_ref(entry, WORKFLOW_ID)
+
+    async def test_the_carried_reference_validates_as_a_FileRef(self, workspace):
+        from services.media.refs import FileRef
+
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+        rows = [entry for entry in result["entries"] if not entry["is_dir"]]
+        assert rows
+
+        for entry in rows:
+            # extra="forbid", so this fails loudly if the row ever grows a
+            # field the model does not know about.
+            assert FileRef.model_validate(entry["ref"]).path == entry["path"]
+
+    async def test_preview_matches_what_the_route_will_serve_inline(self, workspace):
+        from services.media.preview import serves_inline
+
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+
+        for entry in result["entries"]:
+            previewable = entry["preview"] != "none"
+            assert previewable is (
+                not entry["is_dir"] and serves_inline(entry["mime_type"])
+            )
+
+    async def test_media_is_previewable_and_text_is_not(self, workspace):
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+        by_name = {entry["name"]: entry for entry in result["entries"]}
+
+        assert by_name["chart.png"]["preview"] == "image"
+        assert by_name["notes.txt"]["preview"] == "none"
+        assert by_name["audio"]["preview"] == "none"
+
+    async def test_an_svg_is_never_previewable(self, workspace):
+        # Script-bearing, so the route forces `attachment`. A panel that
+        # opened an <img> for it would show a dead frame after a download.
+        (workspace / "diagram.svg").write_text("<svg/>")
+
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+        by_name = {entry["name"]: entry for entry in result["entries"]}
+
+        assert by_name["diagram.svg"]["mime_type"] == "image/svg+xml"
+        assert by_name["diagram.svg"]["preview"] == "none"
+
+
+class TestBreadcrumbs:
+    async def test_root_has_no_trail(self, workspace):
+        result = await list_directory(str(workspace), workflow_id=WORKFLOW_ID)
+
+        assert result["crumbs"] == []
+
+    async def test_each_segment_carries_the_path_to_navigate_to(self, workspace):
+        (workspace / "audio" / "clips").mkdir()
+
+        result = await list_directory(
+            str(workspace), path="audio/clips", workflow_id=WORKFLOW_ID
+        )
+
+        assert result["crumbs"] == [
+            {"name": "audio", "path": "audio"},
+            {"name": "clips", "path": "audio/clips"},
+        ]
+
+
+class TestSearchTermTranslation:
+    """One definition of what "search" means, shared by panel and node."""
+
+    def test_a_bare_word_becomes_a_containment_glob(self):
+        from nodes.filesystem.gallery._service import search_to_pattern
+
+        # Unwrapped, `greeting` matches nothing and the box looks broken.
+        assert search_to_pattern("greeting") == "*greeting*"
+
+    def test_an_explicit_glob_passes_through(self):
+        from nodes.filesystem.gallery._service import search_to_pattern
+
+        assert search_to_pattern("*.wav") == "*.wav"
+        assert search_to_pattern("clip?.mp3") == "clip?.mp3"
+        assert search_to_pattern("[abc]*.txt") == "[abc]*.txt"
+
+    def test_whitespace_only_is_not_a_search(self):
+        from nodes.filesystem.gallery._service import search_to_pattern
+
+        assert search_to_pattern("   ") == ""
+        assert search_to_pattern("") == ""
+
+    async def test_a_search_finds_a_file_in_a_subdirectory(self, workspace):
+        from nodes.filesystem.gallery._service import search_to_pattern
+
+        result = await list_matching(
+            str(workspace),
+            pattern=search_to_pattern("greet"),
+            workflow_id=WORKFLOW_ID,
+        )
+
+        assert [entry["path"] for entry in result["entries"]] == ["audio/greeting.wav"]

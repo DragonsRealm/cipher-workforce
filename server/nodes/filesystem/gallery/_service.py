@@ -45,17 +45,28 @@ def _entry_url(workflow_id: Optional[str], rel_path: str, is_dir: bool) -> Optio
 
 
 def _to_row(info: Dict[str, Any], workflow_id: Optional[str]) -> Dict[str, Any]:
-    """One ``_file_info`` dict -> the wire row, a strict subset of FileRef.
+    """One ``_file_info`` dict -> the wire row.
 
-    Keeping the field names a subset means the client can lift a row into a
-    ``FileRef`` without a round trip: no ambiguity about which name wins.
+    The row is self-sufficient on purpose. It carries the finished
+    ``FileRef`` and the preview verdict rather than the raw material for
+    them, so a client renders and drags without re-deriving anything:
+
+    - ``ref`` is built by :func:`to_file_ref` here, where ``FileRef`` and
+      its ``extra="forbid"`` config live. A client assembling that object
+      itself would be a second, untyped copy of a server model.
+    - ``preview`` comes from :func:`services.media.preview.preview_kind`,
+      the same function that decides the route's ``Content-Disposition``,
+      so what the panel offers to display and what the server will serve
+      inline cannot disagree.
     """
+    from services.media.preview import preview_kind
+
     is_dir = bool(info.get("is_dir"))
     rel = _relative(str(info.get("path", "")))
     name = rel.rsplit("/", 1)[-1]
     mime = None if is_dir else (mimetypes.guess_type(name)[0] or "application/octet-stream")
 
-    return {
+    row: Dict[str, Any] = {
         "name": name,
         "path": rel,
         "is_dir": is_dir,
@@ -63,7 +74,45 @@ def _to_row(info: Dict[str, Any], workflow_id: Optional[str]) -> Dict[str, Any]:
         "modified_at": info.get("modified_at"),
         "mime_type": mime,
         "url": _entry_url(workflow_id, rel, is_dir),
+        "preview": "none" if is_dir else preview_kind(mime),
     }
+    # A directory has no reference: there is no such thing as a FileRef to
+    # one, and a null is what stops a client offering to drag it anywhere.
+    row["ref"] = None if is_dir else to_file_ref(row, workflow_id)
+    return row
+
+
+def _crumbs(rel: str) -> List[Dict[str, str]]:
+    """Breadcrumb trail for a workspace-relative path.
+
+    The root is omitted — it has no name of its own, and how to label it is
+    the panel's business. Every other segment gets the path that navigating
+    to it requires, so a client never has to reassemble one by splitting.
+    """
+    parts = [part for part in rel.split("/") if part]
+    return [
+        {"name": part, "path": "/".join(parts[: index + 1])}
+        for index, part in enumerate(parts)
+    ]
+
+
+_GLOB_METACHARACTERS = frozenset("*?[]")
+
+
+def search_to_pattern(term: str) -> str:
+    """A human search term -> a glob the matcher will actually match.
+
+    A bare word is not a glob, so ``greeting`` alone finds nothing and a
+    search box would appear broken. Wrapping it makes the box behave the
+    way people expect; a term already carrying glob metacharacters passes
+    through untouched, so exact control stays available to anyone who
+    wants it. Deciding this server-side keeps one definition of what
+    "search" means for both the panel and the node.
+    """
+    term = term.strip()
+    if not term:
+        return ""
+    return term if any(char in _GLOB_METACHARACTERS for char in term) else f"*{term}*"
 
 
 def _sort_key(row: Dict[str, Any]):
@@ -114,6 +163,7 @@ async def list_directory(
     return {
         "path": rel,
         "parent": None if not rel else rel.rsplit("/", 1)[0] if "/" in rel else "",
+        "crumbs": _crumbs(rel),
         "entries": rows[:capped],
         "count": min(len(rows), capped),
         "truncated": truncated,
@@ -181,5 +231,6 @@ __all__ = [
     "WORKSPACE_LIST_LIMIT",
     "list_directory",
     "list_matching",
+    "search_to_pattern",
     "to_file_ref",
 ]

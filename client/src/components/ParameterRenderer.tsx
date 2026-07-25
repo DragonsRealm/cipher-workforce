@@ -34,6 +34,7 @@ import { AI_MODEL_PROVIDER_MAP } from '../lib/aiModelProviders';
 
 import { resolveNodeDescription } from '../lib/nodeSpec';
 import { uploadToWorkspace } from '../lib/workspaceUpload';
+import { WORKSPACE_FILE_DRAG_TYPE, isWorkspaceFileRef } from '../types/workspaceFiles';
 
 /**
  * Radix reserves the empty string to clear a Select, so raw node option
@@ -1229,6 +1230,21 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
           onChange(parsedData.value);
           return;
         }
+        if (parsedData.type === WORKSPACE_FILE_DRAG_TYPE) {
+          // A `file` parameter holds exactly one reference, so it replaces.
+          // Everything else is text and must APPEND: dropping a file into a
+          // half-written prompt has to leave the prompt intact.
+          if (parameter.type === 'file' && parsedData.ref) {
+            onChange(parsedData.ref);
+            return;
+          }
+          // Guard the type — a `file` param's currentValue is an object, and
+          // the branches above would throw on `.endsWith` if one lands here.
+          const existingValue = typeof currentValue === 'string' ? currentValue : '';
+          const needsSpace = existingValue.length > 0 && !existingValue.endsWith(' ');
+          onChange(existingValue + (needsSpace ? ' ' : '') + parsedData.path);
+          return;
+        }
       } catch (err) {
         console.warn('Failed to parse JSON drag data:', err);
       }
@@ -1676,7 +1692,11 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
         };
 
         const isUploadedFile = currentValue && typeof currentValue === 'object' && currentValue.type === 'upload';
-        const isFileRef = currentValue && typeof currentValue === 'object' && currentValue.kind === 'audio';
+        // Every FileKind, not just 'audio': the gallery emits kind:"file"
+        // even for a .wav, because kind:"audio" asserts the container was
+        // probed. Narrowing this here would render a dragged file as a raw
+        // object instead of a chip.
+        const isFileRef = isWorkspaceFileRef(currentValue);
 
         // Determine file accept type based on context (e.g., message_type for WhatsApp)
         const getFileAcceptType = () => {

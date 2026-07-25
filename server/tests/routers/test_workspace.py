@@ -229,3 +229,53 @@ class TestUpload:
         stored = Path(response.json()["path"])
         assert stored.parts[0] == "uploads"
         assert ".." not in stored.parts
+
+
+class TestInlineDispositionHasOneDefinition:
+    """The route and the gallery listing must agree on what renders inline.
+
+    They are two consumers of one security decision. If they ever drifted,
+    the panel would open a player for a file the route forces to download,
+    and the user would get a dead frame with no explanation -- or worse, the
+    listing would advertise as previewable something excluded for being
+    script-bearing.
+    """
+
+    def test_the_route_delegates_rather_than_re_deriving(self):
+        import inspect
+
+        from routers import workspace
+
+        source = inspect.getsource(workspace.serve_workspace_file)
+
+        assert "serves_inline(" in source, (
+            "The disposition choice must come from services.media.preview, "
+            "not from a local copy of the prefix/deny lists."
+        )
+        assert "_INLINE_PREFIXES" not in source
+        assert "_NEVER_INLINE" not in source
+
+    def test_script_bearing_types_are_never_inline(self):
+        from services.media.preview import preview_kind, serves_inline
+
+        for mime in ("image/svg+xml", "text/html", "text/xml", "application/xhtml+xml"):
+            assert serves_inline(mime) is False, mime
+            assert preview_kind(mime) == "none", mime
+
+    def test_media_is_inline_and_names_its_element(self):
+        from services.media.preview import preview_kind, serves_inline
+
+        for mime, kind in (
+            ("image/png", "image"),
+            ("audio/wav", "audio"),
+            ("video/mp4", "video"),
+        ):
+            assert serves_inline(mime) is True, mime
+            assert preview_kind(mime) == kind, mime
+
+    def test_everything_else_downloads(self):
+        from services.media.preview import preview_kind, serves_inline
+
+        for mime in ("application/pdf", "text/plain", "application/octet-stream", None):
+            assert serves_inline(mime) is False, mime
+            assert preview_kind(mime) == "none", mime
