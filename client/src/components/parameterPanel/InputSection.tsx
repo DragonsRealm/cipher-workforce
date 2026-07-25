@@ -104,8 +104,10 @@ function resolveSchemaNode(
  * { field: 'primitive-type-name' | nestedObject } map the variable
  * panel expects.
  */
-// eslint-disable-next-line react-refresh/only-export-components -- pure schema
-// helper, exported so the $ref/anyOf resolution can be tested directly.
+// The directive and its justification must stay on ONE line: wrapping the
+// comment made `eslint-disable-next-line` target the continuation line, so the
+// suppression silently stopped covering the export below it.
+// eslint-disable-next-line react-refresh/only-export-components -- pure schema helper, exported so the $ref/anyOf resolution can be tested directly.
 export function jsonSchemaToShape(
   schema: Record<string, any> | null | undefined,
   root?: Record<string, any>,
@@ -327,7 +329,9 @@ const InputSection: React.FC<InputSectionProps> = ({ nodeId, visible = true }) =
         }
         let inputData: any = null;
         let outputSchema: Record<string, any>;
-        let hasExecutionData = false;
+        // No initializer: every branch below assigns, and seeding `false`
+        // here only hid that from the reader. Matches `outputSchema` above.
+        let hasExecutionData: boolean;
 
         if (executionData && executionData[0] && executionData[0][0]) {
           const rawData = executionData[0][0].json || executionData[0][0];

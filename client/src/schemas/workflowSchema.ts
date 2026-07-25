@@ -259,6 +259,6 @@ export function deserializeWorkflow(json: string): any {
 
     return workflow;
   } catch (error) {
-    throw new Error(`Failed to parse workflow JSON: ${error}`);
+    throw new Error(`Failed to parse workflow JSON: ${error}`, { cause: error });
   }
 }

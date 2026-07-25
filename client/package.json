@@ -17,7 +17,7 @@
     "test:nodepanels": "vitest run src/hooks/__tests__/useDragVariable.test.ts src/hooks/__tests__/useParameterPanel.test.ts src/components/parameterPanel/__tests__ src/components/__tests__/OutputPanel.test.tsx"
   },
   "dependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@fontsource-variable/geist": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@lobehub/icons": "^2.48.0",
@@ -40,15 +40,15 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "eslint": "^9.39.4",
+    "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.4.26",
+    "eslint-plugin-react-refresh": "^0.5.3",
     "fuzzysort": "^3.1.0",
     "globals": "^16.5.0",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^1.14.0",
     "partysocket": "1.1.18",
-    "postcss": "^8.5.14",
+    "postcss": "^8.5.18",
     "prismjs": "^1.30.0",
     "qrcode.react": "^4.2.0",
     "radix-ui": "^1.4.3",
@@ -86,13 +86,13 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@typescript-eslint/parser": "^8.59.2",
+    "@typescript-eslint/parser": "^8.65.0",
     "@typescript/native-preview": "7.0.0-dev.20260504.1",
     "@vitest/coverage-v8": "^4.1.8",
     "babel-plugin-react-compiler": "19.1.0-rc.3",
     "jsdom": "^25.0.1",
     "rollup-plugin-visualizer": "^7.0.1",
-    "typescript-eslint": "^8.59.2",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.8"
   }
 }
