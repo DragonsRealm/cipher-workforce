@@ -238,7 +238,11 @@ class TemporalWorkerManager:
                 max_concurrent_workflow_tasks=10,
                 graceful_shutdown_timeout=_graceful_shutdown_timeout(),
                 identity=_worker_identity(self.task_queue),
-                interceptors=[TracingInterceptor(), ObservabilityWorkerInterceptor()],
+                # ``TracingInterceptor`` is registered once on the shared client;
+                # the SDK prepends client interceptors to every worker, so
+                # repeating it here double-instruments each Signal / Query /
+                # Update / Activity and doubles the emitted spans.
+                interceptors=[ObservabilityWorkerInterceptor()],
                 # Wave 18.2: sticky cache sized by deployment mode so
                 # cached workflows skip Event-History replay without
                 # blowing laptop RAM.
@@ -498,7 +502,11 @@ class TemporalWorkerPool:
                 activities=activities,
                 graceful_shutdown_timeout=_graceful_shutdown_timeout(),
                 identity=_worker_identity(queue),
-                interceptors=[TracingInterceptor(), ObservabilityWorkerInterceptor()],
+                # ``TracingInterceptor`` is registered once on the shared client;
+                # the SDK prepends client interceptors to every worker, so
+                # repeating it here double-instruments each Signal / Query /
+                # Update / Activity and doubles the emitted spans.
+                interceptors=[ObservabilityWorkerInterceptor()],
                 # Wave 18.1: per-queue activities/second ceiling.
                 max_activities_per_second=rate_limit,
                 # Wave 18.3: activity-only workers need a small
@@ -545,7 +553,7 @@ class TemporalWorkerPool:
 
 
 async def run_standalone_worker(
-    server_address: str = "localhost:5682",
+    server_address: str | None = None,
     namespace: str = "default",
     task_queue: str = "machina-tasks",
     pool_size: int = 100,
@@ -560,11 +568,19 @@ async def run_standalone_worker(
         python -m services.temporal.worker
 
     Args:
-        server_address: Temporal server address
+        server_address: Temporal server address. Defaults to
+            ``TEMPORAL_SERVER_ADDRESS`` (canonical value in ``.env.template``
+            via ``core.env_defaults``) so a bare
+            ``python -m services.temporal.worker`` dials the same server
+            as the backend.
         namespace: Temporal namespace
         task_queue: Task queue to poll
         pool_size: Connection pool size
     """
+    if server_address is None:
+        from core.env_defaults import env_value
+
+        server_address = env_value("TEMPORAL_SERVER_ADDRESS")
     logger.info(
         "Starting standalone Temporal worker",
         server_address=server_address,
@@ -634,7 +650,11 @@ async def run_standalone_worker(
             max_concurrent_activities=pool_size,
             max_concurrent_workflow_tasks=10,
             graceful_shutdown_timeout=_graceful_shutdown_timeout(),
-            interceptors=[TracingInterceptor(), ObservabilityWorkerInterceptor()],
+            # ``TracingInterceptor`` is registered once on the shared client;
+            # the SDK prepends client interceptors to every worker, so
+            # repeating it here double-instruments each Signal / Query /
+            # Update / Activity and doubles the emitted spans.
+            interceptors=[ObservabilityWorkerInterceptor()],
         )
 
         logger.info("Worker running. Press Ctrl+C to stop.")
@@ -694,7 +714,11 @@ async def create_worker(
         max_concurrent_activities=100,
         max_concurrent_workflow_tasks=10,
         graceful_shutdown_timeout=_graceful_shutdown_timeout(),
-        interceptors=[TracingInterceptor(), ObservabilityWorkerInterceptor()],
+        # ``TracingInterceptor`` is registered once on the shared client;
+        # the SDK prepends client interceptors to every worker, so
+        # repeating it here double-instruments each Signal / Query /
+        # Update / Activity and doubles the emitted spans.
+        interceptors=[ObservabilityWorkerInterceptor()],
     )
 
 

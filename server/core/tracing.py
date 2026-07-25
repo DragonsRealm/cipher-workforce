@@ -10,8 +10,17 @@ want to emit spans do::
         with tracer.start_as_current_span("namespace.operation"):
             ...
 
-In dev, ``ConsoleSpanExporter`` is wired with a compact one-line
-``formatter`` so each completed span shows up as::
+Span export to the console is **opt-in**. Spans are always recorded (so
+an OTLP exporter can be attached without touching call sites), but the
+``ConsoleSpanExporter`` is only wired when ``console_spans=True`` — set
+by ``LOG_LEVEL=DEBUG`` or ``TRACING_CONSOLE_SPANS=true``. At INFO the
+Temporal SDK's ``TracingInterceptor`` alone emits a span per
+Signal/Query/Update/Activity on both the caller and handler side, which
+buries the operator log in per-RPC lines that carry no operational
+signal.
+
+When enabled, a compact one-line ``formatter`` renders each completed
+span as::
 
     [span] broadcaster.refresh_telegram 4012ms path=auto_reconnect connected=False
 
@@ -58,8 +67,20 @@ def _compact_span_formatter(span: ReadableSpan) -> str:
     return " ".join(parts) + "\n"
 
 
-def init_tracing(service_name: str = "opencompany-backend") -> None:
+def init_tracing(
+    service_name: str = "opencompany-backend",
+    *,
+    console_spans: bool = False,
+) -> None:
     """Configure the global TracerProvider.
+
+    Args:
+        service_name: ``service.name`` resource attribute.
+        console_spans: Attach the console exporter. Off by default —
+            span-per-RPC output is a debugging tool, not operator
+            signal. The provider is still installed either way, so
+            ``trace.get_tracer(__name__)`` call sites keep working and
+            an OTLP exporter can be added without code changes.
 
     Idempotent — safe to call multiple times. Subsequent calls are
     no-ops so tests / reloads do not accumulate processors.
@@ -69,8 +90,9 @@ def init_tracing(service_name: str = "opencompany-backend") -> None:
         return
 
     provider = TracerProvider(resource=Resource.create({SERVICE_NAME: service_name}))
-    # Compact one-line console output instead of the default 30-line
-    # JSON dump per span — keeps interactive logs readable.
-    provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter(formatter=_compact_span_formatter)))
+    if console_spans:
+        # Compact one-line console output instead of the default 30-line
+        # JSON dump per span — keeps interactive logs readable.
+        provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter(formatter=_compact_span_formatter)))
     trace.set_tracer_provider(provider)
     _INITIALIZED = True

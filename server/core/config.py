@@ -171,7 +171,7 @@ class Settings(BaseSettings):
         le=65535,
     )
     # Web UI port. ``temporal server start-dev`` defaults this to
-    # ``--port + 1000``; declared explicitly via ``--ui-port`` (5683 in
+    # ``--port + 1000``; declared explicitly via ``--ui-port`` (5680 in
     # the serial 5678-block) so the binding is intentional and surfaces
     # in status snapshots.
     temporal_ui_port: int = Field(
@@ -311,6 +311,17 @@ class Settings(BaseSettings):
         env="LOG_FILE_BACKUP_COUNT",
         ge=0,
     )
+    # OpenTelemetry console span export. Off unless explicitly enabled or
+    # LOG_LEVEL=DEBUG (see ``tracing_console_spans_enabled``): the Temporal
+    # SDK TracingInterceptor emits a span per Signal / Query / Update /
+    # Activity on both the caller and handler side, which floods the
+    # operator log at INFO with per-RPC lines.
+    tracing_console_spans: bool = Field(default=False, env="TRACING_CONSOLE_SPANS")
+
+    @property
+    def tracing_console_spans_enabled(self) -> bool:
+        """Console spans are debug output; DEBUG turns them on implicitly."""
+        return self.tracing_console_spans or self.log_level.upper() == "DEBUG"
 
     # Rate Limiting
     rate_limit_enabled: bool = Field(default=True, env="RATE_LIMIT_ENABLED")

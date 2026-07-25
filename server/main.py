@@ -52,7 +52,7 @@ from core.tracing import init_tracing
 
 settings = Settings()
 configure_logging(settings)
-init_tracing()
+init_tracing(console_spans=settings.tracing_console_spans_enabled)
 logger = get_logger(__name__)
 
 _startup_log("Importing DI container + all services...")
