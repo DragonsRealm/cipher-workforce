@@ -46,6 +46,52 @@ def test_backend_rejects_traversal_and_symlink_escape():
         shutil.rmtree(test_root, ignore_errors=True)
 
 
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        "docs/secret\x00.txt",  # NUL truncates the path in any C-level call
+        "docs/one\nline.txt",  # CR/LF corrupts every log line that prints it
+        "docs/esc\x1b[2Kape.txt",  # terminal escape in a filename
+        "docs/bell\x07.txt",
+    ],
+)
+def test_backend_rejects_control_characters_in_paths(hostile):
+    """Refused before the path is ever built, not after it is resolved."""
+    test_root = _test_directory()
+    try:
+        root = test_root / "workspace"
+        root.mkdir()
+        backend = WorkspaceBackend(root)
+
+        with pytest.raises(ValueError, match="unsupported characters"):
+            backend._resolve_path(hostile)
+    finally:
+        shutil.rmtree(test_root, ignore_errors=True)
+
+
+def test_backend_still_accepts_ordinary_awkward_filenames():
+    """The guard must not become a filename allowlist.
+
+    ``fileDownloader`` and ``shell`` write whatever the remote or the user
+    names a file, so spaces, parentheses and non-ASCII have to keep working.
+    """
+    test_root = _test_directory()
+    try:
+        root = test_root / "workspace"
+        root.mkdir()
+        backend = WorkspaceBackend(root)
+
+        for ordinary in (
+            "My Report (final).pdf",
+            "ドキュメント.txt",
+            "a-b_c.d.e.tar.gz",
+            "emoji \U0001f600.wav",
+        ):
+            assert backend._resolve_path(ordinary).name == ordinary
+    finally:
+        shutil.rmtree(test_root, ignore_errors=True)
+
+
 def test_backend_read_list_glob_and_literal_grep():
     test_root = _test_directory()
     try:

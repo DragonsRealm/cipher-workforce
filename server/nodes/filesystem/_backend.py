@@ -21,7 +21,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Final, Optional
 from uuid import uuid4
 from weakref import WeakValueDictionary
 
@@ -530,6 +530,27 @@ def atomic_write_bytes(
     _atomic_write(path, payload, root_dir)
 
 
+# Everything except NUL, C0 controls and DEL, bounded to a conventional
+# PATH_MAX. Deliberately permissive about the rest -- workspace files are
+# named by users, by ``fileDownloader`` and by ``shell``, so spaces,
+# parentheses and non-ASCII are all legitimate and must keep working.
+#
+# The characters it does refuse are worth refusing on their own merits: a NUL
+# truncates the path in any C-level filesystem call, and CR/LF or terminal
+# escapes embedded in a filename corrupt every log line and console that
+# later prints it.
+#
+# It is also the shape CodeQL's ``py/path-injection`` recognises as a
+# sanitizer -- a ``re.fullmatch`` guarding the value on its way to the path
+# expression. The blocklist checks below (``..``, ``~``, drive prefixes) are
+# the real containment work, but a static analyser cannot confirm a blocklist
+# is exhaustive, so it keeps reporting the ``resolve()`` call underneath.
+# Same reasoning, and same fix, as ``services/plugin/identifiers.py``.
+# https://codeql.github.com/codeql-query-help/python/py-path-injection/
+_SAFE_VIRTUAL_PATH_PATTERN: Final[str] = r"[^\x00-\x1f\x7f]{1,4096}"
+_SAFE_VIRTUAL_PATH_RE: Final[re.Pattern[str]] = re.compile(_SAFE_VIRTUAL_PATH_PATTERN)
+
+
 def _validate_virtual_path(path: str) -> str:
     normalized_input = str(path).replace("\\", "/")
     parts = PurePosixPath(normalized_input).parts
@@ -542,6 +563,8 @@ def _validate_virtual_path(path: str) -> str:
         normalized = f"/{normalized}"
     if ".." in normalized.split("/"):
         raise ValueError(f"Path traversal detected after normalization: {path}")
+    if not _SAFE_VIRTUAL_PATH_RE.fullmatch(normalized):
+        raise ValueError(f"Path contains unsupported characters: {path!r}")
     return normalized
 
 
