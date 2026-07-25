@@ -28,7 +28,11 @@ server/services/llm/
 |-- protocol.py           Message, ToolDef, ToolCall, Usage, LLMResponse, LLMProvider (Protocol)
 |-- config.py             ProviderConfig, PROVIDER_CONFIGS (built from llm_defaults.json)
 |-- registry.py           ProviderSpec + register_provider() — the live provider entry point;
-|                         sdk_exception_refs are lazy "module:Class" strings resolved at except time
+|                         sdk_exception_refs are lazy "module:Class" strings resolved at except time.
+|                         THIN SHIM since the speech work: the mechanism lives in
+|                         services/provider_registry.py (generic, shared). `_REGISTRY` survives here
+|                         as an alias bound to the SAME dict object the registry mutates, because
+|                         several tests swap provider factories in place through it.
 |-- unifier.py            ChatUnifier — the dispatch facade execute_chat delegates every provider to;
 |                         translates typed SDK errors -> NodeUserError
 |-- schema.py             Provider-aware tool JSON-schema compilation

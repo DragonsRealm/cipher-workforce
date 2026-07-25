@@ -379,6 +379,43 @@ Currently a 2152-line switch on `parameter.type` ([client/src/components/Paramet
 
 See [ui_migration_plan.md](./ui_migration_plan.md) Phase 6.
 
+### Name-based magic in this file (read before naming a Params field)
+
+Several branches key on **literal parameter names**, not on types or hints. A
+backend field that happens to use one of these names inherits behaviour nobody
+declared:
+
+| Name | What happens |
+|---|---|
+| `model`, `api_key` | With a sibling `provider` field present, an effect (~line 866) overwrites `model` with the **chat-model** list and clears `api_key`. It does **not** validate that the provider is an LLM provider, so `provider: "elevenlabs"` still triggers it. Line 930 writes options onto the literal string `'model'`, not `parameter.name`. |
+| `parameters` | Android branch: fetches `/api/android/services/.../parameters` and overwrites the whole value. |
+| `message_type` | Drives the `accept=` of the `file` input and remounts it. |
+| `group_id`, `group_name`, `channel_jid`, `channel_display_name`, `sender_number`, `sender_name` | WhatsApp loaders; several read sibling names for their display label. |
+| `session_id`, `service_id`, `action` | Agent-session and Android loaders. |
+
+Prefix instead — `tts_model`, `stt_model`. The speech nodes do, and
+`tests/nodes/test_speech.py` asserts neither declares `model` or `api_key`.
+This is a known wart of the pre-Phase-6 renderer; Phase 6's tester-based
+dispatch is what removes the whole class of it.
+
+### File parameters upload; they no longer base64
+
+`case 'file'` POSTs to `/api/workspace/{workflow_id}/uploads` via
+[`lib/workspaceUpload.ts`](../client/src/lib/workspaceUpload.ts) and stores the
+returned `AudioRef` (~400 bytes). Do **not** set `Content-Type` on that fetch —
+the browser must set it so the multipart boundary is generated.
+
+The legacy base64 envelope (`{type: 'upload', data: '<base64>'}`) survives only
+as a fallback for a workflow that has never been saved and therefore has no
+workspace yet. It is a genuine hazard at media sizes: it is JSON-stringified
+onto the WebSocket, persisted in the `node_parameters` row, re-broadcast to
+every connected client, and re-`JSON.stringify`d on every render by
+`hasUnsavedChanges` — then dies at Temporal's 2 MiB payload limit. A ~1.5 MB
+clip is already ~2 MB of base64. `coerce_file_param` still accepts it
+server-side so existing saved rows keep working.
+
+See [media_transport.md](./media_transport.md).
+
 ## Real-time
 
 `contexts/WebSocketContext.tsx` is the single connection + event bus. ~125 handlers (see `server/routers/websocket.py`). Handlers follow a request/response pattern via `sendRequest(type, data)` with correlation IDs. Push-only events (node status, workflow progress, token usage, android/whatsapp status) set context state directly; components subscribe via selector hooks (`useAndroidStatus`, `useNodeStatus(nodeId)`).
@@ -471,6 +508,7 @@ Defined on `INodeTypeDescription.uiHints` ([client/src/types/INodeProperties.ts]
 | `hasSkills` | Agent panels | Connect the connected-skills section |
 | `isConfigNode` | `InputSection`, `OutputPanel` | This node is auxiliary configuration — its panel inherits the parent's main inputs instead of showing direct upstream connections. **Auto-derived on the backend** by `_derive_auto_ui_hints` in [`server/services/plugin/base.py`](../server/services/plugin/base.py): plugins whose `group` tuple contains `memory` or `tool` get this for free. Explicit `cls.ui_hints` always wins. |
 | `outputMode: "terminal"` | `output/OutputPanel` | The node's textual output is CLI/terminal text: render it in a `<pre>` painted with the per-theme `--code-*` tokens instead of ReactMarkdown (which turns `#` into headings and collapses indentation). Strings that are wholly JSON route to the JSON tree via the shared `tryParseJson` helper. Declared by the CLI-wrapper plugins (`githubAction`, `vercelAction`, `shell`). |
+| `outputMode: "audio"` | `output/OutputPanel` | The node produces audio: render an `<audio>` player for each `AudioRef` in the result instead of letting it fall into the JSON tree. Declared by `textToSpeech`. Note the panel's detection is **structural** (`kind === "audio"`), so a ref arriving from anywhere still renders — the hint is the declarative signal, not the gate. Widening this union needed no backend change: `test_ui_hints_only_carry_known_flags` checks flag *names*, not values. |
 
 Adding new panel behaviour: add a flag to `INodeUIHints`, annotate the relevant node definitions (or extend the auto-derivation rule on the backend), read the flag in the panel. Don't add another `nodeDefinition.name === '…'` branch — six such checks for `'masterSkill'` were retired in this round in favour of `uiHints.isMasterSkillEditor`. Pytest invariant `test_ui_hints_only_carry_known_flags` in `server/tests/test_node_spec.py` locks the flag set; new flags must be added there too.
 

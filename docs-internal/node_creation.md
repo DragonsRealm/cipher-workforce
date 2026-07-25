@@ -17,6 +17,7 @@ this file picks the right entry point based on what you're adding.
 | A node that wraps a CLI tool, supervises a daemon, or receives signed webhooks | [Wave 12 event framework](./plugin_system.md#wave-12--generalized-event-framework-servicesevents) (this section is the most important one) | self-contained folder under `server/nodes/<group>/` using `services.events` base classes |
 | A polling-based trigger node | [Wave 12 event framework](./plugin_system.md#wave-12--generalized-event-framework-servicesevents) — subclass `PollingEventSource` | new file or folder; framework owns the loop |
 | A long-lived service plugin (bot connection, WebSocket bridge, SDK session) | [Self-contained plugin folders (Wave 11.H)](./plugin_system.md#self-contained-plugin-folders) — telegram is the reference | folder with `_credentials.py` / `_service.py` / `_handlers.py` / `_filters.py` / `_refresh.py` |
+| **A node that must speak to several interchangeable vendors** (one canvas node, a `provider` dropdown) | [Speech Provider RFC](./speech_provider_rfc.md) + [`server/nodes/speech/`](../server/nodes/speech/) — the reference; and [Multi-credential nodes](./plugin_system.md#multi-credential-nodes) for the `ctx.connection(id)` contract | folder with `_protocol.py` / `_registry.py` / `_config.py` / `_unifier.py` / `_providers/`, a JSON capability file under `server/config/`, and a `credentials = (A, B, C)` tuple |
 | A plugin whose auth is owned by an external CLI (`stripe login`, `vercel login`, `gh auth login`, `gcloud auth login`) | [Stripe Service](./stripe_service.md) — the reference for "marker-token + generic catalogue invalidation" — and [plugin_system.md → CLI-managed auth pattern](./plugin_system.md#cli-managed-auth-pattern); [Vercel Service](./vercel_service.md) for the **device-flow** variant (single blocking `login` process, no two-step complete flag) | self-contained folder + `_install.py` for the auto-downloader; `_handlers.py` calls `auth_service.store_oauth_tokens(provider, "cli-managed", "cli-managed")` after the CLI login completes, then broadcasts the existing generic `credential_catalogue_updated` event |
 
 ## The four node kinds
@@ -249,6 +250,8 @@ What you **do** still write:
 | Memory lifecycle (markdown parse/append/trim, vector store, session resume) | [memory_lifecycle.md](./memory_lifecycle.md) |
 | Tool building pipeline (`_build_tool_from_node`, schema, per-type Temporal dispatch) | [tool_building_pipeline.md](./tool_building_pipeline.md) |
 | Process supervision (used by `DaemonEventSource`) | [server/services/process_service.py](../server/services/process_service.py) — singleton API |
+| Multi-vendor node behind one `provider` dropdown (two registries, JSON capabilities, per-vendor modules) | [speech_provider_rfc.md](./speech_provider_rfc.md) |
+| Returning media from a node without blowing the payload limits (`AudioRef`, workspace routes, containment) | [media_transport.md](./media_transport.md) |
 
 ## Wave summary (current state)
 

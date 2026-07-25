@@ -116,6 +116,31 @@ class WorkflowExecutor:
         self.status_callback = status_callback
 ```
 
+### 4. A node result is small, because it is copied many times
+
+Node results are not stored once. One result is written to `node_outputs`
+**3x** per store, broadcast **2x** over the status WebSocket, retained in
+`StatusBroadcaster._status` for the process lifetime and replayed to every
+newly connecting client, aggregated into the workflow result, copied into
+**every downstream activity's input**, and — when the node is
+`usable_as_tool` — serialized verbatim into an LLM message.
+
+Temporal caps a blob at **2,097,152 B** for activity results *and inputs*, and
+warns at 524,288 B. `_PayloadSizeError` is not in `NON_RETRYABLE_ERROR_TYPES`,
+so exceeding the cap costs **three attempts** — re-invoking (and re-billing)
+whatever produced the payload each time — before surfacing a generic failure
+that names nothing useful.
+
+So: **large data lives on disk in the workflow workspace, and the node returns
+a reference.** `services/media/` provides that for binary media (`AudioRef`,
+`write_audio`, `coerce_file_param`), with an HTTP route for the frontend to
+fetch through. A capped inline opt-in is explicitly rejected as a design: it
+makes the tool path *sometimes* catastrophic, which is worse than
+always-broken because it passes review.
+
+See [media_transport.md](./media_transport.md) for the measurements and the
+API.
+
 ---
 
 ## Design Patterns

@@ -132,9 +132,12 @@ vercel/      — Vercel (CLI deploy / inspect / list / custom passthrough)
 github/      — GitHub (gh CLI: clone / PRs / issues / custom; palette group "vcs")
 cloudflare/  — Cloudflare (cf CLI: zones / DNS / GraphQL analytics / custom; palette group "deployment")
 gcloud/      — Google Cloud (gcloud CLI: projects / Compute Engine / Cloud Run / Cloud Storage / custom; palette group "deployment")
-sarvam/      — Sarvam AI text + speech REST APIs (translate / transliterate / detect_language /
-               speech_to_text / text_to_speech; palette group "language"). Its chat models are a
-               separate plugin at model/sarvam_chat_model/ and share one SarvamCredential.
+sarvam/      — Sarvam AI text REST APIs (translate / transliterate / detect_language; palette
+               group "language"). Its chat models are a separate plugin at model/sarvam_chat_model/
+               and share one SarvamCredential; its SPEECH endpoints are a provider inside speech/.
+speech/      — Provider-abstracted text_to_speech / speech_to_text (palette group "language").
+               One node per direction with a `provider` dropdown, not one node per vendor. Owns
+               its own protocol / registries / dispatch / per-vendor modules — see below.
 ```
 
 ---
@@ -260,6 +263,52 @@ server/nodes/telegram/
 └── telegram_receive.py  # TriggerNode
 ```
 
+### Variant: one node, many vendors
+
+Telegram owns *one* vendor's surface. The other shape is a node that must
+speak to *several* vendors interchangeably — one canvas node whose
+`provider` parameter picks the backend. **Reference:
+`server/nodes/speech/`.**
+
+```
+server/nodes/speech/
+├── __init__.py          # register_output_schema + register_option_loader (zero logic)
+├── _protocol.py         # vendor-neutral requests / results / errors + two Protocols
+├── _registry.py         # ONE REGISTRY PER DIRECTION, over services/provider_registry
+├── _config.py           # reads server/config/speech_defaults.json
+├── _unifier.py          # dispatch + typed-error -> NodeUserError, one catch site
+├── _providers/          # _http.py + one module per vendor, each self-registering
+├── _credentials.py      # only the vendors no other plugin already declares
+├── _base.py             # shared node helpers (credential resolve, input read, billing)
+├── _option_loaders.py   # provider-aware dropdown loaders
+├── text_to_speech.py    # the two nodes
+└── speech_to_text.py
+```
+
+Four ideas worth stealing wholesale:
+
+1. **Registry membership is the capability.** Two registries, one per
+   direction, and the node's provider enum *is* `tts_providers()`. A
+   synthesis-only vendor never appears in the transcription dropdown, and
+   there is no `supports_x` flag to fall out of sync with reality.
+2. **Capabilities are JSON, not Python.** `speech_defaults.json` holds
+   per-provider and per-model values (`{"whisper-1": [...], "_default": [...]}`),
+   resolved exact → longest-prefix → `_default`. Boolean flags default
+   **permissive**, so forgetting to declare one never silently disables a
+   working feature. No shared code branches on a vendor name — the ban
+   `test_plugin_shape` implies is satisfied structurally.
+3. **Vendor divergence lives in the vendor module.** Auth scheme, whether
+   options ride the query string or the body, and how the response is
+   shaped are all per-vendor facts. Keep them behind the neutral request /
+   result types and central code stays vendor-blind.
+4. **Reuse credentials, don't redeclare them.** `_credentials.py` holds only
+   the vendors nothing else owns; the rest are imported
+   (`from ..model._credentials import OpenAICredential`). Two classes with
+   the same `id` collide in `CREDENTIAL_REGISTRY` at import time.
+
+See [Multi-credential nodes](../../docs-internal/plugin_system.md#multi-credential-nodes)
+for the `ctx.connection(id)` contract and the `routing=` trap that comes with it.
+
 ### Six generic registries to plug into
 
 Telegram's `__init__.py` is the canonical wiring example. Adding any
@@ -373,6 +422,48 @@ Full reference: [docs-internal/plugin_system.md → "Self-contained plugin folde
   Pydantic models or `Union`, the LLM-schema emission will add `$defs`
   and fail the invariant. Keep tool-facing Params flat; move nested
   types to `Output` instead.
+- **Never name a Params field `model` or `api_key` on a node that also has
+  a `provider` field.** An effect in
+  [`ParameterRenderer.tsx:866`](../../client/src/components/ParameterRenderer.tsx#L866)
+  keys on those two literal names: when a sibling `provider` field is
+  present it overwrites `model` with the *chat-model* list and clears
+  `api_key`. It never checks that the provider is an LLM provider, so
+  `provider: "elevenlabs"` still triggers it and the field is wiped the
+  moment the user picks a vendor. Prefix instead — `tts_model`,
+  `stt_model`. Other reserved sibling names with name-based magic in that
+  file: `parameters`, `message_type`, `group_id`, `group_name`,
+  `channel_jid`, `sender_number`, `sender_name`, `session_id`,
+  `service_id`, `action`.
+- **The parameter panel stores `""` for every cleared field, whatever the
+  declared type.** Harmless against `str`; a hard validation error against
+  `Optional[float]`, `bool` or `Dict[str, Any]` — a freshly-dropped node fails
+  on its own defaults with `Invalid parameters: Input should be a valid
+  dictionary`. Add a `@model_validator(mode="before")` that drops blank
+  strings for fields that cannot hold one, and coerce object fields from a
+  JSON string (the panel has no object widget, so a dict parameter arrives as
+  typed text). Reusable form: `coerce_blank_params` in
+  [`nodes/speech/_base.py`](./speech/_base.py); per-node precedents:
+  `AndroidServiceParams._coerce_parameters`, `WriteTodosParams._coerce_todos`.
+  Do **not** blanket-drop blanks for `str` fields — that turns a `min_length`
+  error into a confusing "field required".
+- **`usable_as_tool = True` hides both canvas handles.** It auto-sets
+  `hide_input_handle` / `hide_output_handle` unless the class declares
+  them, so a dual-purpose node meant to stay wirable must set both to
+  `False` explicitly. Symptom: the node runs fine as a tool but cannot be
+  connected to anything on the canvas.
+- **Never accept a file path and join it onto the workspace yourself.**
+  Use `services.media.coerce_file_param` / `read_media_bytes`. A node that
+  did the naive join let `audio_file="../../credentials.db"` read the
+  encrypted credential store and upload it to a third party. Those helpers
+  reject `..` / `~` / drive prefixes *and* re-check containment after
+  resolution, so a symlink or Windows junction cannot redirect the result.
+- **Never return media bytes (or base64) from a node.** Write the file into
+  the workspace with `services.media.write_audio` and return the `AudioRef`.
+  A node result is persisted 3×, broadcast twice, retained in the status
+  cache, copied into every downstream activity input, and — if the node is
+  `usable_as_tool` — serialized into an LLM message. See
+  [`services/media/limits.py`](./../services/media/limits.py) for the
+  measured Temporal thresholds this exists to stay under.
 - **Return plain data, never raw backend or third-party objects.** Backend /
   SDK result objects (native filesystem `ReadResult`, httpx
   responses, …) must be unwrapped to plain fields before returning —

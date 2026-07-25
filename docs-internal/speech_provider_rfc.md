@@ -1,6 +1,6 @@
 # RFC: Multi-provider Speech (TTS / STT)
 
-**Status:** accepted, implementation in progress
+**Status:** implemented (commit `a29cdb7e`)
 **Date:** 2026-07-25
 **Supersedes:** the vendor-locked `sarvamTextToSpeech` / `sarvamSpeechToText` nodes
 
@@ -325,3 +325,48 @@ come back null here.
   latency**, not audio duration. The claim was wrong and the billing with it.
 - Sarvam's own docs contradict themselves on `speech_sample_rate` (schema `22050`, prose `24000`).
   The configured default is `24000`, matching the prose and the previous implementation.
+
+---
+
+## 8. What this pattern should absorb next
+
+Speech was the first capability to get a provider abstraction, not the only one
+that needs it. The same vendor-locked shape it replaced is still present
+elsewhere, and the argument against it is identical: a second vendor means a
+second node, a third means a third, and the user has to rewire the canvas to
+switch.
+
+**Outstanding, in the same palette group:**
+
+| Node | Capability | Other vendors that serve it |
+|---|---|---|
+| `sarvamTranslate` | text translation | Google Translate, DeepL, Azure Translator, any LLM |
+| `sarvamTransliterate` | script transliteration | Google, Azure, ICU/`uroman` locally |
+| `sarvamDetectLanguage` | language identification | Google, Azure, `lingua`/`fasttext` locally, any LLM |
+
+A `nodes/translate/` plugin would be a near-mechanical port of `nodes/speech/`:
+`_protocol.py` (one `TranslateProvider` Protocol — this capability is
+unidirectional, so **one** registry, not two), `_config.py` over a
+`translate_defaults.json`, `_unifier.py`, `_providers/`, and a
+`credentials = (...)` tuple. No new framework, and none of the media transport
+applies — translation returns text, so `AudioRef` and the workspace routes are
+not involved.
+
+Two things make it *easier* than speech was:
+
+- **No binary transport.** The whole `services/media` half of this RFC is moot.
+- **Language-detection and transliteration are the same provider surface** as
+  translation for most vendors, so one `_providers/<vendor>.py` typically serves
+  all three nodes.
+
+One thing makes it *harder*: several plausible providers are LLMs rather than
+dedicated translation APIs, so the provider module would call `ChatUnifier`
+rather than raw httpx. That is a supported shape — the Protocol does not care
+what a provider does internally — but it means the `credential_id` for those
+entries points at an existing LLM credential and the billing unit is tokens,
+not characters.
+
+**Not started, and deliberately not scoped here.** Recorded so the
+inconsistency is visible rather than discovered later: `nodes/sarvam/` is now
+the only folder in the repo where a vendor name appears in a node `type` for a
+capability several vendors serve.

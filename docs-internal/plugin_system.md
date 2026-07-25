@@ -72,10 +72,10 @@ class SpecializedAgentBase(ActionNode, abstract=True):
 | `handles` | React Flow handle topology (`input-main`, `output-main`, …). |
 | `ui_hints` | Dict of panel flags (`hasCodeEditor`, `isMemoryPanel`, `isMasterSkillEditor`, `isToolPanel`, `hasSkills`, `isConfigNode`, `outputMode: "terminal"` for CLI-wrapper nodes whose textual output must render preformatted, …). See "Auto-derived uiHints" below — `isConfigNode` is set automatically for `('memory', 'tool')` group plugins. Live flag list = the `known` set in `test_node_spec.py`. |
 | `annotations` | Pipedream-style: `destructive` / `readonly` / `open_world`. |
-| `credentials` | Tuple of `Credential` subclasses the node uses. |
+| `credentials` | Sequence of `Credential` subclasses the node uses. More than one is supported — see [Multi-credential nodes](#multi-credential-nodes). |
 | `Params` | Pydantic `BaseModel` — user-facing parameters. Used for both UI rendering and AI tool schemas. |
 | `Output` | Pydantic `BaseModel` — runtime output shape. |
-| `usable_as_tool` | `ActionNode` flag — mints a ToolNode adapter for AI invocation. Combined with `component_kind != "model"`, makes the plugin visible to `agentBuilder.add_tool` (catalogue + rebind paths). |
+| `usable_as_tool` | `ActionNode` flag — mints a ToolNode adapter for AI invocation. Combined with `component_kind != "model"`, makes the plugin visible to `agentBuilder.add_tool` (catalogue + rebind paths). **Side effect:** setting it auto-sets `hide_input_handle` / `hide_output_handle` to `True` unless the class declares them ([base.py:215](../server/services/plugin/base.py#L215)), so a dual-purpose node that must remain wirable on the canvas has to declare both `False` explicitly. |
 | `needs_canvas` | `ClassVar[bool]` — when `True`, the F4.B `AgentWorkflow` tool-dispatch forwards the parent workflow's `nodes`/`edges` into the per-tool activity payload. Today only `AgentBuilderNode` opts in (walks edges to resolve its calling agent). |
 | `task_queue` | Temporal worker pool. See `TaskQueue` constants. |
 | `retry_policy` | `RetryPolicy` dataclass (mirrors `temporalio.common.RetryPolicy`). |
@@ -262,6 +262,43 @@ injected key read `ctx.raw["_raw_parameters"]["api_key"]` (stashed by
 If you find yourself declaring an `api_key: str = Field(...)` on a
 Params class, stop: add an `ApiKeyCredential` subclass instead and wire
 it via the `credentials = (...)` tuple on the node class.
+
+#### Multi-credential nodes
+
+`credentials` is a *sequence*, and `ctx.connection(id)` is a lookup over it
+— so a node that talks to several vendors declares them all and selects at
+runtime from a parameter:
+
+```python
+credentials = (OpenAICredential, ElevenLabsCredential, SarvamCredential)
+
+@Operation("synthesize")
+async def synthesize(self, ctx, params):
+    async with ctx.connection(credential_id_for(params.provider)) as conn:
+        ...
+```
+
+`_make_connection_factory` ([base.py](../server/services/plugin/base.py))
+precomputes an `{id: class}` dict; an id the node never declared raises
+`RuntimeError` synchronously, before any HTTP. A declared credential with no
+stored key fails later, at `conn.credentials()`, as an annotated
+`PermissionError` — which `BaseNode.execute` turns into a credential envelope
+plus a CloudEvents broadcast, so the Credentials modal lights up the right
+provider.
+
+**A multi-credential node MUST use imperative operations.** The declarative
+`routing=` path resolves `self.credentials[0]`
+([base.py:571](../server/services/plugin/base.py#L571)), so a routed op would
+authenticate every provider with the first key in the tuple regardless of what
+the user picked. `test_plugin_contract.py` only asserts the tuple is non-empty,
+so nothing else catches it. `nodes/speech/` has a test asserting neither of its
+nodes declares `routing=`.
+
+Reference implementation: [`nodes/speech/`](../server/nodes/speech/) — the
+first multi-credential plugin in the repo. Its `_config.credential_id(provider)`
+reads the id from JSON, keeping the mapping declarative, and cross-plugin
+credential imports (`from ..model._credentials import OpenAICredential`) are
+idiomatic — `nodes/sarvam/` already does the same.
 
 ### Operations (`@Operation`)
 
