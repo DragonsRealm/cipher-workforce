@@ -3,10 +3,12 @@
 Both entry points — the workflow node (``telegram_send.py``) and the direct
 WebSocket command (``_handlers.py:handle_telegram_send``) — route through
 ``perform_send`` here. They used to carry two independent copies of the
-message-type dispatch, which had already drifted: the WebSocket copy silently
-ignored ``silent`` and ``reply_to_message_id``, and validated nothing, so a
-``location`` command with a null latitude reached python-telegram-bot and
-raised a TypeError instead of a legible error.
+message-type dispatch, which had already drifted: the WebSocket copy never
+forwarded ``silent`` or ``reply_to_message_id`` (neither name appeared in that
+file), so a caller could ask for a silent threaded reply over the socket and
+get a loud top-level message instead. Its per-type checks were otherwise
+equivalent to the node's; validating through ``TelegramSendParams`` now keeps
+the two from diverging again as message types are added.
 
 Dispatch is a table keyed by message type, so adding a type is one entry plus
 one ``Literal`` member rather than a new branch in two files.

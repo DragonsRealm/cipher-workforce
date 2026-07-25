@@ -56,21 +56,83 @@ async function fetchNodeOutputSchema(
 }
 
 /**
+ * Resolve the indirection Pydantic emits so a property carries a usable
+ * `type`.
+ *
+ * Two shapes reach us that a naive reader mistypes as 'any':
+ *   - `Optional[X]`      -> { anyOf: [<X>, { type: 'null' }] }  (no top-level type)
+ *   - a nested BaseModel -> { $ref: '#/$defs/Name' }            (body lives in $defs)
+ *
+ * Every field on the trigger output models is Optional, so without this
+ * every field in the variable picker typed as 'any' and nested models
+ * (telegramReceive.media, whatsappReceive.group_info) had no expandable
+ * leaves to drag.
+ */
+function resolveSchemaNode(
+  prop: Record<string, any>,
+  root: Record<string, any>,
+  seen: Set<string>,
+): { node: Record<string, any>; seen: Set<string> } {
+  if (typeof prop.$ref === 'string') {
+    // Only local "#/$defs/Name" pointers are emitted; anything else is
+    // left alone rather than guessed at.
+    const name = prop.$ref.startsWith('#/$defs/') ? prop.$ref.slice('#/$defs/'.length) : '';
+    // A name already expanded on this path is a cycle (a self-referencing
+    // model). Stop and let the caller render it as an opaque leaf rather
+    // than recursing until the stack blows and takes the panel with it.
+    if (!name || seen.has(name)) return { node: prop, seen };
+    const target = root.$defs?.[name];
+    if (!target || typeof target !== 'object') return { node: prop, seen };
+    return resolveSchemaNode(target, root, new Set(seen).add(name));
+  }
+
+  const union = prop.anyOf ?? prop.oneOf;
+  if (Array.isArray(union)) {
+    // Pick the first non-null branch — `Optional[X]` is by far the common
+    // case, and a genuine multi-type union has no single shape to show.
+    const branch = union.find(
+      (entry) => entry && typeof entry === 'object' && entry.type !== 'null',
+    );
+    if (branch) return resolveSchemaNode(branch, root, seen);
+  }
+
+  return { node: prop, seen };
+}
+
+/**
  * Flatten a JSON-Schema-7 "object" shape into the plain
  * { field: 'primitive-type-name' | nestedObject } map the variable
  * panel expects.
  */
-function jsonSchemaToShape(schema: Record<string, any> | null | undefined): Record<string, any> | null {
+// eslint-disable-next-line react-refresh/only-export-components -- pure schema
+// helper, exported so the $ref/anyOf resolution can be tested directly.
+export function jsonSchemaToShape(
+  schema: Record<string, any> | null | undefined,
+  root?: Record<string, any>,
+  seen: Set<string> = new Set(),
+): Record<string, any> | null {
   if (!schema || typeof schema !== 'object') return null;
   const props = schema.properties;
   if (!props || typeof props !== 'object') return null;
 
+  // $defs live on the document root, so recursion must keep a handle on it.
+  const document = root ?? schema;
+
   const out: Record<string, any> = {};
   for (const [key, raw] of Object.entries(props)) {
     if (!raw || typeof raw !== 'object') continue;
-    const prop = raw as Record<string, any>;
-    if (prop.type === 'object' && prop.properties) {
-      out[key] = jsonSchemaToShape(prop) ?? 'object';
+    // The expanded-$ref chain travels with the value so a cycle is caught
+    // across the mutual recursion between these two functions, not just
+    // within one of them.
+    const { node: prop, seen: nested } = resolveSchemaNode(
+      raw as Record<string, any>,
+      document,
+      seen,
+    );
+    // A resolved $ref body sometimes omits `type: 'object'`, so treat the
+    // presence of `properties` as sufficient.
+    if (prop.properties) {
+      out[key] = jsonSchemaToShape(prop, document, nested) ?? 'object';
     } else if (prop.type === 'array') {
       out[key] = 'array';
     } else if (typeof prop.type === 'string') {
