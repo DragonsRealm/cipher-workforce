@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { createLogger, defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
@@ -13,6 +13,46 @@ try {
   appVersion = rootPkg.version
 } catch { /* Docker build - root package.json not available */ }
 
+// Dev-boot race: Vite is ready in ~1 s while uvicorn is still importing
+// routers, so an already-open browser tab reconnects and its proxied /ws
+// upgrade gets ECONNREFUSED. Vite closes the socket and PartySocket
+// reconnects the moment the backend binds, so nothing is broken — but Vite
+// logs the raw AggregateError stack for every attempt, which buries the real
+// startup output.
+//
+// Vite attaches its own proxy `error` handler AFTER calling `configure()`, so
+// a proxy-level handler cannot replace it. `customLogger` is the documented
+// seam: collapse this one connection-refused case into a single concise line
+// and pass every other message through untouched.
+// Ref: https://vite.dev/config/shared-options.html#customlogger
+const PROXY_BACKEND_UNAVAILABLE = /proxy (error|socket error)/i
+const CONNECTION_REFUSED = /ECONNREFUSED/
+const BACKEND_NOTICE_INTERVAL_MS = 10_000
+
+const createBackendAwareLogger = () => {
+  const logger = createLogger()
+  const logError = logger.error.bind(logger)
+  const logInfo = logger.info.bind(logger)
+  let lastNoticeAt = 0
+
+  logger.error = (msg, options) => {
+    const text = typeof msg === 'string' ? msg : String(msg ?? '')
+    if (PROXY_BACKEND_UNAVAILABLE.test(text) && CONNECTION_REFUSED.test(text)) {
+      const now = Date.now()
+      if (now - lastNoticeAt >= BACKEND_NOTICE_INTERVAL_MS) {
+        lastNoticeAt = now
+        logInfo('backend not listening yet - proxied /ws and /api will retry', {
+          timestamp: true,
+        })
+      }
+      return
+    }
+    logError(msg, options)
+  }
+
+  return logger
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env from parent directory (root .env) for local development
@@ -22,6 +62,15 @@ export default defineConfig(({ mode }) => {
   // Priority: process.env (Docker) > fileEnv (local .env) > defaults
   const getEnv = (key, defaultValue = '') => {
     return process.env[key] || fileEnv[key] || defaultValue
+  }
+
+  // Ports come from the env layering (process env from the CLI, else the
+  // repo .env loaded above). No numeric fallbacks in code: the canonical
+  // defaults live in .env.template.
+  const requireEnv = (key) => {
+    const value = getEnv(key)
+    if (!value) throw new Error(`${key} is not set - defaults live in .env.template (copy to .env)`)
+    return value
   }
 
   // APP_VERSION: from root package.json locally, or VITE_APP_VERSION build arg in Docker
@@ -55,6 +104,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    customLogger: createBackendAwareLogger(),
     plugins: [
       tailwindcss(),
       react({
@@ -89,7 +139,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: parseInt(getEnv('VITE_CLIENT_PORT', '5678')),
+      port: parseInt(requireEnv('VITE_CLIENT_PORT')),
       strictPort: false,
       host: true,
       // Same-origin dev: the app lives at the canonical port (5678) in
@@ -102,7 +152,7 @@ export default defineConfig(({ mode }) => {
         ['/api', '/ws', '/webhook', '/health', '/mcp'].map((prefix) => [
           prefix,
           {
-            target: `http://localhost:${getEnv('PYTHON_BACKEND_PORT', '5679')}`,
+            target: `http://localhost:${requireEnv('PYTHON_BACKEND_PORT')}`,
             changeOrigin: true,
             ws: prefix === '/ws',
           },
