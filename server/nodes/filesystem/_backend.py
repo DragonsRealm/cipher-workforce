@@ -557,15 +557,33 @@ def resolve_within(root: os.PathLike[str] | str, key: str) -> Path:
     ``services.media`` and the workspace HTTP route both need it without
     paying for a backend instance (whose ``__init__`` mkdirs, copies the
     environment, and mints a sandbox id).
+
+    **The root is resolved, not merely made absolute.** Comparing a fully
+    resolved candidate against an unresolved root is not like-for-like: if
+    any component of the root is itself a symlink (a macOS ``/tmp``, a
+    symlinked home or data directory), every legitimate path under it
+    resolves to a prefix the root does not have and is refused. That failed
+    closed rather than open, so it was never a hole -- but it rejected valid
+    files. ``WorkspaceBackend`` already resolves its own root, so this makes
+    the two entry points agree.
     """
-    root_path = Path(os.path.abspath(os.fspath(root)))
+    root_path = Path(os.path.abspath(os.fspath(root))).resolve(strict=False)
     virtual = _validate_virtual_path(key)
     candidate = root_path / virtual.lstrip("/")
     try:
         resolved = candidate.resolve(strict=False)
-        resolved.relative_to(root_path)
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise ValueError(f"Path '{key}' resolves outside workspace root") from exc
+    except (OSError, RuntimeError) as exc:
+        # A symlink loop or an unreadable component. Indistinguishable from
+        # an escape as far as the caller is concerned, so it translates the
+        # same way.
+        raise ValueError(f"Path '{key}' could not be resolved") from exc
+
+    # An explicit conditional rather than leaning on ``relative_to`` raising:
+    # containment is the point of this function, so it should read as a
+    # check, and a check that controls a branch is one a static analyser can
+    # actually see.
+    if not resolved.is_relative_to(root_path):
+        raise ValueError(f"Path '{key}' resolves outside workspace root")
     return resolved
 
 

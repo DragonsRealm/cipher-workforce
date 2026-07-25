@@ -124,12 +124,18 @@ def resolve_media(
         # Tolerated for back-compat with nodes that stored absolute paths
         # before AudioRef existed, but still contained: an absolute path
         # outside the workspace is refused rather than read.
-        try:
-            key = candidate.resolve(strict=False).relative_to(root).as_posix()
-        except ValueError as exc:
+        #
+        # Both sides are resolved before comparing, for the reason spelled
+        # out in ``resolve_within``: a resolved candidate measured against an
+        # unresolved root refuses valid files whenever the root sits under a
+        # symlink.
+        root_resolved = root.resolve(strict=False)
+        resolved_candidate = candidate.resolve(strict=False)
+        if not resolved_candidate.is_relative_to(root_resolved):
             raise NodeUserError(
                 f"'{candidate}' is outside this workflow's workspace."
-            ) from exc
+            )
+        key = resolved_candidate.relative_to(root_resolved).as_posix()
 
     try:
         return resolve_within(root, key)
