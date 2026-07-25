@@ -94,3 +94,83 @@ describe('OutputPanel response routing', () => {
     expect(views.some(v => v.textContent?.includes('42'))).toBe(true);
   });
 });
+
+/**
+ * Audio results.
+ *
+ * An AudioRef is an object, so without a dedicated branch it falls into
+ * the JSON tree and the user gets a wall of metadata instead of something
+ * they can play. Detection is structural (`kind === 'audio'`) rather than
+ * hint-driven, so a ref reaching this panel from anywhere still renders.
+ */
+describe('OutputPanel — audio', () => {
+  const SPEECH_NODE = { id: 'tts-1', type: 'textToSpeech' } as any;
+
+  const audioRef = (overrides: Record<string, any> = {}) => ({
+    kind: 'audio',
+    path: 'audio/greeting-abc123.wav',
+    workflow_id: 'wf-1',
+    filename: 'greeting-abc123.wav',
+    mime_type: 'audio/wav',
+    format: 'wav',
+    size_bytes: 24000,
+    duration_seconds: 1.5,
+    url: '/api/workspace/wf-1/files/audio/greeting-abc123.wav',
+    ...overrides,
+  });
+
+  const makeSpeechResult = (outputs: Record<string, any>) =>
+    [{ nodeId: 'tts-1', success: true, executionTime: 900, outputs }] as any;
+
+  it('renders a player instead of dumping the reference as JSON', () => {
+    specState.spec = { uiHints: { outputMode: 'audio' } };
+    const { container } = renderWithProviders(
+      <OutputPanel
+        results={makeSpeechResult({ audio: audioRef(), files: [audioRef()], chunk_count: 1 })}
+        selectedNode={SPEECH_NODE}
+      />,
+    );
+
+    const player = container.querySelector('audio');
+    expect(player).toBeTruthy();
+    expect(player?.getAttribute('src')).toContain(
+      '/api/workspace/wf-1/files/audio/greeting-abc123.wav',
+    );
+    expect(screen.getByText('greeting-abc123.wav')).toBeTruthy();
+  });
+
+  it('renders one player per clip when a provider split the input', () => {
+    specState.spec = { uiHints: { outputMode: 'audio' } };
+    const { container } = renderWithProviders(
+      <OutputPanel
+        results={makeSpeechResult({
+          audio: audioRef({ path: 'audio/a.wav', filename: 'a.wav', sha256: 'aa' }),
+          files: [
+            audioRef({ path: 'audio/a.wav', filename: 'a.wav', sha256: 'aa' }),
+            audioRef({ path: 'audio/b.wav', filename: 'b.wav', sha256: 'bb' }),
+          ],
+          chunk_count: 2,
+        })}
+        selectedNode={SPEECH_NODE}
+      />,
+    );
+
+    expect(container.querySelectorAll('audio')).toHaveLength(2);
+    // The clips are separate files, not parts of one stream — the UI has to
+    // say so, because concatenating them produces unplayable audio.
+    expect(screen.getByText(/separate files/i)).toBeTruthy();
+  });
+
+  it('does not hijack a non-audio result', () => {
+    specState.spec = null;
+    const { container } = renderWithProviders(
+      <OutputPanel
+        results={makeSpeechResult({ response: 'plain text' })}
+        selectedNode={SPEECH_NODE}
+      />,
+    );
+
+    expect(container.querySelector('audio')).toBeNull();
+    expect(screen.getByTestId('markdown')).toBeTruthy();
+  });
+});

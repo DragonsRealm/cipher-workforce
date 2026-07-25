@@ -1,0 +1,4 @@
+{
+  "_comment": "Matches the 'language' palette group colour. The plugin is vendor-neutral, so it takes the group's accent rather than any one provider's brand.",
+  "color": "#6A88E2"
+}

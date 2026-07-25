@@ -23,6 +23,7 @@ import { ExecutionResult } from '@/services/executionService';
 import { useNodeSpec } from '@/lib/nodeSpec';
 import { copyToClipboard, tryParseJson } from '@/utils/formatters';
 import { cn } from '@/lib/utils';
+import AudioPreview, { AudioRef, isAudioRef } from './AudioPreview';
 
 /** Extract output data from ExecutionResult. */
 const getData = (r: ExecutionResult) =>
@@ -136,6 +137,14 @@ export default function OutputPanel({ results, onClear, selectedNode }: Props) {
   // Terminal nodes sometimes emit JSON on stdout anyway — a tree view
   // beats a wall of braces (stdlib JSON.parse via shared formatter).
   const stdoutJson = isTerminal && typeof response === 'string' ? tryParseJson(response) : null;
+  // Audio results are AudioRef objects, which would otherwise fall into the
+  // JSON tree above. Detected structurally rather than by uiHint alone, so a
+  // ref reaching this panel from anywhere still renders as a player.
+  const audioClips: AudioRef[] = (
+    Array.isArray(data?.files) && data.files.some(isAudioRef)
+      ? data.files
+      : [data?.audio ?? response]
+  ).filter(isAudioRef);
   const thinking = data?.thinking;
   const metaTags = ['model', 'provider', 'agent_type'].filter(k => data?.[k]);
 
@@ -173,7 +182,13 @@ export default function OutputPanel({ results, onClear, selectedNode }: Props) {
         )}
 
         <div className="space-y-0">
-          {response && (
+          {audioClips.length > 0 && (
+            <Section label="Audio" defaultOpen>
+              <AudioPreview clips={audioClips} />
+            </Section>
+          )}
+
+          {response && audioClips.length === 0 && (
             <Section label="Response" defaultOpen>
               {typeof response !== 'string' ? (
                 // Object/array response — themed JSON viewer (same --code-*

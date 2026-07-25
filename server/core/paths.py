@@ -262,8 +262,15 @@ def workspaces_dir() -> Path:
     return data_path(Settings().workspace_base_dir)
 
 
-def workspace_dir(workflow_id: str) -> Path:
-    """Per-workflow workspace at ``<opencompany_root>/workspaces/<workflow_id>/``.
+def workspace_dir(workflow_slug: str) -> Path:
+    """Per-workflow workspace at ``<opencompany_root>/workspaces/<slug>/``.
+
+    Keyed by ``Workflow.slug``, NOT by ``Workflow.id`` — the parameter was
+    named ``workflow_id`` until it was noticed that every real caller
+    passes a slug (see ``WorkflowService._get_workspace_dir``, which is
+    what actually creates these directories, and the rename path in
+    ``workflow_storage/handlers.py`` which moves them when the slug
+    changes). Passing an id here yields a directory that does not exist.
 
     The workflow executor injects this into the execution context as
     ``ctx.raw["workspace_dir"]`` and the cli_agent service splices it
@@ -272,7 +279,7 @@ def workspace_dir(workflow_id: str) -> Path:
     executors) + materialise its connected skills under
     ``<workspace_dir>/.claude/skills/``.
     """
-    return workspaces_dir() / workflow_id
+    return workspaces_dir() / workflow_slug
 
 
 def example_workflows_dir() -> Path:

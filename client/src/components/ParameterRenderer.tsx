@@ -33,6 +33,7 @@ import { shouldShowParameter } from '../utils/parameterVisibility';
 import { AI_MODEL_PROVIDER_MAP } from '../lib/aiModelProviders';
 
 import { resolveNodeDescription } from '../lib/nodeSpec';
+import { uploadToWorkspace } from '../lib/workspaceUpload';
 
 /**
  * Radix reserves the empty string to clear a Select, so raw node option
@@ -1627,16 +1628,43 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
         );
 
       case 'file':
+        // Hooks inside a switch case are a pre-existing pattern in this
+        // renderer (`fileInputRef` predates this change). Kept consistent
+        // rather than restructuring the whole component here.
         const fileInputRef = React.useRef<HTMLInputElement>(null);
+        const [isUploading, setIsUploading] = useState(false);
+        const [uploadError, setUploadError] = useState<string | null>(null);
 
-        const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        // Uploads go to the workspace and the parameter stores a ~400 byte
+        // reference. The legacy path — base64 straight into the parameter —
+        // is kept only as a fallback for a workflow that has never been
+        // saved, because it has no workspace to upload into yet. That path
+        // is a known hazard at media sizes: the blob rides the WebSocket, is
+        // persisted, is re-broadcast to every client, and then exceeds
+        // Temporal's payload limit. `coerce_file_param` still accepts it
+        // server-side so existing saved rows keep working.
+        const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           const file = e.target.files?.[0];
           if (!file) return;
+
+          const workflowId = useAppStore.getState().currentWorkflow?.id;
+          if (workflowId) {
+            try {
+              setUploadError(null);
+              setIsUploading(true);
+              onChange(await uploadToWorkspace(file, workflowId));
+              return;
+            } catch (err) {
+              setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+              return;
+            } finally {
+              setIsUploading(false);
+            }
+          }
 
           const reader = new FileReader();
           reader.onload = () => {
             const base64 = (reader.result as string).split(',')[1]; // Remove data:mime;base64, prefix
-            // Store as object with base64 data, filename, and mime type
             onChange({
               type: 'upload',
               data: base64,
@@ -1648,6 +1676,7 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
         };
 
         const isUploadedFile = currentValue && typeof currentValue === 'object' && currentValue.type === 'upload';
+        const isFileRef = currentValue && typeof currentValue === 'object' && currentValue.kind === 'audio';
 
         // Determine file accept type based on context (e.g., message_type for WhatsApp)
         const getFileAcceptType = () => {
@@ -1677,14 +1706,20 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
             <div className="flex items-center gap-2">
               <ShadcnInput
                 type="text"
-                value={isUploadedFile ? `[Uploaded] ${currentValue.filename}` : (currentValue || '')}
+                value={
+                  isFileRef
+                    ? currentValue.filename
+                    : isUploadedFile
+                      ? `[Uploaded] ${currentValue.filename}`
+                      : (currentValue || '')
+                }
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={parameter.placeholder || 'Enter file path or upload'}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                readOnly={isUploadedFile}
-                className={`flex-1 font-mono ${isDragOver ? 'border-ring ring-3 ring-ring/50 bg-accent/10' : ''} ${isUploadedFile ? 'bg-muted text-success' : (isFileTemplate ? 'text-info' : '')}`}
+                readOnly={isUploadedFile || isFileRef}
+                className={`flex-1 font-mono ${isDragOver ? 'border-ring ring-3 ring-ring/50 bg-accent/10' : ''} ${isUploadedFile || isFileRef ? 'bg-muted text-success' : (isFileTemplate ? 'text-info' : '')}`}
               />
               <input
                 key={`file-input-${allParameters?.message_type || 'default'}`}
@@ -1697,15 +1732,17 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
               <ActionButton
                 intent="config"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
                 title="Upload file"
               >
-                Upload
+                {isUploading ? 'Uploading…' : 'Upload'}
               </ActionButton>
-              {isUploadedFile && (
+              {(isUploadedFile || isFileRef) && (
                 <ActionButton
                   intent="stop"
                   onClick={() => {
                     onChange('');
+                    setUploadError(null);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                   title="Clear uploaded file"
@@ -1714,10 +1751,16 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
                 </ActionButton>
               )}
             </div>
-            <div className="mt-1 text-[11px] italic text-muted-foreground">
-              {isUploadedFile
-                ? `Size: ${(currentValue.data.length * 0.75 / 1024).toFixed(1)} KB | Type: ${currentValue.mimeType}`
-                : 'Enter server path or click Upload to select a file'}
+            <div
+              className={`mt-1 text-[11px] italic ${uploadError ? 'text-destructive' : 'text-muted-foreground'}`}
+            >
+              {uploadError
+                ? uploadError
+                : isFileRef
+                  ? `Saved to the workspace: ${currentValue.path}`
+                  : isUploadedFile
+                    ? `Size: ${(currentValue.data.length * 0.75 / 1024).toFixed(1)} KB | Type: ${currentValue.mimeType}`
+                    : 'Enter server path or click Upload to select a file'}
             </div>
           </div>
         );

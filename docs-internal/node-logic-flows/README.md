@@ -137,8 +137,8 @@ Sarvam AI's non-chat REST APIs. The chat models live under `ai_chat_models`
 and share the same credential.
 
 - [Sarvam Detect Language (`sarvamDetectLanguage`)](./language/sarvamDetectLanguage.md)
-- [Sarvam Speech to Text (`sarvamSpeechToText`)](./language/sarvamSpeechToText.md)
-- [Sarvam Text to Speech (`sarvamTextToSpeech`)](./language/sarvamTextToSpeech.md)
+- [Speech to Text (`speechToText`)](./language/speechToText.md)
+- [Text to Speech (`textToSpeech`)](./language/textToSpeech.md)
 - [Sarvam Translate (`sarvamTranslate`)](./language/sarvamTranslate.md)
 - [Sarvam Transliterate (`sarvamTransliterate`)](./language/sarvamTransliterate.md)
 

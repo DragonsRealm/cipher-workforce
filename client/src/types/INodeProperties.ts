@@ -224,8 +224,13 @@ export interface INodeUIHints {
   /** OutputPanel: how the node's textual output renders. `"terminal"`
    * = preformatted CLI text (never markdown — `#` would become
    * headings and indentation would collapse). Declared by CLI-wrapper
-   * plugins (githubAction, vercelAction, shell). */
-  outputMode?: 'terminal';
+   * plugins (githubAction, vercelAction, shell). `"audio"` = render an
+   * `<audio>` player for a result carrying an AudioRef (`kind:
+   * "audio"`), declared by textToSpeech; without it the ref falls
+   * through to the JSON tree. Widening this union needs no change to
+   * the backend's `test_ui_hints_only_carry_known_flags` — that
+   * invariant checks flag *names*, not values. */
+  outputMode?: 'terminal' | 'audio';
 }
 
 export interface INodeTypeDescription {

@@ -99,7 +99,7 @@ language was detected.
 - Localising content into Indian languages
 - Normalising user input typed in Roman script into native script
 - Routing a message to the right handler based on its language
-- Preparing text for `sarvam_text_to_speech`, which needs a target language
+- Preparing text for `text_to_speech`, which needs a target language
 
 ## When NOT to Use
 

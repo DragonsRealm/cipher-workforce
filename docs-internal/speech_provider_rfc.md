@@ -117,8 +117,14 @@ hardcodes `self.credentials[0]` ([`base.py:566`](../server/services/plugin/base.
 provider-agnostic. Copying it into `services/speech/` would fork the boot-time-import-avoidance
 logic that exists specifically to keep ~7 s (warm) / ~45 s (cold) of SDK imports off startup.
 
-`services/provider_registry.py` + `services/provider_clients.py`; `services/llm/registry.py`
-becomes a shim. **Success criterion: `server/tests/llm/` passes untouched.**
+`services/provider_registry.py`; `services/llm/registry.py` becomes a shim.
+**Success criterion: `server/tests/llm/` passes untouched.** Met — 168 tests, no edits. `_REGISTRY`
+survives as an alias bound to the *same dict object* the registry mutates, because several tests
+swap provider factories in place through it.
+
+A companion `services/provider_clients.py` (the lease-counted client cache) was scoped here and
+deliberately **not** built. See §4: speech makes one HTTP call per node execution, so the cache has
+no second consumer and would have earned only a shutdown hook in `main.py`.
 
 ### D7 — `tinytag` for duration and format
 
@@ -159,42 +165,86 @@ retrying again.
 
 ## 4. Architecture
 
-```
-services/provider_registry.py   generic ProviderSpec + registry      (extracted from llm/)
-services/provider_clients.py    generic lease-counted client cache   (extracted from llm/)
+Speech is a **plugin**, not a service. Everything vendor-specific lives in the plugin folder;
+only genuinely shared machinery sits under `services/`.
 
-services/media/                 audio transport — vendor-neutral, reusable for image/video
+```
+services/provider_registry.py   generic ProviderSpec + registry      (shared with services/llm)
+
+services/media/                 audio transport -- vendor-neutral, reusable for image/video
   refs.py       AudioRef
   workspace.py  write_audio / resolve_media / read_media_bytes / coerce_file_param
   inspect.py    tinytag -> wave -> PCM arithmetic; never raises
   limits.py     every size constant, one place
 
-services/speech/                provider abstraction — mirrors services/llm/
-  protocol.py   TtsProvider / SttProvider, requests, results, SpeechError
-  registry.py   two registries over the generic one
-  config.py     reads server/config/speech_defaults.json
-  unifier.py    SpeechUnifier — dispatch + typed-error -> NodeUserError
-  providers/    _http.py, _openai_compat.py (openai+groq STT), elevenlabs.py,
-                sarvam.py, deepgram.py, gemini.py
+nodes/speech/                   the whole speech surface
+  text_to_speech.py             the two nodes
+  speech_to_text.py
+  _protocol.py                  TtsProvider / SttProvider, requests, results, SpeechError
+  _registry.py                  two registries over the generic one
+  _config.py                    reads server/config/speech_defaults.json
+  _unifier.py                   dispatch + typed-error -> NodeUserError
+  _providers/                   _http.py, _openai_compat.py (openai+groq), elevenlabs.py,
+                                deepgram.py, sarvam.py
+  _credentials.py               ElevenLabs + Deepgram (the rest are shared with nodes/model)
+  _base.py, _option_loaders.py
 
-nodes/speech/                   the two nodes
+config/speech_defaults.json     operator-editable capabilities
 routers/workspace.py            GET file (Range-capable) + POST upload
 ```
 
-**Layering rule.** `services/speech` takes credential **id strings**, never `Credential` classes.
-The classes live under `nodes/`, and a `services → nodes` import inverts the layering and breaks
-`test_plugin_self_containment.py`. A test locks the two sides agree.
+**Why not `services/speech/`.** An earlier draft put the provider layer under `services/`, mirroring
+`services/llm/`. That mirror is misleading: `services/llm` earns its place because agents, chat
+models and a dozen nodes all consume it, whereas speech has exactly two consumers and both live in
+`nodes/speech/`. Per-vendor code under `services/` is the pattern Wave 11.I explicitly retired --
+`services.whatsapp_service`, `services.maps` and `services.nodejs_client` all moved into plugin
+folders, and `test_plugin_self_containment.py` names them in a forbidden-import list. Speech would
+have been the next entry on it.
+
+**Layering rule.** The speech layer takes credential **id strings**, never `Credential` classes.
+`nodes/speech/_config.credential_id(provider)` reads the id from JSON, and a test asserts every
+registered provider's id resolves in `CREDENTIAL_REGISTRY`. Cross-plugin *credential* imports are
+fine and idiomatic (`from ..model._credentials import OpenAICredential`, exactly what `nodes/sarvam/`
+already does); what stays out is any `services/` module knowing a vendor name.
+
+**No client cache.** `ChatUnifier` keeps a lease-counted LRU because an agent loop makes many model
+calls inside one node execution. Speech is the opposite shape -- one HTTP request per execution,
+where client setup is invisible next to a multi-second synthesis. Caching would buy nothing and cost
+a process-wide singleton plus a shutdown hook wired into `main.py`. This also settles the question
+left open when the registry was extracted: no second consumer materialised, so no shared client
+cache was built.
 
 ---
 
-## 5. Two bugs this work closes
+## 5. Bugs this work closes
 
-1. **Path traversal in `sarvam_speech_to_text`.** `_read_audio` does `Path(workspace_dir) / raw`
-   with no containment check, so `audio_file="../../credentials.db"` reads the encrypted credential
-   store and uploads it to the provider. `coerce_file_param` closes it by construction.
-2. **Workflow rename orphans every workspace file.** `rename_workflow` is a single-row `UPDATE`; the
+1. **Path traversal in `sarvam_speech_to_text`.** `_read_audio` did `Path(workspace_dir) / raw`
+   with no containment check, so `audio_file="../../credentials.db"` read the encrypted credential
+   store and uploaded it to the provider. `coerce_file_param` closes it by construction, and the
+   node that carried the bug no longer exists.
+2. **Flat 30-second billing.** The same node charged every transcription as 30 seconds, with the
+   comment "we do not decode the clip to measure it". It also justified the figure as a documented
+   endpoint limit, which the docs do not actually say (§7). Duration is now measured.
+3. **`workspace_root()` resolved by id where the directory is named by slug.** Introduced by this
+   work's own first wave: the ctx-less fallback composed `workspaces/<workflow_id>/`, a path that
+   never exists, because `WorkflowService._get_workspace_dir` names those directories after
+   `Workflow.slug`. It stayed invisible because every caller happened to pass a `NodeContext` — the
+   workspace HTTP route is the first that cannot. The fallback now raises rather than guessing, and
+   the route does the id → slug lookup itself, since that needs a database read and `services.media`
+   is synchronous by contract. `core.paths.workspace_dir`'s parameter was renamed to
+   `workflow_slug` so the next reader is not misled the same way.
+4. **Workflow rename orphans every workspace file.** `rename_workflow` is a single-row `UPDATE`; the
    directory is never moved, and `_get_workspace_dir` keys on the mutable slug. Pre-existing and not
    audio-specific, but `AudioRef` makes it fixable — a best-effort `os.replace` in the rename path.
+   Still outstanding.
+
+### On migrating existing workflows
+
+None was written. The two Sarvam speech nodes shipped only days before this work and no saved
+workflow references them, so a `workflow_migrations` entry would have been dead code guarding
+against a case that does not exist. Should one appear, the graph rewrite is the easy half; the
+parameter half is best-effort, because only 2 of the 5 migration call sites pass `node_parameters`
+and neither of those is the load path.
 
 ---
 
@@ -212,33 +262,66 @@ The classes live under `nodes/`, and a `services → nodes` import inverts the l
 
 ## 7. Verified provider surface
 
-Confirmed against live documentation on 2026-07-25. Anything not listed here was **not** verified
-and must be checked before it is coded.
+Confirmed against live vendor documentation on 2026-07-25/26, for the **v1 provider set only**
+(OpenAI, Groq, ElevenLabs, Deepgram, Sarvam). Gemini, Azure, AssemblyAI and Cartesia are out of
+scope and deliberately unverified.
 
-**OpenAI** — TTS `POST /v1/audio/speech`, models `gpt-4o-mini-tts` / `tts-1` / `tts-1-hd`, voices
-`alloy ash ballad coral echo fable nova onyx sage shimmer verse marin cedar` (subset for tts-1),
-`response_format` ∈ `mp3 opus aac flac wav pcm`, plus `instructions` and `speed`. Raw binary
-response. STT `POST /v1/audio/transcriptions`, multipart.
+The set diverges on every axis, which is what makes it a real test of the abstraction rather than
+four variations of one shape:
 
-**ElevenLabs** — TTS `POST /v1/text-to-speech/{voice_id}`, header `xi-api-key`, body `text`,
-`model_id` (default `eleven_multilingual_v2`), `voice_settings{stability, similarity_boost, style,
-use_speaker_boost, speed}`, `language_code`, `seed`, `apply_text_normalization` ∈ `auto|on|off`;
-**query** `output_format` (default `mp3_44100_128`, 27 values). Binary response. Models via
-`GET /v1/models`, voices via `GET /v1/voices`. STT `POST /v1/speech-to-text`, multipart,
-`model_id` ∈ `scribe_v2|scribe_v1`, `language_code`, `tag_audio_events` (default true),
-`num_speakers` (≤32), `timestamps_granularity` ∈ `none|word|character`, `diarize` (default false).
-Response `{language_code, language_probability, text, words[]}`.
+| | auth header | request transport | response transport |
+|---|---|---|---|
+| OpenAI TTS | `Authorization: Bearer` | JSON body | **raw audio bytes** |
+| OpenAI / Groq STT | `Authorization: Bearer` | multipart | JSON |
+| ElevenLabs TTS | **`xi-api-key`** (no scheme) | JSON body + **query params** | **raw audio bytes** |
+| Deepgram STT | **`Authorization: Token`** | **raw body bytes** + **query params** | JSON |
+| Sarvam TTS | `api-subscription-key` | JSON body | **base64 in a JSON array** |
+| Sarvam STT | `api-subscription-key` | multipart | JSON |
 
-**Groq** — STT `POST https://api.groq.com/openai/v1/audio/transcriptions`, OpenAI-compatible,
-`whisper-large-v3` / `whisper-large-v3-turbo`. This is why `_openai_compat.py` covers both vendors
-off one factory.
+**OpenAI** -- TTS `POST /v1/audio/speech`; models `gpt-4o-mini-tts` (default), `tts-1`, `tts-1-hd`;
+13 voices, of which `tts-1` / `tts-1-hd` support only 9 (`ballad`, `verse`, `marin`, `cedar` are
+excluded); `response_format` in `mp3 opus aac flac wav pcm`; `speed` 0.25-4.0; input <=4096 chars;
+`instructions` works only on `gpt-4o-mini-tts`. STT `POST /v1/audio/transcriptions` (multipart), and
+**`response_format` is model-gated**: `whisper-1` allows `json text srt verbose_json vtt`, the
+`gpt-4o-*-transcribe` models allow only `json text`. Since `timestamp_granularities` requires
+`verbose_json`, word timestamps are effectively whisper-1 only, and requesting them elsewhere is a
+400 -- so the node downgrades rather than sends.
 
-**Deepgram** — TTS `POST /v1/speak`, header `Authorization: Token <key>`, model names of the form
-`aura-2-<voice>-<lang>`. STT `POST /v1/listen`. Query-parameter driven; exact parameter set to be
-confirmed at implementation time.
+**Groq** -- STT `POST https://api.groq.com/openai/v1/audio/transcriptions`, OpenAI-compatible;
+`whisper-large-v3-turbo` (default) and `whisper-large-v3`. **Turbo omits translation entirely.**
+`prompt` is capped at 224 tokens, and Groq bills a **10-second minimum per request** regardless of
+clip length.
 
-**Sarvam** — already implemented; see [`sarvam_service.md`](./sarvam_service.md). TTS returns
-base64 inside JSON (`{audios: […]}`), the one provider that does.
+**ElevenLabs** -- TTS `POST /v1/text-to-speech/{voice_id}`; header `xi-api-key`, bare, no scheme
+keyword; body `text`, `model_id` (default `eleven_multilingual_v2`), `language_code`,
+`voice_settings`, `seed`, `apply_text_normalization`; **`output_format` is a query parameter**
+(default `mp3_44100_128`) and is silently ignored if placed in the body. Voices via
+`GET /v2/voices`, cursor-paginated (`has_more` + `next_page_token`; the docs say not to rely on
+`total_count`). `speed` has **two conflicting official ranges** -- schema 0.5-2.0, best-practices
+prose 0.7-1.2, never reconciled; the schema bound is what the API accepts and is what is enforced.
+Whether `voice_settings` are honoured on `eleven_v3` is **undocumented**.
 
-**Gemini** — TTS via `generateContent` with an audio response modality. Shape **not yet verified**;
-must be confirmed before coding.
+**Deepgram** -- STT `POST /v1/listen`; `Authorization: Token <key>`, **not** Bearer; **all options
+are query parameters** (`punctuate`, `diarize`, `smart_format`, `detect_language`, `paragraphs`,
+`utterances`, ...), with multi-value options as repeated keys rather than comma lists; audio is the
+**raw request body** with an `audio/*` content type, not multipart. Transcript at
+`results.channels[N].alternatives[N].transcript`. The documented default model is `base-general`, so
+an explicit default is configured instead. **No cloud file-size or duration cap is published** -- the
+25 MB figure in circulation belongs to their self-hosted SageMaker docs and is not asserted here.
+
+**Sarvam** -- TTS `POST /text-to-speech` returns **base64 inside JSON**, and `audios` is an **array**
+of standalone clips. Explicit nulls are rejected where an absent key is accepted. `bulbul:v3` takes
+`temperature` and rejects `pitch` / `loudness` / `enable_preprocessing`; `bulbul:v2` is the mirror
+image. STT `POST /speech-to-text` (multipart); timestamps and diarization are **batch-API-only** and
+come back null here.
+
+### Corrections to earlier drafts
+
+- An earlier version of this section listed an ElevenLabs STT endpoint and a Deepgram TTS endpoint.
+  Both products exist, but neither is in the v1 set and neither was re-verified, so neither is
+  implemented.
+- The Sarvam node asserted that its synchronous STT endpoint "caps at 30 seconds of audio", and
+  billed every transcription at that ceiling. The docs' only 30-second reference is about **response
+  latency**, not audio duration. The claim was wrong and the billing with it.
+- Sarvam's own docs contradict themselves on `speech_sample_rate` (schema `22050`, prose `24000`).
+  The configured default is `24000`, matching the prose and the previous implementation.

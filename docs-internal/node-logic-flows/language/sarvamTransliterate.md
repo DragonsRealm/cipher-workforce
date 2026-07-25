@@ -15,7 +15,7 @@ Convert text between scripts while preserving pronunciation — romanised Hindi
 ("namaste") to Devanagari ("नमस्ते") and back. **This is not translation**:
 the words and meaning are unchanged, only the writing system. Optionally
 expands numerals and abbreviations into spoken form, which is useful when the
-output feeds `sarvamTextToSpeech`.
+output feeds `textToSpeech`.
 
 ## Inputs (handles)
 
@@ -98,5 +98,5 @@ flowchart TD
 ## Related
 
 - **Skills using this as a tool**: `sarvam-translate-skill`.
-- **Peer nodes**: [`sarvamTranslate`](./sarvamTranslate.md), [`sarvamTextToSpeech`](./sarvamTextToSpeech.md) (a common downstream consumer of spoken-form output).
+- **Peer nodes**: [`sarvamTranslate`](./sarvamTranslate.md), [`textToSpeech`](./textToSpeech.md) (a common downstream consumer of spoken-form output).
 - **Architecture docs**: [Sarvam AI Service](../../sarvam_service.md).

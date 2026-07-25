@@ -264,6 +264,35 @@
       "text_to_speech_v2": 0.00001695,
       "speech_to_text": 0.00009417,
       "_default": 0.0000226
+    },
+    "elevenlabs": {
+      "_description": "Text-to-speech, billed per CHARACTER of input. ElevenLabs prices by subscription tier rather than by a flat published per-character rate, so this is the Creator-tier effective rate (~$0.30 per 1,000 characters) and is an ESTIMATE. Operators on another tier should edit this value — the node reports the character count truthfully either way.",
+      "_source": "https://elevenlabs.io/pricing",
+      "_updated": "2026-07",
+      "text_to_speech": 0.0003,
+      "_default": 0.0003
+    },
+    "deepgram": {
+      "_description": "Speech-to-text, billed per MINUTE of audio. Pay-as-you-go rate for the nova-3 family. The node converts measured seconds to minutes before recording, so resource_count here is minutes, not seconds.",
+      "_source": "https://deepgram.com/pricing",
+      "_updated": "2026-07",
+      "speech_to_text": 0.0043,
+      "_default": 0.0043
+    },
+    "openai": {
+      "_description": "OpenAI's /audio/* routes only. These are NOT token-priced, so they live here rather than under `llm.openai` — the two blocks are separate namespaces and do not collide. text_to_speech bills per CHARACTER of input ($0.60 per 1M characters for gpt-4o-mini-tts, the default model; tts-1 is ~25x that, and this table has no per-model axis, so a tts-1-heavy install should raise this value). speech_to_text bills per SECOND ($0.006/minute for whisper-1).",
+      "_source": "https://openai.com/api/pricing/",
+      "_updated": "2026-07",
+      "text_to_speech": 0.0000006,
+      "speech_to_text": 0.0001,
+      "_default": 0.0001
+    },
+    "groq": {
+      "_description": "Groq transcription only (token pricing lives under `llm.groq`). Billed per SECOND of audio: $0.04/hour for whisper-large-v3-turbo, the default model. Groq bills a 10-second floor per request, which the provider module applies before reporting the count.",
+      "_source": "https://groq.com/pricing/",
+      "_updated": "2026-07",
+      "speech_to_text": 0.0000111,
+      "_default": 0.0000111
     }
   },
 
@@ -367,6 +396,20 @@
       "detect_language": "detect_language",
       "text_to_speech": "text_to_speech",
       "text_to_speech_v2": "text_to_speech_v2",
+      "speech_to_text": "speech_to_text"
+    },
+    "_comment_speech": "Every speech provider needs an entry here as well as in api_pricing: calculate_api_cost() returns a zero cost SILENTLY when an action has no operation_map entry, so a missing line reads as 'free' rather than as an error.",
+    "elevenlabs": {
+      "text_to_speech": "text_to_speech"
+    },
+    "deepgram": {
+      "speech_to_text": "speech_to_text"
+    },
+    "openai": {
+      "text_to_speech": "text_to_speech",
+      "speech_to_text": "speech_to_text"
+    },
+    "groq": {
       "speech_to_text": "speech_to_text"
     }
   },

@@ -164,6 +164,45 @@ class TestContainment:
             read_media_bytes(ref, ctx=_ctx(beta, workflow_id="beta"))
 
 
+class TestWorkspaceRootRefusesToGuess:
+    """Regression: a workflow_id is not a workspace directory name.
+
+    Directories are named by ``Workflow.slug``, which changes on rename,
+    while an ``AudioRef`` carries the immutable ``workflow_id`` on purpose.
+    Composing ``workspaces/<workflow_id>/`` produced a path that never
+    exists. It stayed invisible because every caller happened to pass a
+    ctx; the workspace HTTP route is the first that cannot.
+    """
+
+    def test_workflow_id_alone_is_refused(self):
+        from services.media.workspace import workspace_root
+        from services.plugin import NodeUserError
+
+        with pytest.raises(NodeUserError):
+            workspace_root(workflow_id="019f99e2-dc99-7cf3-9019-3ad3e6260de1")
+
+    def test_no_ctx_and_no_hint_is_refused(self):
+        from services.media.workspace import workspace_root
+        from services.plugin import NodeUserError
+
+        with pytest.raises(NodeUserError):
+            workspace_root()
+
+    def test_explicit_workspace_dir_wins(self, tmp_path):
+        """How the HTTP route passes a directory it resolved via the DB."""
+        from services.media.workspace import workspace_root
+
+        assert workspace_root(workspace_dir=str(tmp_path)) == tmp_path
+
+    def test_explicit_dir_lets_a_ref_resolve_without_a_ctx(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        ref = write_audio(_wav_bytes(), ctx=ctx, stem="x", ext="wav")
+
+        name, blob = read_media_bytes(ref, workspace_dir=str(tmp_path))
+        assert blob == read_media_bytes(ref, ctx=ctx)[1]
+        assert name.endswith(".wav")
+
+
 class TestCoerceFileParam:
     def test_accepts_an_audio_ref(self, tmp_path):
         ctx = _ctx(tmp_path)

@@ -51,14 +51,36 @@ def _slugify(value: str, *, limit: int = 32) -> str:
     return slug
 
 
-def workspace_root(ctx: Any = None, *, workflow_id: Optional[str] = None) -> Path:
-    """Resolve the workspace directory for a context or workflow id.
+def workspace_root(
+    ctx: Any = None,
+    *,
+    workspace_dir: Optional[str] = None,
+    workflow_id: Optional[str] = None,
+) -> Path:
+    """Resolve the workspace directory for a context.
 
-    Prefers the executor-injected ``ctx.workspace_dir``; falls back to
-    composing it from the workflow's slug so the HTTP routes -- which have
-    no NodeContext -- can resolve the same directory.
+    Order: an explicit ``workspace_dir``, then the executor-injected
+    ``ctx.workspace_dir``. Callers with neither get an error rather than a
+    guess.
+
+    ``workflow_id`` is accepted for call-site readability but is **not**
+    sufficient on its own, and that is deliberate. Workspace directories are
+    named by ``Workflow.slug`` (see ``WorkflowService._get_workspace_dir``),
+    while an ``AudioRef`` deliberately carries the immutable ``workflow_id``
+    so a reference survives a rename. Turning one into the other needs a
+    database read, which cannot happen in a sync helper -- so the caller
+    that has a database (the workspace HTTP route) does the lookup and
+    passes the resolved directory in via ``workspace_dir``.
+
+    An earlier version composed ``workspaces/<workflow_id>/`` here. That
+    silently produced a path that never exists, because the directory on
+    disk is ``workspaces/<slug>/``. It never fired in practice only because
+    every caller happened to supply a ctx.
     """
     from services.plugin import NodeUserError
+
+    if workspace_dir:
+        return Path(workspace_dir)
 
     direct = getattr(ctx, "workspace_dir", None) if ctx is not None else None
     if not direct and ctx is not None:
@@ -70,20 +92,18 @@ def workspace_root(ctx: Any = None, *, workflow_id: Optional[str] = None) -> Pat
 
     if workflow_id is None and ctx is not None:
         workflow_id = getattr(ctx, "workflow_id", None)
-    if not workflow_id:
-        raise NodeUserError(
-            "No workspace is available for this execution, so media cannot be "
-            "read or written. Save the workflow and run it again."
-        )
-    from core.paths import workspace_dir as _workspace_dir
-
-    return Path(_workspace_dir(workflow_id))
+    raise NodeUserError(
+        "No workspace is available for this execution, so media cannot be "
+        "read or written. Save the workflow and run it again."
+        + (f" (workflow {workflow_id})" if workflow_id else "")
+    )
 
 
 def resolve_media(
     ref: AudioRef | str,
     *,
     ctx: Any = None,
+    workspace_dir: Optional[str] = None,
     workflow_id: Optional[str] = None,
 ) -> Path:
     """Resolve a ref or a path string to a contained absolute path."""
@@ -97,20 +117,19 @@ def resolve_media(
     if isinstance(ref, AudioRef) and ref.workflow_id and workflow_id is None:
         workflow_id = ref.workflow_id
 
+    root = workspace_root(ctx, workspace_dir=workspace_dir, workflow_id=workflow_id)
+
     candidate = Path(key)
     if candidate.is_absolute():
         # Tolerated for back-compat with nodes that stored absolute paths
         # before AudioRef existed, but still contained: an absolute path
         # outside the workspace is refused rather than read.
-        root = workspace_root(ctx, workflow_id=workflow_id)
         try:
             key = candidate.resolve(strict=False).relative_to(root).as_posix()
         except ValueError as exc:
             raise NodeUserError(
                 f"'{candidate}' is outside this workflow's workspace."
             ) from exc
-    else:
-        root = workspace_root(ctx, workflow_id=workflow_id)
 
     try:
         return resolve_within(root, key)
@@ -122,13 +141,16 @@ def read_media_bytes(
     ref: AudioRef | str,
     *,
     ctx: Any = None,
+    workspace_dir: Optional[str] = None,
     workflow_id: Optional[str] = None,
     max_bytes: int = MEDIA_MAX_READ_BYTES,
 ) -> Tuple[str, bytes]:
     """Return ``(filename, bytes)`` for a contained media reference."""
     from services.plugin import NodeUserError
 
-    target = resolve_media(ref, ctx=ctx, workflow_id=workflow_id)
+    target = resolve_media(
+        ref, ctx=ctx, workspace_dir=workspace_dir, workflow_id=workflow_id
+    )
     if not target.is_file():
         raise NodeUserError(f"Media file not found: {target.name}")
 

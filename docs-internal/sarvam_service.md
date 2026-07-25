@@ -144,8 +144,13 @@ nothing here owns long-lived state, so the folder is helpers plus node files.
 | `sarvamTranslate` | `sarvam_translate` | `POST /translate` | characters |
 | `sarvamTransliterate` | `sarvam_transliterate` | `POST /transliterate` | characters |
 | `sarvamDetectLanguage` | `sarvam_detect_language` | `POST /text-lid` | characters |
-| `sarvamSpeechToText` | `sarvam_speech_to_text` | `POST /speech-to-text` (multipart) | seconds |
-| `sarvamTextToSpeech` | `sarvam_text_to_speech` | `POST /text-to-speech` | characters |
+
+Sarvam's two speech endpoints are no longer nodes in this folder. They are
+reached through the provider-abstracted `textToSpeech` / `speechToText` nodes
+in [`server/nodes/speech/`](../server/nodes/speech/), where Sarvam is one
+provider among several; the wire logic was ported verbatim into
+[`_providers/sarvam.py`](../server/nodes/speech/_providers/sarvam.py). See
+[Speech Provider RFC](./speech_provider_rfc.md).
 
 All authenticate through `ctx.connection("sarvam")`, which injects
 `api-subscription-key` via `ApiKeyCredential.inject` — no per-node auth code.
@@ -161,84 +166,30 @@ Per-model input caps are enforced client-side (`mayura:v1` 1000 chars,
 `sarvam-translate:v1` 2000, `/text-lid` 1000) so the LLM gets an actionable
 message instead of an opaque 422.
 
-### Speech-to-text: multipart and the 30-second wall
+### Speech: moved to the provider-abstracted nodes
 
-This is the repo's first multipart upload. Rather than bypass the authed
-facade, `Connection.request` gained a generic `files=` parameter
-([`connection.py`](../server/services/plugin/connection.py)) — threaded into
-**both** the initial request and the auth-retry rebuild, so a 401 replays the
+The multipart plumbing this folder introduced is still load-bearing and still
+generic: `Connection.request` gained a `files=` parameter
+([`connection.py`](../server/services/plugin/connection.py)), threaded into
+**both** the initial request and the auth-retry rebuild so a 401 replays the
 file parts instead of an empty body. Pass file *bytes*, never an open handle,
 for exactly that reason.
 
-`audio_file` accepts **either** shape the frontend can produce: a path string
-(absolute, or relative to the workflow workspace) or the file widget's
-`{"type": "upload", "data": "<base64>", "filename", "mimeType"}` envelope.
-Typing it as `Union[str, Dict]` is deliberate — `whatsapp_send` declares the
-same field as `str` and only survives because its handler reads the raw dict.
+Two behaviours that were discovered here and are preserved in the speech
+plugin:
 
-**The synchronous endpoint caps at 30 seconds of audio.** Longer recordings
-need Sarvam's Batch API, a separate job-based surface that is out of scope.
-Diarization is Batch-only too, so `diarized_transcript` is declared on the
-output model but will be `None` here.
+- **Sarvam returns TTS audio as base64 inside JSON, and `audios` is an
+  array.** Long input comes back as several standalone clips, each with its
+  own container header, so concatenating them byte-wise produces audio that
+  plays only the first chunk. The node writes one file per clip and says so.
+- **Timestamps and diarization are Batch-API-only.** The synchronous endpoint
+  returns them as `null` regardless of what is requested.
 
-### Text-to-speech: files, not base64
-
-Sarvam returns audio as base64 inside the JSON body. A 2500-character v3
-request is roughly **12 MB of base64** — which would land in the
-`node_outputs` JSON column, ride a status-WebSocket broadcast, and (because the
-node is tool-exposed) be serialized into an LLM message.
-
-So the default is `return_audio: "file"`: audio is written under
-`<workspace>/audio/` and the node returns `file_path`. `return_audio: "base64"`
-is opt-in and capped at `_MAX_INLINE_B64 = 1_000_000`; over the cap
-`audio_base64` stays `None` and `note` explains why and points at the file
-mode. It never silently truncates.
-
-Sarvam may split long text into several chunks in `audios[]`. Each chunk is a
-standalone container with its own header, so **concatenating them byte-wise
-produces an unplayable file**. The node writes one file per chunk, points
-`file_path` at the first, lists all of them in `files`, and sets `note`.
-
-Voices are per model and do not overlap — 37 for `bulbul:v3`, 7 for
-`bulbul:v2`. Asking for a v2 voice on v3 is a `NodeUserError`, not a silent
-fallback. v2-only params (`pitch`, `loudness`, `enable_preprocessing`) and
-v3-only params (`temperature`, `dict_id`) are gated by `displayOptions` in the
-UI *and* filtered from the request body, since v3 rejects the v2 fields.
-
----
-
-## Cost tracking
-
-`@Operation(cost=...)` is declarative metadata that nothing reads at runtime,
-so attribution is an explicit `track_sarvam_usage()` call per operation —
-the same shape as [`nodes/twitter/_base.py`](../server/nodes/twitter/_base.py).
-It never raises: a metrics failure must not fail a successful API call.
-
-Sarvam publishes INR list prices. [`pricing.json`](../server/config/pricing.json)
-stores USD converted at **1 INR = 0.0113 USD (~88.5 INR/USD, 2026-07)**, with
-the rate and the source figures recorded in a `_note` key. Both an
-`api.sarvam` block and an `operation_map.sarvam` block are required —
-`calculate_api_cost` returns 0 without the latter.
-
-Token pricing for the chat models lives separately under `llm.sarvam`.
-
----
-
-## Icons
-
-`@lobehub/icons` has no Sarvam brand (278 entries, none matching), so the
-usual `lobehub:<brand>` route in `visuals.json` is unavailable. Instead the
-mark ships as SVG and is served by the backend:
-
-- `server/nodes/model/sarvam_chat_model/icon.svg` and `server/nodes/sarvam/icon.svg` → `GET /api/schemas/nodes/<type>/icon`
-- `server/credentials/icons/sarvam.svg` → `GET /api/schemas/credentials/sarvam/icon`
-
-The frontend's `/api/` branch in
-[`assets/icons/index.ts`](../client/src/assets/icons/index.ts) already resolves
-that wire format, so no icon-registry edit was needed — only an `<img>` wrapper
-in `AIProviderIcons.tsx` for the direct-FC consumers. Skills inherit the same
-icons automatically: `_parse_skill_metadata` tries `get_plugin_icon_path`
-before `visuals.json`.
+One claim from the original implementation did **not** survive verification:
+it asserted the synchronous endpoint "caps at 30 seconds of audio", and billed
+every transcription at that ceiling. Sarvam's only 30-second reference is
+about *response latency*, not audio duration. The speech node measures real
+duration instead.
 
 ### The mark itself
 
