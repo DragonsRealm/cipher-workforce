@@ -51,6 +51,7 @@ async def test_begin_generation_is_idempotent():
 
     assert created is True
     assert control.generation == 1
+    assert control.revision == 0
     assert control.status == "starting"
     assert control.data_scope_id == control.execution_id
     assert serialize_control(control)["data_scope_id"] == control.execution_id
@@ -202,3 +203,4 @@ async def test_reset_generation_is_ready_for_explicit_start():
     )
     assert created is True
     assert control.generation == 4
+    assert control.revision == 10

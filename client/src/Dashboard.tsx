@@ -221,7 +221,7 @@ const DashboardContent: React.FC = () => {
   } = useWorkflowManagement();
 
   const { collapsedSections, searchQuery, setSearchQuery, toggleSection } = useComponentPalette();
-  const { saveNodeParameters, getAllNodeParameters, executeWorkflow, deployWorkflow, getWorkflowStatus, nodeStatuses, deploymentStatus, workflowControlStatuses, startWorkflow, pauseWorkflow, resumeWorkflow, resetWorkflow, getWorkflowControlStatus, workflowLock, isConnected, isReady, sendRequest, clearNodeStatus } = useWebSocket();
+  const { saveNodeParameters, getAllNodeParameters, executeWorkflow, getWorkflowStatus, nodeStatuses, deploymentStatus, workflowControlStatuses, workflowControlPending, startWorkflow, pauseWorkflow, resumeWorkflow, resetWorkflow, getWorkflowControlStatus, workflowLock, isConnected, isReady, sendRequest, clearNodeStatus } = useWebSocket();
   const applyUIDefaults = useAppStore((state) => state.applyUIDefaults);
 
   // Workflows list: server-owned data, cached by TanStack Query.
@@ -232,18 +232,21 @@ const DashboardContent: React.FC = () => {
   // Only show as "running" or "locked" if it applies to the currently viewed workflow
   const isCurrentWorkflowDeployed = deploymentStatus.isRunning &&
     deploymentStatus.workflow_id === currentWorkflow?.id;
-  // Backend is the source of truth: per-workflow `isExecuting` is set by
-  // the `workflow_status` handler whenever ANY active run exists for the
-  // current workflow (ad-hoc node, whole-workflow run, deployed trigger
-  // run, or deployment registration).  The toolbar Start/Stop button
-  // tracks this unified signal so it stays Stop while nodes glow.
+  // Durable lifecycle capabilities are the only source of truth for toolbar
+  // and command-palette actions. Ad-hoc `isExecuting` remains separate and
+  // only drives canvas execution visuals.
   const workflowControl = currentWorkflow?.id
     ? workflowControlStatuses[currentWorkflow.id] || {
         workflow_id: currentWorkflow.id, state: 'never_started' as const, revision: 0,
         active_count: 0, in_flight_count: 0, queued_count: 0,
-        can_start: true, can_pause: false, can_resume: false, can_reset: false,
+        // Status is unresolved until the backend snapshot arrives. Keep every
+        // lifecycle action disabled rather than briefly exposing a stale Start.
+        can_start: false, can_pause: false, can_resume: false, can_reset: false,
       }
     : { state: 'never_started' as const, revision: 0, active_count: 0, in_flight_count: 0, queued_count: 0, can_start: false, can_pause: false, can_resume: false, can_reset: false };
+  const workflowControlPendingMutation = currentWorkflow?.id
+    ? workflowControlPending[currentWorkflow.id]
+    : undefined;
   const isCurrentWorkflowLocked = workflowLock.locked &&
     workflowLock.workflow_id === currentWorkflow?.id;
   const [globalModelDefaults, setGlobalModelDefaults] = React.useState<{ provider: string; model: string } | null>(null);
@@ -798,18 +801,20 @@ const DashboardContent: React.FC = () => {
     const workflow = await openExampleAndChat('AI Assistant');
     if (!workflow) return;
 
-    const alreadyDeployed = deploymentStatus.isRunning && deploymentStatus.workflow_id === workflow.id;
-    if (alreadyDeployed) return;
-
     try {
-      const result = await deployWorkflow(workflow.id, workflow.nodes, workflow.edges, 'default');
-      if (!result.success) {
-        toast.error('Could not start the example — press Start on the toolbar.');
-      }
+      const status = await getWorkflowControlStatus(workflow.id);
+      if (!status.can_start) return;
+      await startWorkflow(
+        workflow.id,
+        workflow.nodes,
+        workflow.edges,
+        'default',
+        status.revision,
+      );
     } catch {
       toast.error('Could not start the example — press Start on the toolbar.');
     }
-  }, [openExampleAndChat, deployWorkflow, deploymentStatus.isRunning, deploymentStatus.workflow_id]);
+  }, [getWorkflowControlStatus, openExampleAndChat, startWorkflow]);
 
   const handlePauseWorkflow = async () => {
     const workflowId = currentWorkflow?.id;
@@ -1264,8 +1269,8 @@ const DashboardContent: React.FC = () => {
           onNew={handleNew}
           onOpen={handleOpen}
           onRun={withSound('run', handleRun)}
-          isRunning={isExecuting}
           workflowControl={workflowControl}
+          workflowControlPending={workflowControlPendingMutation}
           onStartWorkflow={withSound('run', handleDeploy)}
           onPauseWorkflow={handlePauseWorkflow}
           onResumeWorkflow={withSound('run', handleResumeWorkflow)}
@@ -1434,6 +1439,7 @@ const DashboardContent: React.FC = () => {
             resume: withSound('run', handleResumeWorkflow),
             reset: handleResetWorkflow,
             workflowControl,
+            workflowControlPending: workflowControlPendingMutation,
             exportFile: handleExportFile,
             importJSON: handleImportJSON,
             openSettings: () => setSettingsOpen(true),

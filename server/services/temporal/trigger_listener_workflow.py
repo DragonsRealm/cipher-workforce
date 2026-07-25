@@ -34,7 +34,12 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional, Set
 
 from temporalio import workflow
-from temporalio.common import WorkflowIDReusePolicy
+from temporalio.common import (
+    SearchAttributeKey,
+    SearchAttributePair,
+    TypedSearchAttributes,
+    WorkflowIDReusePolicy,
+)
 from temporalio.workflow import ParentClosePolicy
 
 
@@ -45,6 +50,26 @@ from temporalio.workflow import ParentClosePolicy
 # so this caps at ~16K triggers between continueAsNew checkpoints.
 # Per-event histogram is empirical; tune later.
 _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW = 16_000
+CHILD_SEARCH_ATTRIBUTES_PATCH = "trigger-child-search-attributes-v1"
+COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
+    "trigger-cooperative-pause-scheduling-v1"
+)
+
+
+def event_workflow_search_attributes(
+    workflow_id: Optional[str],
+) -> Optional[TypedSearchAttributes]:
+    """Tag detached execution roots for generation cleanup visibility."""
+    if not workflow_id:
+        return None
+    return TypedSearchAttributes(
+        [
+            SearchAttributePair(
+                SearchAttributeKey.for_keyword("EventWorkflowId"),
+                str(workflow_id),
+            )
+        ]
+    )
 
 
 @workflow.defn(name="TriggerListenerWorkflow", sandboxed=False)
@@ -70,6 +95,10 @@ class TriggerListenerWorkflow:
     @workflow.signal
     async def resume(self) -> None:
         self._control_paused = False
+
+    async def _wait_until_resumed(self) -> None:
+        if self._control_paused:
+            await workflow.wait_condition(lambda: not self._control_paused)
 
     @workflow.signal
     async def on_event(self, event_payload: Dict[str, Any]) -> None:
@@ -116,6 +145,12 @@ class TriggerListenerWorkflow:
             f"node={listener_data.get('trigger_node_id')} "
             f"event_type={listener_data.get('event_type')}"
         )
+        use_child_search_attributes = workflow.patched(
+            CHILD_SEARCH_ATTRIBUTES_PATCH
+        )
+        use_cooperative_pause_schedule_gate = workflow.patched(
+            COOPERATIVE_PAUSE_SCHEDULING_PATCH
+        )
 
         while True:
             await workflow.wait_condition(
@@ -126,7 +161,22 @@ class TriggerListenerWorkflow:
                 continue
 
             try:
-                await self._spawn_child_run(event, listener_data)
+                await self._spawn_child_run(
+                    event,
+                    listener_data,
+                    admission_check=(
+                        self._wait_until_resumed
+                        if use_cooperative_pause_schedule_gate
+                        else None
+                    ),
+                    search_attributes=(
+                        event_workflow_search_attributes(
+                            listener_data.get("workflow_id")
+                        )
+                        if use_child_search_attributes
+                        else None
+                    ),
+                )
             except Exception as exc:  # noqa: BLE001
                 # Per-event spawn failures don't kill the listener.
                 # Log and move on; the rejected event still counts as
@@ -138,6 +188,10 @@ class TriggerListenerWorkflow:
             self._processed_count += 1
             if self._processed_count >= _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW:
                 workflow.logger.info(f"TriggerListener continue_as_new: processed={self._processed_count}")
+                if use_cooperative_pause_schedule_gate:
+                    # Do not let continue-as-new reset a pause that landed
+                    # during the final spawn/status broadcast.
+                    await self._wait_until_resumed()
                 workflow.continue_as_new(args=[listener_data])
 
     async def _spawn_child_run(
@@ -145,6 +199,7 @@ class TriggerListenerWorkflow:
         event: Dict[str, Any],
         listener_data: Dict[str, Any],
         admission_check=None,
+        search_attributes: Optional[TypedSearchAttributes] = None,
     ) -> None:
         """Build the filtered downstream graph + start a child MachinaWorkflow.
 
@@ -230,6 +285,18 @@ class TriggerListenerWorkflow:
         if admission_check is not None:
             await admission_check()
 
+        child_options: Dict[str, Any] = {
+            "id": child_id,
+            "parent_close_policy": ParentClosePolicy.ABANDON,
+            "id_reuse_policy": (
+                WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
+            ),
+            "execution_timeout": timedelta(hours=1),
+            "run_timeout": timedelta(hours=1),
+        }
+        if search_attributes is not None:
+            child_options["search_attributes"] = search_attributes
+
         await workflow.start_child_workflow(
             "MachinaWorkflow",
             args=[
@@ -245,11 +312,7 @@ class TriggerListenerWorkflow:
                     "data_scope_id": listener_data.get("data_scope_id"),
                 }
             ],
-            id=child_id,
-            parent_close_policy=ParentClosePolicy.ABANDON,
-            id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
-            execution_timeout=timedelta(hours=1),
-            run_timeout=timedelta(hours=1),
+            **child_options,
         )
 
         workflow.logger.info(

@@ -47,7 +47,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { WorkflowControlStatus } from '../../contexts/WebSocketContext';
+import {
+  isWorkflowControlTransitioning,
+  type WorkflowControlPendingMutation,
+  type WorkflowControlStatus,
+} from '../../contexts/WebSocketContext';
 import { ThemeSwitcher } from '@/components/ui/ThemeSwitcher';
 import { cn } from '@/lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -67,8 +71,8 @@ interface TopToolbarProps {
   onNew: () => void;
   onOpen: () => void;
   onRun: () => void;
-  isRunning?: boolean;
   workflowControl: WorkflowControlStatus;
+  workflowControlPending?: WorkflowControlPendingMutation;
   onStartWorkflow: () => void;
   onPauseWorkflow: () => void;
   onResumeWorkflow: () => void;
@@ -96,8 +100,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
   onNew,
   onOpen,
   onRun: _onRun,
-  isRunning = false,
   workflowControl,
+  workflowControlPending,
   onStartWorkflow,
   onPauseWorkflow,
   onResumeWorkflow,
@@ -121,6 +125,14 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
   const [resetOpen, setResetOpen] = useState(false);
   const [tempName, setTempName] = useState(workflowName);
   const { user, logout } = useAuth();
+  const hasPendingControlMutation = Boolean(workflowControlPending);
+  const isAuthoritativeTransition = isWorkflowControlTransitioning(workflowControl);
+  const canPauseWorkflow = workflowControl.can_pause || workflowControl.state === 'pausing';
+  const canResumeWorkflow = workflowControl.can_resume || workflowControl.state === 'resuming';
+  const isRetryingReset = workflowControl.state === 'resetting';
+  const controlTransitionLabel = (
+    workflowControlPending?.state ?? workflowControl.state
+  ).replace('_', ' ');
 
   // Global Model Selector state
   const { getValidatedAiProviders, saveGlobalModel, isConnected: apiKeysConnected } = useApiKeys();
@@ -404,37 +416,76 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
         <Divider />
 
         {/* Durable workflow lifecycle */}
-        {workflowControl.can_start ? (
+        {hasPendingControlMutation ? (
+          <ActionButton
+            intent="run"
+            disabled
+            title={`Workflow is ${controlTransitionLabel}`}
+          >
+            <LoaderCircle className="h-3 w-3 animate-spin" />
+            {controlTransitionLabel}
+          </ActionButton>
+        ) : workflowControl.can_start ? (
           <ActionButton
             intent="run"
             onClick={onStartWorkflow}
-            disabled={isRunning}
             title="Start workflow"
           >
             <Play className="h-3 w-3 fill-current" />
             Start
           </ActionButton>
-        ) : workflowControl.state === 'paused' ? (
-          <ActionButton intent="run" onClick={onResumeWorkflow} title="Resume this workflow execution">
-            <Play className="h-3 w-3 fill-current" /> Resume
+        ) : canResumeWorkflow ? (
+          <ActionButton
+            intent="run"
+            onClick={onResumeWorkflow}
+            title={workflowControl.state === 'resuming'
+              ? 'Retry the interrupted resume transition'
+              : 'Resume this workflow execution'}
+          >
+            <Play className="h-3 w-3 fill-current" />
+            {workflowControl.state === 'resuming' ? 'Retry Resume' : 'Resume'}
           </ActionButton>
-        ) : workflowControl.state === 'running' ? (
+        ) : canPauseWorkflow ? (
           <ActionButton
             intent="stop"
             onClick={onPauseWorkflow}
-            title="Pause new workflow scheduling after in-flight work finishes"
+            title={workflowControl.state === 'pausing'
+              ? 'Retry the interrupted pause transition'
+              : 'Pause new workflow scheduling after in-flight work finishes'}
           >
-            <Pause className="h-3 w-3 fill-current" /> Pause
+            <Pause className="h-3 w-3 fill-current" />
+            {workflowControl.state === 'pausing' ? 'Retry Pause' : 'Pause'}
+          </ActionButton>
+        ) : isAuthoritativeTransition ? (
+          <ActionButton
+            intent="run"
+            disabled
+            title={`Workflow is ${controlTransitionLabel}`}
+          >
+            <LoaderCircle className="h-3 w-3 animate-spin" />
+            {controlTransitionLabel}
           </ActionButton>
         ) : (
           <ActionButton intent="run" disabled title={`Workflow is ${workflowControl.state}`}>
-            <LoaderCircle className="h-3 w-3 animate-spin" /> {workflowControl.state.replace('_', ' ')}
+            {workflowControl.state.replace('_', ' ')}
           </ActionButton>
         )}
 
-        {workflowControl.can_reset && <ActionButton intent="stop" onClick={() => setResetOpen(true)} title="Terminate and archive this execution"><RotateCcw className="h-3 w-3" /> Reset</ActionButton>}
+        {workflowControl.can_reset && (
+          <ActionButton
+            intent="stop"
+            onClick={() => setResetOpen(true)}
+            disabled={hasPendingControlMutation}
+            title={isRetryingReset
+              ? 'Retry the interrupted reset transition'
+              : 'Terminate and archive this execution'}
+          >
+            <RotateCcw className="h-3 w-3" />
+            {isRetryingReset ? 'Retry Reset' : 'Reset'}
+          </ActionButton>
+        )}
 
-        <AlertDialog open={resetOpen} onOpenChange={setResetOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reset workflow execution?</AlertDialogTitle><AlertDialogDescription>This immediately terminates active work and archives the current generation. Task history remains available. The workflow will remain stopped until you press Start.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep current execution</AlertDialogCancel><AlertDialogAction onClick={onResetWorkflow}>Reset workflow</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+        <AlertDialog open={resetOpen} onOpenChange={setResetOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reset workflow execution?</AlertDialogTitle><AlertDialogDescription>This immediately terminates active work and archives the current generation. Task history remains available. The workflow will remain stopped until you press Start.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep current execution</AlertDialogCancel><AlertDialogAction disabled={hasPendingControlMutation} onClick={onResetWorkflow}>{isRetryingReset ? 'Retry reset' : 'Reset workflow'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
         <ActionButton
           intent="save"

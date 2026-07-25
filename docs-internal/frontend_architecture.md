@@ -393,6 +393,25 @@ See [ui_migration_plan.md](./ui_migration_plan.md) Phase 6.
   persisted generation record is reconciled with the Temporal controller rather
   than inferred from process-local tasks. `workflow_control_status` broadcasts
   update transitions in real time; reconnect performs an authoritative read.
+  Reads, broadcasts, and mutation responses merge monotonically by generation
+  and database revision, while per-workflow pending mutation state disables
+  duplicate clicks. A `{success: false}` response carrying a recognizable
+  control snapshot merges that snapshot before surfacing the error; every
+  failure is followed by an authoritative resync, and a generic error is never
+  normalized into `never_started`.
+  Lifecycle mutations use a five-minute acknowledgement timeout because Start
+  and Reset may wait on durable setup/cleanup. If a timeout races a successful
+  operation, the resync-confirmed stable state is returned as success.
+  Authoritative `pausing`, `resuming`, and `resetting` states remain retryable
+  after the local request finishes. The UI treats stable `paused`/`running` as
+  confirmation that strict cron-Schedule and running-execution fan-out
+  completed; a fan-out failure must remain transitional after resync.
+  Likewise, `ready` means Reset first quiesced controller, cron, and local
+  producers and then completed its final execution sweep. A duplicate Reset in
+  `ready` is a read-only idempotent response, so an old request cannot clean up
+  resources belonging to a later Start. Standalone cron and detached child
+  executions carry `EventWorkflowId`, allowing the server to uphold that
+  boundary through Temporal Visibility.
   The older `deployment_snapshot` and binary deployment status remain migration
   adapters for legacy deployments and must not override a resolved controller
   generation. See [Temporal Execution Engine RFC](temporal-execution-engine-rfc.md).

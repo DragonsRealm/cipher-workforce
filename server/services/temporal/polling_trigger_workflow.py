@@ -57,6 +57,9 @@ _DEFAULT_POLL_INTERVAL_S = 60
 # headroom for slow Gmail / Twitter responses without hanging forever.
 # Workflow ``RetryPolicy`` (default) handles transient failures.
 _ACTIVITY_TIMEOUT_MULT = 4
+COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
+    "polling-trigger-cooperative-pause-scheduling-v1"
+)
 
 
 @workflow.defn(name="PollingTriggerWorkflow", sandboxed=False)
@@ -84,6 +87,10 @@ class PollingTriggerWorkflow:
     async def resume(self) -> None:
         self._control_paused = False
 
+    async def _wait_until_resumed(self) -> None:
+        if self._control_paused:
+            await workflow.wait_condition(lambda: not self._control_paused)
+
     @workflow.run
     async def run(self, listener_data: Dict[str, Any]) -> Dict[str, Any]:
         """Poll loop body.
@@ -110,6 +117,14 @@ class PollingTriggerWorkflow:
         node_type = listener_data["node_type"]
         version = listener_data.get("version", 1)
         activity_name = f"poll.{node_type}.v{version}"
+        try:
+            use_cooperative_pause_schedule_gate = workflow.patched(
+                COOPERATIVE_PAUSE_SCHEDULING_PATCH
+            )
+        except Exception:  # direct unit invocation outside Temporal runtime
+            if workflow.in_workflow():
+                raise
+            use_cooperative_pause_schedule_gate = False
 
         params = listener_data.get("filter_params", {}) or {}
         poll_interval = int(params.get("poll_interval") or _DEFAULT_POLL_INTERVAL_S)
@@ -141,6 +156,8 @@ class PollingTriggerWorkflow:
                 }
             else:
                 await workflow.sleep(timedelta(seconds=poll_interval))
+                if use_cooperative_pause_schedule_gate:
+                    await self._wait_until_resumed()
                 cycle_payload = {
                     "node_id": listener_data["trigger_node_id"],
                     "params": params,
@@ -177,7 +194,28 @@ class PollingTriggerWorkflow:
                     continue
                 self._seen_event_ids.add(event_id)
                 try:
-                    await self._spawn_child_run(event, listener_data)
+                    if use_cooperative_pause_schedule_gate:
+                        await self._wait_until_resumed()
+                    from services.temporal.trigger_listener_workflow import (
+                        event_workflow_search_attributes,
+                    )
+
+                    await self._spawn_child_run(
+                        event,
+                        listener_data,
+                        admission_check=(
+                            self._wait_until_resumed
+                            if use_cooperative_pause_schedule_gate
+                            else None
+                        ),
+                        search_attributes=(
+                            event_workflow_search_attributes(
+                                listener_data.get("workflow_id")
+                            )
+                            if use_cooperative_pause_schedule_gate
+                            else None
+                        ),
+                    )
                 except Exception as spawn_exc:  # noqa: BLE001
                     # Per-event spawn failure logged; subsequent events
                     # still try. Same isolation contract as the push
@@ -187,6 +225,11 @@ class PollingTriggerWorkflow:
 
             if self._processed_count >= _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW:
                 workflow.logger.info(f"PollingTriggerWorkflow continue_as_new: processed={self._processed_count}")
+                if use_cooperative_pause_schedule_gate:
+                    # A pause may arrive during the final waiting-status
+                    # broadcast. Continue only after Resume so the next run
+                    # cannot reset a still-active pause flag.
+                    await self._wait_until_resumed()
                 # Carry seen_ids forward so the new run doesn't re-emit
                 # what's already been seen by the provider.
                 listener_data["seen_ids"] = list(seen_ids)
@@ -196,6 +239,8 @@ class PollingTriggerWorkflow:
         self,
         event: Dict[str, Any],
         listener_data: Dict[str, Any],
+        admission_check=None,
+        search_attributes=None,
     ) -> None:
         """Start a child :class:`MachinaWorkflow` with the trigger
         pre-executed against this event payload.
@@ -275,6 +320,21 @@ class PollingTriggerWorkflow:
             event_type=listener_data.get("event_type", ""),
         )
 
+        if admission_check is not None:
+            await admission_check()
+
+        child_options = {
+            "id": child_id,
+            "parent_close_policy": ParentClosePolicy.ABANDON,
+            "id_reuse_policy": (
+                WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
+            ),
+            "execution_timeout": timedelta(hours=1),
+            "run_timeout": timedelta(hours=1),
+        }
+        if search_attributes is not None:
+            child_options["search_attributes"] = search_attributes
+
         await workflow.start_child_workflow(
             "MachinaWorkflow",
             args=[
@@ -287,11 +347,7 @@ class PollingTriggerWorkflow:
                     "tenant_id": tenant_id,
                 }
             ],
-            id=child_id,
-            parent_close_policy=ParentClosePolicy.ABANDON,
-            id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
-            execution_timeout=timedelta(hours=1),
-            run_timeout=timedelta(hours=1),
+            **child_options,
         )
 
         workflow.logger.info(f"PollingTriggerWorkflow spawned child run: child_id={child_id} " f"event.id={event.get('id')}")

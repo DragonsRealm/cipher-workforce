@@ -117,6 +117,11 @@ class DeploymentManager:
             await self._spawn_run(trigger_node_id, trigger_data, workflow_id=workflow_id)
         return len(queued)
 
+    def _clear_paused_state(self, workflow_id: str) -> None:
+        """Drop admission and queued-event state for a cancelled generation."""
+        self._paused_workflows.discard(workflow_id)
+        self._paused_events.pop(workflow_id, None)
+
     async def update_trigger_pause_status(self, workflow_id: str, *, paused: bool) -> int:
         """Reflect deployment admission state on every armed trigger node."""
         state = self._deployments.get(workflow_id)
@@ -263,11 +268,18 @@ class DeploymentManager:
         # Find workflow to cancel
         if workflow_id:
             if not self.is_workflow_deployed(workflow_id):
+                # Reset/cancel callers may arrive after deployment teardown.
+                # With no live admission path, stale paused events are safe to
+                # discard immediately.
+                self._clear_paused_state(workflow_id)
                 return {"success": False, "error": f"Workflow {workflow_id} is not deployed"}
         else:
             # Backward compatibility: cancel first running deployment
             deployed = self.get_deployed_workflows()
             if not deployed:
+                # Any pause entries without a live deployment are stale.
+                self._paused_workflows.clear()
+                self._paused_events.clear()
                 return {"success": False, "error": "No deployment running"}
             workflow_id = deployed[0]
 
@@ -277,6 +289,11 @@ class DeploymentManager:
 
         deployment_id = state.deployment_id
         logger.info("Cancelling deployment", deployment_id=deployment_id, workflow_id=workflow_id)
+
+        # Close admission before taking the active-run snapshot. Keep this
+        # barrier set until every teardown step succeeds; otherwise a callback
+        # racing cancellation could launch an untracked run.
+        self._paused_workflows.add(workflow_id)
 
         # Get trigger manager for this workflow
         trigger_manager = self._trigger_managers.get(workflow_id)
@@ -355,6 +372,7 @@ class DeploymentManager:
         self._active_runs.pop(workflow_id, None)
         self._run_counters.pop(workflow_id, None)
         self._status_callbacks.pop(workflow_id, None)
+        self._clear_paused_state(workflow_id)
 
         return {
             "success": True,
@@ -389,6 +407,7 @@ class DeploymentManager:
                 "active_runs": len(execution_runs),
                 "active_listeners": len(workflow_runs) - len(execution_runs),
                 "run_counter": self._run_counters.get(workflow_id, 0),
+                "queued_events": len(self._paused_events.get(workflow_id, [])),
                 "deployed_at": state.deployed_at,
             }
 

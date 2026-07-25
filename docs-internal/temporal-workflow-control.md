@@ -16,14 +16,53 @@ is authoritative for execution history.
 - **Resume** signals the same running Temporal executions and drains buffered
   trigger events in FIFO order, unpauses cron schedules, and rearms trigger
   nodes.
-- **Reset** revision-guards the old generation, terminates visible executions
-  carrying the workflow search attribute, cancels local deployment resources,
-  and archives the old generation. It leaves the control state `ready`; the
-  user must press **Start** to create the next generation.
+- **Reset** revision-guards the old generation, closes controller and local
+  admission, removes Temporal cron schedules, cancels local compatibility
+  resources, and then performs a final strict execution sweep before archiving
+  the old generation. It leaves the control state `ready`; the user must press
+  **Start** to create the next generation.
 
-All mutations require an expected revision and support an idempotency key.
+Clients send an expected revision and idempotency key with every mutation.
+New state transitions compare-and-swap the expected revision; Start persists
+its request key, controller Updates receive unique request identities, and
+stable/retry states are idempotent from their durable state.
+Revisions increase across generation boundaries instead of restarting at zero,
+so a delayed request from an archived generation cannot satisfy a later
+generation's compare-and-swap check.
 The toolbar and command palette derive available actions from the server's
 `can_start`, `can_pause`, `can_resume`, and `can_reset` fields.
+
+Start does not publish `running` merely because deployment setup was placed on
+an asyncio task. The control handler waits for trigger/listener setup to finish;
+setup failure moves the generation to `failed` and closes its controller.
+Once the `running` compare-and-swap commits, a status-broadcast/projection
+failure does not tear down that live generation; the failed request is recovered
+by the client's authoritative status resync.
+
+Pause and Resume use the controller's acknowledged `set_control_state` Temporal
+Update. The database first publishes `pausing`/`resuming`, then publishes the
+stable state only after the Update result confirms `paused`/`running`. If the
+Update is known to have been rejected before admission, the database and local
+admission gate return to the prior stable state. An unknown outcome, such as a
+transport timeout after the server may have accepted the Update, remains
+transitional. Status reads and explicit UI retries reconcile that state by
+idempotently retrying the desired Update, reapplying schedule/local admission
+gates, and completing the database CAS.
+Legacy pause/resume Signals remain registered for history compatibility and
+fan out to already-running descendant workflows. That fan-out and every cron
+Schedule mutation are strict lifecycle barriers: a visibility or per-target
+failure leaves the database in `pausing`/`resuming` for reconciliation instead
+of falsely publishing a stable state.
+
+Every accepted control transition emits `workflow_control_status`. Clients
+merge reads, mutation responses, and broadcasts monotonically by generation
+then database revision; an older response cannot move another tab backward.
+Only one lifecycle mutation per workflow may be pending in a browser tab.
+Lifecycle requests have a five-minute acknowledgement window, and a timed-out
+request is treated as successful when the immediate authoritative resync
+already reports its requested stable state. Transitional Pause, Resume, and
+Reset states expose an explicit retry rather than trapping the toolbar in a
+permanent spinner.
 
 ## Generation-scoped workflow data
 
@@ -39,12 +78,31 @@ state. Every successful **Start** atomically creates a
 - remains immutable as an execution snapshot while runtime records accumulate
   under its scope ID.
 
-**Reset** terminates the generation and marks its data scope `archived`; it does
-not delete outputs, tasks, traces, or the graph snapshot. The toolbar returns to
+**Reset** reaches `ready` only after durable executions and schedules are gone,
+the generation data scope is archived, and node/runtime state has been reset.
+If any cleanup step fails, the control remains `resetting`; retrying Reset
+resumes cleanup instead of falsely completing or skipping it. Reset does not
+delete outputs, tasks, traces, or the graph snapshot. The toolbar returns to
 **Start**. The next Start creates a new generation, execution ID, Temporal
 controller, and empty runtime namespace from the then-current saved canvas.
 Historical scopes therefore remain queryable without leaking state into the
 new run.
+
+Reset quiesces every producer before its final strict Visibility sweep: local
+admission closes synchronously, the controller is told to close, cron Schedules
+are deleted, and legacy local resources are cancelled. `EventWorkflowId` is
+propagated to cron action executions and detached/abandoned graph children, so
+the first Visibility pass identifies both the controller tree and standalone
+execution roots. Because Temporal does not inherit custom Search Attributes
+onto child workflows, a second batched `RootWorkflowId` pass expands every
+tagged root to its active Agent and delegated descendants before signal or
+termination fan-out.
+Idempotent cron redeploys refresh the Schedule's frozen action metadata while
+preserving its current paused state; an ownership check prevents a same-label
+Schedule from being overwritten by a different application workflow.
+Once `reset` is persisted, duplicate Reset requests return idempotently without
+repeating generation-wide cleanup; this prevents an old retry from racing and
+terminating a newly started generation.
 
 The editor's live projection follows the same boundary. Reset broadcasts
 `workflow_runtime_reset`, clears node statuses, variables, and console/chat

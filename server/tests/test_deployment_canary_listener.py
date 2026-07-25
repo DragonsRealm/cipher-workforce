@@ -673,6 +673,8 @@ class TestCancelSweepsStuckNodeStatuses:
             edges=[],
             session_id="sess",
         )
+        mgr._paused_workflows.add("wf-1")
+        mgr._paused_events["wf-1"] = [("trigger-1", {"event": "queued"})]
 
         # Patch _cancel_canary_listeners / _cancel_canary_cron_schedules
         # to be no-ops so the test focuses on the sweep + terminal
@@ -682,6 +684,8 @@ class TestCancelSweepsStuckNodeStatuses:
 
         result = await mgr.cancel("wf-1")
         assert result["success"] is True
+        assert "wf-1" not in mgr._paused_workflows
+        assert "wf-1" not in mgr._paused_events
 
         # Sweep ran once with include_waiting=True (every indicator
         # goes quiet on explicit user cancel).
@@ -695,6 +699,74 @@ class TestCancelSweepsStuckNodeStatuses:
         assert {"executing": False, "workflow_id": "wf-1"} in status_calls, (
             f"Expected update_workflow_status(executing=False, " f"workflow_id='wf-1') on cancel; got {status_calls!r}"
         )
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_pause_state_when_deployment_is_already_absent(self):
+        """Reset may cancel after another path has already torn deployment down."""
+        from services.deployment.manager import DeploymentManager
+
+        mgr = DeploymentManager(
+            database=MagicMock(),
+            execute_workflow_fn=AsyncMock(return_value={"success": True}),
+            store_output_fn=AsyncMock(),
+            broadcaster=MagicMock(),
+        )
+        mgr._paused_workflows.update({"wf-gone", "wf-other"})
+        mgr._paused_events.update(
+            {
+                "wf-gone": [("trigger-1", {"event": "stale"})],
+                "wf-other": [("trigger-2", {"event": "keep"})],
+            }
+        )
+
+        result = await mgr.cancel("wf-gone")
+
+        assert result == {
+            "success": False,
+            "error": "Workflow wf-gone is not deployed",
+        }
+        assert "wf-gone" not in mgr._paused_workflows
+        assert "wf-gone" not in mgr._paused_events
+        assert "wf-other" in mgr._paused_workflows
+        assert "wf-other" in mgr._paused_events
+
+    @pytest.mark.asyncio
+    async def test_cancel_failure_keeps_admission_closed_and_events_queued(self):
+        """A partial teardown must not reopen a deployment that still exists."""
+        from services.deployment.manager import DeploymentManager
+        from services.deployment.state import DeploymentState
+
+        broadcaster = MagicMock()
+        broadcaster.update_node_status = AsyncMock()
+        mgr = DeploymentManager(
+            database=MagicMock(),
+            execute_workflow_fn=AsyncMock(return_value={"success": True}),
+            store_output_fn=AsyncMock(),
+            broadcaster=broadcaster,
+        )
+        mgr._deployments["wf-1"] = DeploymentState(
+            deployment_id="deploy_wf-1",
+            workflow_id="wf-1",
+            is_running=True,
+            nodes=[],
+            edges=[],
+            session_id="sess",
+        )
+        mgr._paused_events["wf-1"] = [
+            ("trigger-1", {"event": "queued"}),
+        ]
+        mgr._cancel_canary_listeners = AsyncMock(
+            side_effect=RuntimeError("temporal cleanup failed"),
+        )
+
+        with pytest.raises(RuntimeError, match="temporal cleanup failed"):
+            await mgr.cancel("wf-1")
+
+        assert "wf-1" in mgr._paused_workflows
+        assert mgr._paused_events["wf-1"] == [
+            ("trigger-1", {"event": "queued"}),
+        ]
+        assert "wf-1" in mgr._deployments
 
 
 class TestNoInstanceStateForCanaryListeners:

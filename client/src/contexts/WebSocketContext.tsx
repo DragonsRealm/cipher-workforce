@@ -63,6 +63,11 @@ interface QueuedSend {
 // Request timeout (30 seconds)
 const REQUEST_TIMEOUT = 30000;
 
+// Lifecycle handlers wait for durable deployment setup, Temporal acknowledgements,
+// and generation teardown. Keep their request alive longer than ordinary reads
+// while retaining a finite bound so a lost response cannot lock controls forever.
+export const WORKFLOW_CONTROL_REQUEST_TIMEOUT = 5 * 60 * 1000;
+
 // Maximum queued sends before backpressure kicks in (FIFO eviction of oldest)
 const QUEUE_MAX_SIZE = 200;
 
@@ -141,6 +146,55 @@ export interface WorkflowControlStatus {
   updated_at?: string | null;
   error?: string | null;
 }
+
+export type WorkflowControlMutationAction = 'start' | 'pause' | 'resume' | 'reset';
+export type WorkflowControlTransitionState = Extract<
+  WorkflowControlState,
+  'starting' | 'pausing' | 'resuming' | 'resetting'
+>;
+
+export interface WorkflowControlPendingMutation {
+  action: WorkflowControlMutationAction;
+  state: WorkflowControlTransitionState;
+}
+
+const WORKFLOW_CONTROL_STATES = new Set<WorkflowControlState>([
+  'never_started',
+  'ready',
+  'starting',
+  'running',
+  'pausing',
+  'paused',
+  'resuming',
+  'resetting',
+  'failed',
+]);
+
+const WORKFLOW_CONTROL_TRANSITION_STATES = new Set<WorkflowControlState>([
+  'starting',
+  'pausing',
+  'resuming',
+  'resetting',
+]);
+
+export const isWorkflowControlTransitioning = (
+  status: Pick<WorkflowControlStatus, 'state'>,
+): boolean => WORKFLOW_CONTROL_TRANSITION_STATES.has(status.state);
+
+const WORKFLOW_CONTROL_STABLE_STATE_BY_ACTION: Record<
+  WorkflowControlMutationAction,
+  WorkflowControlState
+> = {
+  start: 'running',
+  pause: 'paused',
+  resume: 'running',
+  reset: 'ready',
+};
+
+export const isWorkflowControlMutationConfirmed = (
+  action: WorkflowControlMutationAction,
+  status: Pick<WorkflowControlStatus, 'state'>,
+): boolean => status.state === WORKFLOW_CONTROL_STABLE_STATE_BY_ACTION[action];
 
 export interface TeamTaskTraceEvent {
   event_id: string | number;
@@ -361,6 +415,7 @@ interface WebSocketContextValue {
   workflowStatus: WorkflowStatus;
   deploymentStatus: DeploymentStatus;
   workflowControlStatuses: Record<string, WorkflowControlStatus>;
+  workflowControlPending: Record<string, WorkflowControlPendingMutation>;
   workflowLock: WorkflowLock;
   compactionStats: Record<string, CompactionStats>;  // session_id -> stats (current workflow)
 
@@ -476,8 +531,9 @@ const defaultDeploymentStatus: DeploymentStatus = {
   status: 'idle'
 };
 
-const emptyWorkflowControlStatus = (workflowId?: string): WorkflowControlStatus => ({
+export const emptyWorkflowControlStatus = (workflowId?: string): WorkflowControlStatus => ({
   workflow_id: workflowId || null,
+  generation: 0,
   state: 'never_started',
   revision: 0,
   active_count: 0,
@@ -489,7 +545,7 @@ const emptyWorkflowControlStatus = (workflowId?: string): WorkflowControlStatus 
   can_reset: false,
 });
 
-const normalizeWorkflowControlStatus = (value: any, workflowId?: string): WorkflowControlStatus => {
+export const normalizeWorkflowControlStatus = (value: any, workflowId?: string): WorkflowControlStatus => {
   const source = value?.status && typeof value.status === 'object' ? value.status : value || {};
   const state = source.state || source.control_state || (source.is_running ? 'running' : 'never_started');
   return {
@@ -497,7 +553,8 @@ const normalizeWorkflowControlStatus = (value: any, workflowId?: string): Workfl
     ...source,
     workflow_id: source.workflow_id ?? workflowId ?? null,
     state,
-    revision: Number(source.revision || 0),
+    generation: Number(source.generation ?? 0),
+    revision: Number(source.revision ?? 0),
     active_count: Number(source.active_count ?? source.active_runs ?? 0),
     in_flight_count: Number(source.in_flight_count ?? source.active_count ?? source.active_runs ?? 0),
     queued_count: Number(source.queued_count || 0),
@@ -506,6 +563,83 @@ const normalizeWorkflowControlStatus = (value: any, workflowId?: string): Workfl
     can_resume: source.can_resume ?? state === 'paused',
     can_reset: source.can_reset ?? state !== 'never_started',
   };
+};
+
+/**
+ * Mutation failures may still carry the newest authoritative control-plane
+ * snapshot (for example, an in-progress retry). Only recognize payloads with
+ * an explicit valid lifecycle state so a generic error cannot be projected as
+ * a synthetic `never_started` status.
+ */
+export const extractWorkflowControlStatusSnapshot = (
+  value: unknown,
+  workflowId?: string,
+): WorkflowControlStatus | undefined => {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, any>;
+  const source = candidate.status && typeof candidate.status === 'object'
+    ? candidate.status as Record<string, any>
+    : candidate;
+  const state = source.state ?? source.control_state;
+  if (typeof state !== 'string' || !WORKFLOW_CONTROL_STATES.has(state as WorkflowControlState)) {
+    return undefined;
+  }
+  return normalizeWorkflowControlStatus(value, workflowId);
+};
+
+/**
+ * Resolve two snapshots from the workflow control plane without allowing a
+ * delayed response or broadcast to move the UI to an older generation or
+ * revision. Equal versions are accepted because runtime counts can change
+ * without a control-plane transition.
+ */
+export const mergeWorkflowControlStatus = (
+  current: WorkflowControlStatus | undefined,
+  incoming: WorkflowControlStatus,
+): WorkflowControlStatus => {
+  if (!current) return incoming;
+
+  const currentGeneration = Number(current.generation ?? 0);
+  const incomingGeneration = Number(incoming.generation ?? 0);
+  if (incomingGeneration < currentGeneration) return current;
+  if (incomingGeneration > currentGeneration) return incoming;
+
+  const currentRevision = Number(current.revision ?? 0);
+  const incomingRevision = Number(incoming.revision ?? 0);
+  return incomingRevision < currentRevision ? current : incoming;
+};
+
+export const assertWorkflowControlMutationSucceeded = <T,>(response: T): T => {
+  if ((response as any)?.success === false) {
+    const message = (response as any)?.error || (response as any)?.message || 'Workflow lifecycle mutation failed';
+    throw new Error(String(message));
+  }
+  return response;
+};
+
+export const shouldRetryResetWorkflowAfterConflict = (
+  error: unknown,
+  status: Pick<WorkflowControlStatus, 'can_reset'>,
+): boolean => (
+  status.can_reset
+  && error instanceof Error
+  && error.message === 'control_revision_conflict'
+);
+
+type WorkflowControlMutationRequest =
+  | 'start_workflow'
+  | 'pause_workflow'
+  | 'resume_workflow'
+  | 'reset_workflow';
+
+const WORKFLOW_CONTROL_PENDING_BY_REQUEST: Record<
+  WorkflowControlMutationRequest,
+  WorkflowControlPendingMutation
+> = {
+  start_workflow: { action: 'start', state: 'starting' },
+  pause_workflow: { action: 'pause', state: 'pausing' },
+  resume_workflow: { action: 'resume', state: 'resuming' },
+  reset_workflow: { action: 'reset', state: 'resetting' },
 };
 
 const defaultWorkflowLock: WorkflowLock = {
@@ -604,6 +738,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus>(defaultDeploymentStatus);
   const [workflowControlStatuses, setWorkflowControlStatuses] = useState<Record<string, WorkflowControlStatus>>({});
   const workflowControlStatusesRef = useRef<Record<string, WorkflowControlStatus>>({});
+  const [workflowControlPending, setWorkflowControlPending] = useState<Record<string, WorkflowControlPendingMutation>>({});
+  const workflowControlPendingRef = useRef<Map<string, WorkflowControlPendingMutation>>(new Map());
   const [workflowLock, setWorkflowLock] = useState<WorkflowLock>(defaultWorkflowLock);
   // Per-workflow compaction stats: workflow_id -> session_id -> CompactionStats (n8n pattern)
   const [allCompactionStats, setAllCompactionStats] = useState<Record<string, Record<string, CompactionStats>>>({});
@@ -636,9 +772,25 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // do not read from elsewhere.
   const previousWorkflowIdForSwitchRef = useRef<string | undefined>(currentWorkflowId);
 
-  useEffect(() => {
-    workflowControlStatusesRef.current = workflowControlStatuses;
-  }, [workflowControlStatuses]);
+  const applyWorkflowControlStatus = useCallback((
+    workflowId: string,
+    value: any,
+  ): WorkflowControlStatus => {
+    const incoming = normalizeWorkflowControlStatus(value, workflowId);
+    const current = workflowControlStatusesRef.current[workflowId];
+    const merged = mergeWorkflowControlStatus(current, incoming);
+    if (current && merged === current) return current;
+
+    const next = {
+      ...workflowControlStatusesRef.current,
+      [workflowId]: merged,
+    };
+    // Update the ref synchronously so multiple responses/broadcasts received
+    // in one React batch still compare against the latest accepted version.
+    workflowControlStatusesRef.current = next;
+    setWorkflowControlStatuses(next);
+    return merged;
+  }, []);
 
   // Detect workflow switches and refresh deployment status from the backend.
   // The single source of truth for currentWorkflowId is `useAppStore`; the
@@ -1384,10 +1536,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const payload = message.data || message;
           const workflowId = payload.workflow_id;
           if (workflowId) {
-            setWorkflowControlStatuses((previous) => ({
-              ...previous,
-              [workflowId]: normalizeWorkflowControlStatus(payload, workflowId),
-            }));
+            applyWorkflowControlStatus(workflowId, payload);
           }
           break;
         }
@@ -1686,7 +1835,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (error) {
       console.error('[WebSocket] Failed to parse message:', error);
     }
-  }, []);  // Empty deps - reads workflow id via useAppStore.getState() escape hatch
+  }, [applyWorkflowControlStatus]);
 
   // Drain queued sends after a successful reconnect. Each queued send gets a
   // fresh request_id and a reset timeout budget; responses correlate via the
@@ -2551,20 +2700,102 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [sendRequest]);
 
+  const requestWorkflowControlStatus = useCallback(async (
+    workflowId: string,
+  ): Promise<WorkflowControlStatus> => {
+    const response = assertWorkflowControlMutationSucceeded(
+      await sendRequest<any>('get_workflow_control_status', { workflow_id: workflowId }),
+    );
+    return applyWorkflowControlStatus(workflowId, response);
+  }, [applyWorkflowControlStatus, sendRequest]);
+
   const controlMutation = useCallback(async (
-    type: 'start_workflow' | 'pause_workflow' | 'resume_workflow' | 'reset_workflow',
+    type: WorkflowControlMutationRequest,
     workflowId: string,
     data: Record<string, any>,
   ): Promise<WorkflowControlStatus> => {
-    const response = await sendRequest<any>(type, {
-      workflow_id: workflowId,
-      idempotency_key: crypto.randomUUID(),
-      ...data,
-    });
-    const normalized = normalizeWorkflowControlStatus(response, workflowId);
-    setWorkflowControlStatuses((previous) => ({ ...previous, [workflowId]: normalized }));
-    return normalized;
-  }, [sendRequest]);
+    if (workflowControlPendingRef.current.has(workflowId)) {
+      throw new Error('A workflow lifecycle change is already in progress');
+    }
+
+    const pending = WORKFLOW_CONTROL_PENDING_BY_REQUEST[type];
+    workflowControlPendingRef.current.set(workflowId, pending);
+    setWorkflowControlPending((previous) => ({ ...previous, [workflowId]: pending }));
+
+    const sendMutationAttempt = async (
+      attemptData: Record<string, any>,
+    ): Promise<WorkflowControlStatus> => {
+      const response = await sendRequest<any>(type, {
+        ...attemptData,
+        workflow_id: workflowId,
+        // Every bounded attempt has its own idempotency identity. In
+        // particular, a conflict retry must not replay the rejected request.
+        idempotency_key: crypto.randomUUID(),
+      }, WORKFLOW_CONTROL_REQUEST_TIMEOUT);
+
+      // A success:false response can still be the newest authoritative
+      // snapshot. Merge it before assertion so the UI is correct even if the
+      // subsequent reconciliation request is unavailable.
+      const snapshot = extractWorkflowControlStatusSnapshot(response, workflowId);
+      const acceptedSnapshot = snapshot
+        ? applyWorkflowControlStatus(workflowId, snapshot)
+        : undefined;
+      assertWorkflowControlMutationSucceeded(response);
+      return acceptedSnapshot ?? applyWorkflowControlStatus(workflowId, response);
+    };
+
+    try {
+      return await sendMutationAttempt(data);
+    } catch (error) {
+      let reconciled: WorkflowControlStatus | undefined;
+      try {
+        reconciled = await requestWorkflowControlStatus(workflowId);
+        if (isWorkflowControlMutationConfirmed(pending.action, reconciled)) {
+          return reconciled;
+        }
+      } catch (resyncError) {
+        console.error('[WebSocket] Failed to resync workflow control status:', resyncError);
+      }
+
+      // Start can legitimately advance `starting -> starting` while attaching
+      // its controller run id, which increments the revision. If Reset raced
+      // that CAS, retry exactly once with the newly read revision. Other
+      // mutations and other errors never retry automatically.
+      if (
+        type === 'reset_workflow'
+        && reconciled
+        && shouldRetryResetWorkflowAfterConflict(error, reconciled)
+      ) {
+        try {
+          return await sendMutationAttempt({
+            ...data,
+            expected_revision: reconciled.revision,
+          });
+        } catch (retryError) {
+          // Preserve timeout/idempotency recovery for the single retry without
+          // issuing a third mutation attempt.
+          try {
+            const retryReconciled = await requestWorkflowControlStatus(workflowId);
+            if (isWorkflowControlMutationConfirmed(pending.action, retryReconciled)) {
+              return retryReconciled;
+            }
+          } catch (resyncError) {
+            console.error('[WebSocket] Failed to resync workflow control status after reset retry:', resyncError);
+          }
+          throw retryError;
+        }
+      }
+      throw error;
+    } finally {
+      workflowControlPendingRef.current.delete(workflowId);
+      setWorkflowControlPending((previous) => {
+        if (!(workflowId in previous)) return previous;
+        const next = { ...previous };
+        delete next[workflowId];
+        return next;
+      });
+    }
+  }, [applyWorkflowControlStatus, requestWorkflowControlStatus, sendRequest]);
 
   const graphEnvelope = (nodes: any[], edges: any[]) => ({
     nodes: nodes.map((node) => ({ id: node.id, type: node.type || '', data: node.data || {} })),
@@ -2613,15 +2844,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const getWorkflowControlStatusAsync = useCallback(async (workflowId: string) => {
     try {
-      const response = await sendRequest<any>('get_workflow_control_status', { workflow_id: workflowId });
-      const normalized = normalizeWorkflowControlStatus(response, workflowId);
-      setWorkflowControlStatuses((previous) => ({ ...previous, [workflowId]: normalized }));
-      return normalized;
+      return await requestWorkflowControlStatus(workflowId);
     } catch (error) {
       console.error('[WebSocket] Failed to get workflow control status:', error);
-      return emptyWorkflowControlStatus(workflowId);
+      throw error;
     }
-  }, [sendRequest]);
+  }, [requestWorkflowControlStatus]);
 
   const getTeamTaskTraceAsync = useCallback(async (scope: Record<string, any>): Promise<TeamTaskTraceResponse> => {
     const response = await sendRequest<any>('get_team_task_trace', scope);
@@ -3249,6 +3477,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     workflowStatus,
     deploymentStatus,
     workflowControlStatuses,
+    workflowControlPending,
     workflowLock,
 
     // Compaction stats (real-time via broadcasts)
@@ -3358,7 +3587,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     apiKeyStatuses,
     consoleLogs, terminalLogs, chatMessages,
     nodeStatuses, nodeParameters,
-    variables, workflowStatus, deploymentStatus, workflowControlStatuses, workflowLock,
+    variables, workflowStatus, deploymentStatus, workflowControlStatuses, workflowControlPending, workflowLock,
     compactionStats, updateCompactionStats,
     getNodeStatus, getApiKeyStatus, getVariable,
     requestStatus, clearNodeStatus,

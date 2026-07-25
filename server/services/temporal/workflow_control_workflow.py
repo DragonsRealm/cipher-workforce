@@ -5,8 +5,14 @@ from datetime import timedelta
 from typing import Any, Dict
 
 from temporalio import workflow
+from temporalio.exceptions import ApplicationError
 
 from services.temporal._retry_policies import DEFAULT_ACTIVITY_RETRY
+
+
+COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
+    "workflow-control-cooperative-pause-scheduling-v1"
+)
 
 
 @workflow.defn(name="WorkflowControlWorkflow", sandboxed=False)
@@ -26,17 +32,47 @@ class WorkflowControlWorkflow:
         self._events: list[tuple[str, Dict[str, Any]]] = []
         self._seen_event_ids: set[str] = set()
         self._poll_tasks: dict[str, asyncio.Task] = {}
+        self._use_cooperative_pause_schedule_gate = False
 
     @workflow.signal
     async def pause(self) -> None:
-        if self._state == "running":
-            self._state = "paused"
-            self._revision += 1
+        self._apply_control_state("paused")
 
     @workflow.signal
     async def resume(self) -> None:
-        if self._state == "paused":
-            self._state = "running"
+        self._apply_control_state("running")
+
+    @workflow.update
+    async def set_control_state(self, requested_state: str) -> Dict[str, Any]:
+        """Idempotently apply and acknowledge a pause/resume transition.
+
+        Updates give callers a durable acknowledgement that the controller
+        processed the request. The legacy signals above remain registered for
+        older callers and histories.
+        """
+        normalized = str(requested_state).strip().lower()
+        aliases = {
+            "pause": "paused",
+            "paused": "paused",
+            "resume": "running",
+            "running": "running",
+        }
+        target_state = aliases.get(normalized)
+        if target_state is None:
+            raise ApplicationError(
+                "Control state must be one of: pause, paused, resume, running",
+                type="InvalidWorkflowControlState",
+                non_retryable=True,
+            )
+        self._apply_control_state(target_state)
+        return self.status()
+
+    def _apply_control_state(self, target_state: str) -> None:
+        """Apply one valid live-state transition without double revision."""
+        if self._state not in {"running", "paused"}:
+            return
+        if self._state != target_state:
+            self._state = target_state
             self._revision += 1
 
     @workflow.signal
@@ -82,6 +118,14 @@ class WorkflowControlWorkflow:
 
     @workflow.run
     async def run(self, control_data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            self._use_cooperative_pause_schedule_gate = workflow.patched(
+                COOPERATIVE_PAUSE_SCHEDULING_PATCH
+            )
+        except Exception:  # direct unit invocation outside Temporal runtime
+            if workflow.in_workflow():
+                raise
+            self._use_cooperative_pause_schedule_gate = False
         self._state = control_data.get("state", "running")
         while not self._closed:
             await workflow.wait_condition(
@@ -96,11 +140,27 @@ class WorkflowControlWorkflow:
         return {"state": self._state, "generation": control_data.get("generation")}
 
     async def _spawn_push_run(self, event: Dict[str, Any], spec: Dict[str, Any]) -> None:
-        from services.temporal.trigger_listener_workflow import TriggerListenerWorkflow
+        from services.temporal.trigger_listener_workflow import (
+            TriggerListenerWorkflow,
+            event_workflow_search_attributes,
+        )
 
         listener = TriggerListenerWorkflow()
+        listener_args = spec["listener_args"]
         await listener._spawn_child_run(
-            event, spec["listener_args"], admission_check=self._wait_until_running,
+            event,
+            listener_args,
+            # This admission check predates the patch marker and must remain
+            # unconditional for replay compatibility with existing controller
+            # histories. The marker gates only the new child metadata.
+            admission_check=self._wait_until_running,
+            search_attributes=(
+                event_workflow_search_attributes(
+                    listener_args.get("workflow_id")
+                )
+                if self._use_cooperative_pause_schedule_gate
+                else None
+            ),
         )
 
     async def _wait_until_running(self) -> None:
@@ -114,6 +174,9 @@ class WorkflowControlWorkflow:
             PollingTriggerWorkflow,
             _ACTIVITY_TIMEOUT_MULT,
             _DEFAULT_POLL_INTERVAL_S,
+        )
+        from services.temporal.trigger_listener_workflow import (
+            event_workflow_search_attributes,
         )
 
         listener_data = spec["listener_args"]
@@ -163,7 +226,25 @@ class WorkflowControlWorkflow:
                     await workflow.wait_condition(lambda: self._closed or self._state == "running")
                 if self._closed:
                     return
-                await runner._spawn_child_run(event, listener_data)
+                await runner._spawn_child_run(
+                    event,
+                    listener_data,
+                    admission_check=(
+                        self._wait_until_running
+                        if self._use_cooperative_pause_schedule_gate
+                        else None
+                    ),
+                    search_attributes=(
+                        event_workflow_search_attributes(
+                            listener_data.get("workflow_id")
+                        )
+                        if self._use_cooperative_pause_schedule_gate
+                        else None
+                    ),
+                )
 
 
-__all__ = ["WorkflowControlWorkflow"]
+__all__ = [
+    "COOPERATIVE_PAUSE_SCHEDULING_PATCH",
+    "WorkflowControlWorkflow",
+]

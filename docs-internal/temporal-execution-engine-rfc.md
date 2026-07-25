@@ -51,8 +51,8 @@ path.
 
 ### 2.2 Non-goals
 
-- Native Temporal Workflow Pause. The engine uses cooperative Signals and
-  deterministic wait conditions.
+- Native Temporal Workflow Pause. The engine uses an acknowledged controller
+  Update, cooperative descendant Signals, and deterministic wait conditions.
 - Temporal's history-rewind Reset. Product Reset terminates and archives the
   current application generation.
 - Shared parent/child LLM transcripts. Delegated agents start with isolated
@@ -243,20 +243,29 @@ sequenceDiagram
   User->>UI: Pause
   UI->>API: pause_workflow(expected_revision)
   API->>DB: running -> pausing (CAS)
-  API->>C: pause signal
-  API->>T: pause cron schedules
-  API->>DM: gate legacy admission + disarm trigger UI
+  API-->>UI: workflow_control_status(pausing)
+  API->>DM: close local admission
+  API->>C: set_control_state(paused) Update
+  C-->>API: acknowledged paused state
+  API->>T: strictly pause cron schedules
+  API->>T: strictly signal running descendants
+  T-->>API: schedule + descendant fan-out complete
+  API->>DM: disarm trigger UI
   API->>DB: pausing -> paused
-  API-->>UI: paused
+  API-->>UI: workflow_control_status(paused)
 
   User->>UI: Resume
   UI->>API: resume_workflow(expected_revision)
   API->>DB: paused -> resuming (CAS)
-  API->>C: resume signal
-  API->>T: unpause cron schedules
+  API-->>UI: workflow_control_status(resuming)
+  API->>C: set_control_state(running) Update
+  C-->>API: acknowledged running state
+  API->>T: strictly unpause cron schedules
+  API->>T: strictly signal running descendants
+  T-->>API: schedule + descendant fan-out complete
   API->>DM: drain buffered legacy events FIFO + rearm UI
   API->>DB: resuming -> running
-  API-->>UI: running
+  API-->>UI: workflow_control_status(running)
 ```
 
 ### 6.4 Cooperative pause semantics
@@ -268,19 +277,35 @@ Pause is an admission barrier, not suspension of operating-system threads:
 - Poll cycles do not start new graph runs; a poll activity already in flight may
   finish and its events wait for Resume.
 - Temporal cron schedules are explicitly paused.
-- `MachinaWorkflow`, `AgentWorkflow`, and `DelegatedTaskWorkflow` gate new
-  scheduling at deterministic wait conditions.
+- `WorkflowControlWorkflow`, `TriggerListenerWorkflow`,
+  `PollingTriggerWorkflow`, `CronTriggerWorkflow`, `MachinaWorkflow`,
+  `AgentWorkflow`, and `DelegatedTaskWorkflow` gate new scheduling at
+  deterministic, replay-patched wait conditions. Admission is rechecked after
+  awaited trigger broadcasts, polling cycles, LLM, preflight, permit, and
+  delegation operations, immediately before the next activity or child
+  workflow is scheduled.
 - Activities already started are allowed to finish. Their results remain in
   history and are consumed after the gate opens.
 - Trigger nodes broadcast an idle/paused projection, stop their listening
   animation, and rearm on Resume.
+- Stable `paused`/`running` is published only after strict cron-Schedule and
+  running-execution fan-out completes. Visibility or per-target failures leave
+  the generation transitional and retryable.
 
 ### 6.5 Reset semantics
 
-Reset transitions the generation to `resetting`, rejects new admission,
-signals the controller to close, terminates visible descendants carrying the
-application workflow search attribute, cancels local compatibility resources,
-and archives the record as `reset`. It does **not** start the next generation.
+Reset transitions the generation to `resetting` and quiesces producers before
+its final execution sweep: it synchronously closes local admission, signals the
+controller to close, deletes generation cron schedules, and cancels local
+compatibility resources. It then strictly terminates controller descendants and
+standalone roots carrying the application workflow search attribute before
+archiving the data scope. `EventWorkflowId` is propagated to Schedule action
+executions and detached/abandoned graph children so those standalone runs remain
+discoverable. Runtime/node cleanup completes before the database publishes
+`reset`; a failed step leaves `resetting` retryable. A duplicate command against
+an already-reset generation returns idempotently without repeating cleanup,
+which prevents an old retry from affecting a later generation. Reset does
+**not** start the next generation.
 
 Task history and historical Temporal histories are preserved. Existing
 historical rows continue to appear in Temporal Web until namespace retention or

@@ -359,6 +359,32 @@ class AgentTeamService:
 
         return success
 
+    async def cancel_delegation(
+        self,
+        team_id: str,
+        task_id: str,
+        reason: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Terminally cancel delegated work without failing or requeueing it."""
+        task = await self.database.cancel_team_task(team_id, task_id, reason)
+        if not task:
+            return None
+
+        if task.get("status") == "cancelled":
+            if task.get("assigned_to"):
+                await self.database.update_member_status(
+                    team_id,
+                    task["assigned_to"],
+                    "idle",
+                )
+            if task.get("cancellation_applied") and self.broadcaster:
+                await self.broadcaster.broadcast_team_event(
+                    team_id,
+                    "team.task.cancelled",
+                    task,
+                )
+        return task
+
     async def get_claimable_tasks(self, team_id: str) -> List[Dict[str, Any]]:
         """Get tasks ready to be claimed."""
         return await self.database.get_claimable_tasks(team_id)

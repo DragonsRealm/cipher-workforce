@@ -37,6 +37,12 @@ from temporalio.common import WorkflowIDReusePolicy
 from temporalio.workflow import ParentClosePolicy
 
 
+CHILD_SEARCH_ATTRIBUTES_PATCH = "cron-child-search-attributes-v1"
+COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
+    "cron-cooperative-pause-scheduling-v1"
+)
+
+
 @workflow.defn(name="CronTriggerWorkflow", sandboxed=False)
 class CronTriggerWorkflow:
     """One-shot per-firing workflow that spawns a child MachinaWorkflow.
@@ -45,6 +51,21 @@ class CronTriggerWorkflow:
     timestamp from ``workflow.now()`` (deterministic per run);
     everything else is computed from the static action args.
     """
+
+    def __init__(self) -> None:
+        self._control_paused = False
+
+    @workflow.signal
+    async def pause(self) -> None:
+        self._control_paused = True
+
+    @workflow.signal
+    async def resume(self) -> None:
+        self._control_paused = False
+
+    async def _wait_until_resumed(self) -> None:
+        if self._control_paused:
+            await workflow.wait_condition(lambda: not self._control_paused)
 
     @workflow.run
     async def run(self, listener_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,6 +129,36 @@ class CronTriggerWorkflow:
         firing_iso = trigger_output["timestamp"]
         child_id = f"{workflow_slug}-{trigger_label}-{firing_iso}"
 
+        try:
+            use_child_search_attributes = workflow.patched(
+                CHILD_SEARCH_ATTRIBUTES_PATCH
+            )
+            use_cooperative_pause_schedule_gate = workflow.patched(
+                COOPERATIVE_PAUSE_SCHEDULING_PATCH
+            )
+        except RuntimeError:  # direct unit invocation outside Temporal runtime
+            use_child_search_attributes = False
+            use_cooperative_pause_schedule_gate = False
+        from services.temporal.trigger_listener_workflow import (
+            event_workflow_search_attributes,
+        )
+
+        child_options = {
+            "id": child_id,
+            "parent_close_policy": ParentClosePolicy.ABANDON,
+            "id_reuse_policy": (
+                WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
+            ),
+            "execution_timeout": timedelta(hours=1),
+            "run_timeout": timedelta(hours=1),
+        }
+        if use_child_search_attributes:
+            child_options["search_attributes"] = (
+                event_workflow_search_attributes(deployment_workflow_id)
+            )
+
+        if use_cooperative_pause_schedule_gate:
+            await self._wait_until_resumed()
         await workflow.start_child_workflow(
             "MachinaWorkflow",
             args=[
@@ -120,11 +171,7 @@ class CronTriggerWorkflow:
                     "tenant_id": tenant_id,
                 }
             ],
-            id=child_id,
-            parent_close_policy=ParentClosePolicy.ABANDON,
-            id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
-            execution_timeout=timedelta(hours=1),
-            run_timeout=timedelta(hours=1),
+            **child_options,
         )
 
         workflow.logger.info(f"CronTriggerWorkflow spawned child run: child_id={child_id} " f"timestamp={firing_iso}")
@@ -161,4 +208,8 @@ def _build_trigger_output(listener_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-__all__ = ["CronTriggerWorkflow"]
+__all__ = [
+    "CHILD_SEARCH_ATTRIBUTES_PATCH",
+    "COOPERATIVE_PAUSE_SCHEDULING_PATCH",
+    "CronTriggerWorkflow",
+]

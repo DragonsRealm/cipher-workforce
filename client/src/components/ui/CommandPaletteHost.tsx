@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- lifecycle command builder is exported for focused capability tests. */
 /**
  * CommandPaletteHost — Dashboard-level command list registration.
  *
@@ -31,9 +32,12 @@ import {
 } from 'lucide-react';
 import { CommandPalette, type CommandItem } from './CommandPalette';
 import { AVAILABLE_THEMES, useTheme, type ThemeName } from '../../contexts/ThemeContext';
-import type { WorkflowControlStatus } from '../../contexts/WebSocketContext';
+import {
+  type WorkflowControlPendingMutation,
+  type WorkflowControlStatus,
+} from '../../contexts/WebSocketContext';
 
-interface Handlers {
+export interface CommandPaletteHandlers {
   save: () => void;
   newWorkflow: () => void;
   open: () => void;
@@ -42,6 +46,7 @@ interface Handlers {
   resume: () => void;
   reset: () => void;
   workflowControl: WorkflowControlStatus;
+  workflowControlPending?: WorkflowControlPendingMutation;
   exportFile: () => void;
   importJSON: () => void;
   openSettings: () => void;
@@ -69,8 +74,62 @@ const THEME_LABEL: Record<ThemeName, string> = {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  handlers: Handlers;
+  handlers: CommandPaletteHandlers;
 }
+
+export const buildWorkflowLifecycleCommands = (
+  handlers: Pick<
+    CommandPaletteHandlers,
+    'start' | 'pause' | 'resume' | 'reset' | 'workflowControl' | 'workflowControlPending'
+  >,
+): CommandItem[] => {
+  if (handlers.workflowControlPending) {
+    return [];
+  }
+
+  const { state } = handlers.workflowControl;
+  const commands: CommandItem[] = [];
+  if (handlers.workflowControl.can_start) {
+    commands.push({
+      id: 'run.start',
+      label: 'Start Workflow',
+      group: 'Run',
+      icon: Play,
+      onRun: handlers.start,
+    });
+  }
+  if (handlers.workflowControl.can_pause || state === 'pausing') {
+    commands.push({
+      id: 'run.pause',
+      label: state === 'pausing' ? 'Retry Pause Workflow' : 'Pause Workflow',
+      group: 'Run',
+      icon: Pause,
+      onRun: handlers.pause,
+    });
+  }
+  if (handlers.workflowControl.can_resume || state === 'resuming') {
+    commands.push({
+      id: 'run.resume',
+      label: state === 'resuming' ? 'Retry Resume Workflow' : 'Resume Workflow',
+      group: 'Run',
+      icon: Play,
+      onRun: handlers.resume,
+    });
+  }
+  if (handlers.workflowControl.can_reset) {
+    commands.push({
+      id: 'run.reset',
+      label: state === 'resetting'
+        ? 'Retry Reset Workflow Execution'
+        : 'Reset Workflow Execution',
+      group: 'Run',
+      icon: RotateCcw,
+      hint: 'terminates active work',
+      onRun: handlers.reset,
+    });
+  }
+  return commands;
+};
 
 export const CommandPaletteHost: React.FC<Props> = ({ open, onOpenChange, handlers }) => {
   const { theme, setTheme } = useTheme();
@@ -116,27 +175,7 @@ export const CommandPaletteHost: React.FC<Props> = ({ open, onOpenChange, handle
       },
 
       // ── Run ────────────────────────────────────────────────────────
-      handlers.workflowControl.state === 'running'
-        ? {
-            id: 'run.pause',
-            label: 'Pause Workflow',
-            group: 'Run',
-            icon: Pause,
-            onRun: handlers.pause,
-          }
-        : handlers.workflowControl.state === 'paused'
-          ? { id: 'run.resume', label: 'Resume Workflow', group: 'Run', icon: Play, onRun: handlers.resume }
-        : {
-            id: 'run.start',
-            label: 'Start Workflow',
-            group: 'Run',
-            icon: Play,
-            onRun: handlers.start,
-          },
-      ...(handlers.workflowControl.can_reset ? [{
-        id: 'run.reset', label: 'Reset Workflow Execution', group: 'Run', icon: RotateCcw,
-        hint: 'terminates active work', onRun: handlers.reset,
-      } satisfies CommandItem] : []),
+      ...buildWorkflowLifecycleCommands(handlers),
 
       // ── Open panels ────────────────────────────────────────────────
       {

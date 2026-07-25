@@ -27,7 +27,7 @@ from __future__ import annotations
 import sys
 import types
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, sentinel
 
 import pytest
 
@@ -159,6 +159,15 @@ class TestCreateCronSchedule:
         assert passed_id == schedule_id
         assert passed_schedule.spec.cron_expressions == ["*/5 * * * *"]
         assert passed_schedule.spec.time_zone_name == "America/New_York"
+        action_attributes = {
+            pair.key.name: pair.value
+            for pair in passed_schedule.action.typed_search_attributes
+        }
+        assert action_attributes == {
+            "EventWorkflowId": "wf-1",
+            "TriggerNodeId": "cron-1",
+            "EventTriggerKind": "cron",
+        }
 
     @pytest.mark.asyncio
     async def test_create_schedule_idempotent_on_already_running(self):
@@ -171,6 +180,8 @@ class TestCreateCronSchedule:
 
         client = MagicMock()
         client.create_schedule = AsyncMock(side_effect=ScheduleAlreadyRunningError())
+        update = AsyncMock()
+        client.get_schedule_handle.return_value = MagicMock(update=update)
 
         schedule_id = await create_cron_schedule(
             client,
@@ -184,6 +195,79 @@ class TestCreateCronSchedule:
         )
 
         assert schedule_id == "wf-1-cron-1"
+        client.get_schedule_handle.assert_called_once_with(schedule_id)
+        update.assert_awaited_once()
+
+        updater = update.await_args.args[0]
+        existing_schedule = client.create_schedule.await_args.args[1]
+        existing_attributes = (
+            client.create_schedule.await_args.kwargs["search_attributes"]
+        )
+        update_result = updater(
+            types.SimpleNamespace(
+                description=types.SimpleNamespace(
+                    schedule=types.SimpleNamespace(
+                        state=sentinel.paused_state,
+                        action=existing_schedule.action,
+                    ),
+                    typed_search_attributes=existing_attributes,
+                ),
+            )
+        )
+        assert update_result.schedule.state is sentinel.paused_state
+        action_attributes = {
+            pair.key.name: pair.value
+            for pair in update_result.schedule.action.typed_search_attributes
+        }
+        assert action_attributes["EventWorkflowId"] == "wf-1"
+        assert update_result.search_attributes == (
+            update_result.schedule.action.typed_search_attributes
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="cron_schedule_ownership_conflict",
+        ):
+            updater(
+                types.SimpleNamespace(
+                    description=types.SimpleNamespace(
+                        schedule=types.SimpleNamespace(
+                            state=sentinel.paused_state,
+                            action=existing_schedule.action,
+                        ),
+                        typed_search_attributes=[
+                            types.SimpleNamespace(
+                                key=types.SimpleNamespace(
+                                    name="EventWorkflowId",
+                                ),
+                                value="different-workflow",
+                            ),
+                        ],
+                    ),
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_cron_workflow_pause_resume_gate(self, monkeypatch):
+        from nodes.scheduler.cron_scheduler import _workflow as cron_workflow
+
+        wait_condition = AsyncMock()
+        monkeypatch.setattr(
+            cron_workflow.workflow,
+            "wait_condition",
+            wait_condition,
+        )
+        instance = cron_workflow.CronTriggerWorkflow()
+
+        await instance.pause()
+        assert instance._control_paused is True
+        await instance._wait_until_resumed()
+        wait_condition.assert_awaited_once()
+        predicate = wait_condition.await_args.args[0]
+        assert predicate() is False
+
+        await instance.resume()
+        assert predicate() is True
 
 
 class _FakeScheduleIterator:
@@ -290,6 +374,68 @@ class TestDeleteCronSchedulesForDeployment:
         # Only the good one deleted; the bad one's failure was logged
         # + skipped.
         assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_strict_cleanup_raises_after_sweeping_all_schedules(self):
+        from services.temporal.schedules import (
+            delete_cron_schedules_for_deployment,
+        )
+
+        deleted_ids: List[str] = []
+
+        async def fake_list(query, **kwargs):
+            return _FakeScheduleIterator(
+                ["cron-schedule-wf-1-bad", "cron-schedule-wf-1-good"],
+            )
+
+        def fake_get_handle(sid):
+            handle = MagicMock()
+            if "bad" in sid:
+                handle.delete = AsyncMock(
+                    side_effect=RuntimeError("simulated delete failure"),
+                )
+            else:
+                handle.delete = AsyncMock(
+                    side_effect=lambda: deleted_ids.append(sid),
+                )
+            return handle
+
+        client = MagicMock()
+        client.list_schedules = fake_list
+        client.get_schedule_handle = fake_get_handle
+
+        with pytest.raises(
+            RuntimeError,
+            match="cron_schedule_cleanup_failed:1",
+        ):
+            await delete_cron_schedules_for_deployment(
+                client,
+                "wf-1",
+                strict=True,
+            )
+
+        assert deleted_ids == ["cron-schedule-wf-1-good"]
+
+    @pytest.mark.asyncio
+    async def test_strict_cleanup_raises_when_visibility_scan_fails(self):
+        from services.temporal.schedules import (
+            delete_cron_schedules_for_deployment,
+        )
+
+        client = MagicMock()
+        client.list_schedules = AsyncMock(
+            side_effect=RuntimeError("visibility unavailable"),
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="cron_schedule_visibility_cleanup_failed",
+        ):
+            await delete_cron_schedules_for_deployment(
+                client,
+                "wf-1",
+                strict=True,
+            )
 
     def test_source_awaits_list_schedules_before_async_for(self):
         """Regression: ``Client.list_schedules`` is ``async def`` in

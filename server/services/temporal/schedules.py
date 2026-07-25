@@ -20,6 +20,7 @@ Refs:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any, Dict
 
@@ -32,6 +33,7 @@ from temporalio.client import (
     ScheduleOverlapPolicy,
     SchedulePolicy,
     ScheduleSpec,
+    ScheduleUpdate,
 )
 from temporalio.common import (
     SearchAttributeKey,
@@ -111,6 +113,22 @@ async def create_cron_schedule(
     """
     schedule_id = cron_schedule_id(workflow_slug, trigger_label)
     action_workflow_id = cron_action_workflow_id(workflow_slug, trigger_label)
+    execution_search_attributes = TypedSearchAttributes(
+        [
+            SearchAttributePair(
+                SearchAttributeKey.for_keyword("EventWorkflowId"),
+                workflow_id,
+            ),
+            SearchAttributePair(
+                SearchAttributeKey.for_keyword("TriggerNodeId"),
+                node_id,
+            ),
+            SearchAttributePair(
+                SearchAttributeKey.for_keyword("EventTriggerKind"),
+                "cron",
+            ),
+        ]
+    )
 
     schedule = Schedule(
         action=ScheduleActionStartWorkflow(
@@ -118,6 +136,7 @@ async def create_cron_schedule(
             args=[listener_data],
             id=action_workflow_id,
             task_queue=task_queue,
+            typed_search_attributes=execution_search_attributes,
         ),
         spec=ScheduleSpec(
             cron_expressions=[cron_expression],
@@ -141,22 +160,7 @@ async def create_cron_schedule(
     # ``search_attributes`` is a ``client.create_schedule`` kwarg, not
     # a field on the ``Schedule`` dataclass itself (per the Temporal
     # SDK API).
-    schedule_search_attributes = TypedSearchAttributes(
-        [
-            SearchAttributePair(
-                SearchAttributeKey.for_keyword("EventWorkflowId"),
-                workflow_id,
-            ),
-            SearchAttributePair(
-                SearchAttributeKey.for_keyword("TriggerNodeId"),
-                node_id,
-            ),
-            SearchAttributePair(
-                SearchAttributeKey.for_keyword("EventTriggerKind"),
-                "cron",
-            ),
-        ]
-    )
+    schedule_search_attributes = execution_search_attributes
 
     try:
         await client.create_schedule(
@@ -171,10 +175,51 @@ async def create_cron_schedule(
             timezone=timezone,
         )
     except ScheduleAlreadyRunningError:
-        # Idempotent re-deploy. The pre-existing Schedule keeps its
-        # state; the caller's create-or-reuse contract is satisfied.
+        # Idempotent re-deploy must still refresh the frozen action args and
+        # execution Search Attributes. Otherwise a Schedule created before
+        # the lifecycle-control release would keep spawning untagged roots
+        # that Reset cannot discover. Preserve the server-owned paused state
+        # while replacing the deployment snapshot and metadata.
+        handle = client.get_schedule_handle(schedule_id)
+
+        def update_existing(update_input):
+            description = update_input.description
+            existing_attributes = {
+                pair.key.name: pair.value
+                for pair in description.typed_search_attributes
+            }
+            existing_owner = existing_attributes.get("EventWorkflowId")
+            if existing_owner is None:
+                # Compatibility with Schedules created before execution
+                # Search Attributes were copied onto the action. Only claim a
+                # legacy id when its frozen payload proves the same owner.
+                existing_args = getattr(
+                    description.schedule.action,
+                    "args",
+                    (),
+                )
+                if (
+                    existing_args
+                    and isinstance(existing_args[0], dict)
+                ):
+                    existing_owner = existing_args[0].get("workflow_id")
+            if str(existing_owner or "") != str(workflow_id):
+                raise RuntimeError(
+                    "cron_schedule_ownership_conflict:"
+                    f"{schedule_id}"
+                )
+            updated_schedule = replace(
+                schedule,
+                state=description.schedule.state,
+            )
+            return ScheduleUpdate(
+                schedule=updated_schedule,
+                search_attributes=schedule_search_attributes,
+            )
+
+        await handle.update(update_existing)
         logger.info(
-            "Temporal cron Schedule already exists (re-deploy idempotency)",
+            "Updated existing Temporal cron Schedule",
             schedule_id=schedule_id,
         )
 
@@ -184,19 +229,23 @@ async def create_cron_schedule(
 async def delete_cron_schedules_for_deployment(
     client: Client,
     deployment_workflow_id: str,
+    *,
+    strict: bool = False,
 ) -> int:
     """Delete every cron Schedule for ``deployment_workflow_id``.
 
     Visibility-equivalent sweep: ``client.list_schedules(query=...)``
     is the registry, no local handle dict. Per-Schedule failures don't
-    block the sweep (mirror of
-    :meth:`DeploymentManager._cancel_canary_listeners` semantics).
+    block the sweep. With ``strict=True``, the sweep still visits every
+    target and then raises if any deletion failed, so Reset cannot publish
+    completion while a durable Schedule survives.
 
     Returns count of Schedules deleted.
     """
     query = f"EventWorkflowId='{deployment_workflow_id}' " f"AND EventTriggerKind='cron'"
 
     deleted = 0
+    failures: list[Exception] = []
     try:
         # ``Client.list_schedules`` is ``async def`` (returns a coroutine
         # that resolves to ``ScheduleAsyncIterator``), unlike
@@ -213,6 +262,7 @@ async def delete_cron_schedules_for_deployment(
                 await handle.delete()
                 deleted += 1
             except Exception as exc:  # noqa: BLE001
+                failures.append(exc)
                 logger.warning(
                     f"Failed to delete cron Schedule {sched_id!r}: {exc}",
                     deployment_workflow_id=deployment_workflow_id,
@@ -222,6 +272,13 @@ async def delete_cron_schedules_for_deployment(
             f"Visibility query for cron Schedules failed: {exc} " f"(query={query!r})",
             deployment_workflow_id=deployment_workflow_id,
         )
+        if strict:
+            raise RuntimeError("cron_schedule_visibility_cleanup_failed") from exc
+
+    if strict and failures:
+        raise RuntimeError(
+            f"cron_schedule_cleanup_failed:{len(failures)}"
+        ) from failures[0]
 
     if deleted:
         logger.info(
@@ -233,11 +290,22 @@ async def delete_cron_schedules_for_deployment(
 
 
 async def set_cron_schedules_paused(
-    client: Client, deployment_workflow_id: str, *, paused: bool,
+    client: Client,
+    deployment_workflow_id: str,
+    *,
+    paused: bool,
+    strict: bool = False,
 ) -> int:
-    """Pause or unpause every cron Schedule owned by one deployment."""
+    """Pause or unpause every cron Schedule owned by one deployment.
+
+    Strict lifecycle transitions still sweep every matching Schedule, then
+    fail if visibility or any individual mutation failed. This prevents the
+    database from publishing a stable Pause/Resume state while a producer is
+    known to be in the opposite state.
+    """
     query = f"EventWorkflowId='{deployment_workflow_id}' AND EventTriggerKind='cron'"
     changed = 0
+    failures: list[Exception] = []
     try:
         iterator = await client.list_schedules(query=query)
         async for desc in iterator:
@@ -249,6 +317,7 @@ async def set_cron_schedules_paused(
                     await handle.unpause(note="OpenCompany workflow resumed")
                 changed += 1
             except Exception as exc:  # noqa: BLE001
+                failures.append(exc)
                 logger.warning(
                     f"Failed to {'pause' if paused else 'resume'} cron Schedule {desc.id!r}: {exc}",
                     deployment_workflow_id=deployment_workflow_id,
@@ -258,6 +327,14 @@ async def set_cron_schedules_paused(
             f"Cron Schedule pause sweep failed: {exc}",
             deployment_workflow_id=deployment_workflow_id,
         )
+        if strict:
+            raise RuntimeError(
+                "cron_schedule_pause_visibility_failed"
+            ) from exc
+    if strict and failures:
+        raise RuntimeError(
+            f"cron_schedule_pause_failed:{len(failures)}"
+        ) from failures[0]
     return changed
 
 

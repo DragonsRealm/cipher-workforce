@@ -1456,6 +1456,7 @@ async def clear_agent_skills(payload: Dict[str, Any]) -> Dict[str, Any]:
 async def begin_agent_delegation(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Idempotently persist and claim a delegation before child startup."""
     from services.agent_team import get_agent_team_service
+    from temporalio.exceptions import ApplicationError
 
     team_id = str(payload.get("team_id") or "")
     task_id = str(payload.get("team_task_id") or "")
@@ -1476,14 +1477,39 @@ async def begin_agent_delegation(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not task:
             raise RuntimeError("Failed to persist delegated team task")
 
-    if str(task.get("status") or "") in {"pending", "queued", ""}:
+    terminal_statuses = {
+        "submitted",
+        "accepted",
+        "failed",
+        "cancelled",
+        "skipped",
+        "completed",
+    }
+
+    def raise_terminal(status: str) -> None:
+        raise ApplicationError(
+            f"Delegated team task {task_id} is already terminal ({status})",
+            type="DelegationTaskTerminal",
+            non_retryable=True,
+        )
+
+    status = str(task.get("status") or "")
+    if status in {"pending", "queued"}:
         claimed = await service.claim_task(team_id, task_id, child_id)
-        if not claimed:
-            tasks = await service.database.get_team_tasks(team_id)
-            task = next((item for item in tasks if item.get("id") == task_id), None)
-            if not task or task.get("assigned_to") != child_id:
-                raise RuntimeError("Failed to claim delegated team task")
-    elif task.get("assigned_to") and task.get("assigned_to") != child_id:
+        tasks = await service.database.get_team_tasks(team_id)
+        task = next((item for item in tasks if item.get("id") == task_id), None)
+        status = str((task or {}).get("status") or "")
+        if status in terminal_statuses:
+            raise_terminal(status)
+        if (
+            not claimed
+            or status != "running"
+            or task.get("assigned_to") != child_id
+        ):
+            raise RuntimeError("Failed to claim delegated team task")
+    elif status in terminal_statuses:
+        raise_terminal(status)
+    elif status != "running" or task.get("assigned_to") != child_id:
         raise RuntimeError("Delegated team task is claimed by another agent")
 
     message = await service.send_message(
@@ -1499,6 +1525,21 @@ async def begin_agent_delegation(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     if not message:
         raise RuntimeError("Failed to persist delegation assignment event")
+
+    # Cancellation may commit while the idempotent assignment message is
+    # being persisted. Re-read immediately before returning permission to
+    # start the child so a terminal task is never reported as claimed.
+    tasks = await service.database.get_team_tasks(team_id)
+    task = next((item for item in tasks if item.get("id") == task_id), None)
+    status = str((task or {}).get("status") or "")
+    if status in terminal_statuses:
+        raise_terminal(status)
+    if (
+        not task
+        or status != "running"
+        or task.get("assigned_to") != child_id
+    ):
+        raise RuntimeError("Delegated team task lost its claim before child startup")
     return {"team_id": team_id, "team_task_id": task_id, "claimed": True}
 
 
@@ -1535,6 +1576,74 @@ async def queue_agent_delegation(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"team_id": team_id, "team_task_id": task_id, "status": "queued"}
 
 
+@activity.defn(name="agent.cancel_delegation.v1")
+async def cancel_agent_delegation(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist cancellation as a terminal state without failure requeueing."""
+    from services.agent_team import get_agent_team_service
+
+    team_id = str(payload.get("team_id") or "")
+    task_id = str(payload.get("team_task_id") or "")
+    child_id = str(payload.get("child_agent_node_id") or "")
+    parent_id = str(payload.get("parent_agent_node_id") or "")
+    reason = str(
+        payload.get("reason")
+        or payload.get("error")
+        or "Delegated agent cancelled"
+    )
+    if not all((team_id, task_id, child_id, parent_id)):
+        raise ValueError("Incomplete delegation cancellation payload")
+
+    service = get_agent_team_service()
+    task = await service.cancel_delegation(team_id, task_id, reason)
+    if task is None:
+        raise RuntimeError("Failed to cancel delegated team task")
+
+    status = str(task.get("status") or "")
+    cancellation_applied = bool(task.get("cancellation_applied"))
+    if status == "cancelled":
+        persisted_reason = str(task.get("cancellation_reason") or reason)
+        message = await service.send_message(
+            team_id,
+            child_id,
+            f"Task {task_id} cancelled: {persisted_reason}",
+            to_agent=parent_id,
+            message_type="error",
+            event_id=str(
+                payload.get("terminal_event_id") or f"{task_id}:cancelled"
+            ),
+            extra_data={
+                "status": "cancelled",
+                "task_id": task_id,
+                "reason": persisted_reason,
+                "root_execution_id": payload.get("root_execution_id"),
+                "trace_id": payload.get("trace_id"),
+            },
+        )
+        if not message:
+            raise RuntimeError("Failed to persist delegation cancellation event")
+    else:
+        persisted_reason = None
+
+    return {
+        "team_id": team_id,
+        "team_task_id": task_id,
+        "status": status,
+        "cancelled": status == "cancelled",
+        "cancellation_applied": cancellation_applied,
+        "reason": persisted_reason,
+    }
+
+
+def _subagent_lease_id(
+    permit_id: str,
+    temporal_activity_id: str,
+    attempt: int,
+) -> str:
+    """Return the bounded physical lease identity for one activity attempt."""
+    identity = f"{permit_id}\0{temporal_activity_id}\0{attempt}".encode()
+    return f"subagent-lease-v2-{hashlib.sha256(identity).hexdigest()}"
+
+
 @activity.defn(name="agent.acquire_subagent_permit.v1")
 async def acquire_subagent_permit(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Poll the durable root coordinator until this delegation is admitted."""
@@ -1543,14 +1652,91 @@ async def acquire_subagent_permit(payload: Dict[str, Any]) -> Dict[str, Any]:
     root_id = str(payload.get("root_execution_id") or "")
     permit_id = str(payload.get("permit_id") or "")
     limit = max(1, int(payload.get("limit") or 3))
+    lease_version = int(payload.get("lease_version") or 1)
     if not root_id or not permit_id:
         raise ValueError("root_execution_id and permit_id are required")
+    if lease_version not in {1, 2}:
+        raise ValueError("lease_version must be 1 or 2")
+
     service = get_agent_team_service()
-    while True:
-        if await service.acquire_subagent_permit(root_id, permit_id, limit):
-            return {"root_execution_id": root_id, "permit_id": permit_id, "acquired": True}
-        activity.heartbeat({"root_execution_id": root_id, "permit_id": permit_id, "status": "queued"})
-        await asyncio.sleep(1)
+    lease_id = permit_id
+    attempt = 1
+    if lease_version == 2:
+        info = activity.info()
+        temporal_activity_id = str(info.activity_id)
+        attempt = max(1, int(info.attempt))
+        lease_id = _subagent_lease_id(
+            permit_id,
+            temporal_activity_id,
+            attempt,
+        )
+        for prior_attempt in range(1, attempt):
+            prior_lease_id = _subagent_lease_id(
+                permit_id,
+                temporal_activity_id,
+                prior_attempt,
+            )
+            if not await service.release_subagent_permit(
+                root_id,
+                prior_lease_id,
+            ):
+                raise RuntimeError(
+                    "Failed to reconcile prior subagent permit lease "
+                    f"{prior_lease_id}"
+                )
+
+    try:
+        while True:
+            if await service.acquire_subagent_permit(root_id, lease_id, limit):
+                result = {
+                    "root_execution_id": root_id,
+                    "permit_id": permit_id,
+                    "acquired": True,
+                }
+                if lease_version == 2:
+                    result.update({
+                        "lease_version": 2,
+                        "lease_id": lease_id,
+                        "attempt": attempt,
+                    })
+                return result
+
+            heartbeat = {
+                "root_execution_id": root_id,
+                "permit_id": permit_id,
+                "status": "queued",
+            }
+            if lease_version == 2:
+                heartbeat.update({
+                    "lease_version": 2,
+                    "lease_id": lease_id,
+                    "attempt": attempt,
+                })
+            activity.heartbeat(heartbeat)
+            await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        # The database commit may have completed even when cancellation wins
+        # the await race and the activity result never reaches workflow
+        # history. Always compensate the attempted permit locally. Releasing
+        # a permit that was never acquired is an expected no-op here.
+        try:
+            compensated = await service.release_subagent_permit(
+                root_id,
+                lease_id,
+            )
+            if not compensated:
+                raise RuntimeError("Permit compensation was rejected")
+        except Exception as release_exc:  # noqa: BLE001
+            logger.error(
+                "Failed to compensate cancelled subagent permit acquisition",
+                extra={
+                    "root_execution_id": root_id,
+                    "permit_id": permit_id,
+                    "lease_id": lease_id,
+                    "error": str(release_exc),
+                },
+            )
+        raise
 
 
 @activity.defn(name="agent.release_subagent_permit.v1")
@@ -1560,12 +1746,24 @@ async def release_subagent_permit(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     root_id = str(payload.get("root_execution_id") or "")
     permit_id = str(payload.get("permit_id") or "")
-    if not root_id or not permit_id:
+    lease_id = str(payload.get("lease_id") or permit_id)
+    lease_version = int(payload.get("lease_version") or (2 if payload.get("lease_id") else 1))
+    if not root_id or not permit_id or not lease_id:
         raise ValueError("root_execution_id and permit_id are required")
-    released = await get_agent_team_service().release_subagent_permit(root_id, permit_id)
+    released = await get_agent_team_service().release_subagent_permit(
+        root_id,
+        lease_id,
+    )
     if not released:
         raise RuntimeError("Failed to release subagent permit")
-    return {"root_execution_id": root_id, "permit_id": permit_id, "released": True}
+    result = {
+        "root_execution_id": root_id,
+        "permit_id": permit_id,
+        "released": True,
+    }
+    if lease_version == 2:
+        result.update({"lease_version": 2, "lease_id": lease_id})
+    return result
 
 
 @activity.defn(name="agent.finish_delegation.v1")

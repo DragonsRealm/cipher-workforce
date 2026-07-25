@@ -3,7 +3,7 @@
 import json
 import inspect
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Dict, Any, List, Optional, Tuple, Union
 from pydantic_core import to_jsonable_python
 from sqlmodel import SQLModel, select
@@ -3078,7 +3078,7 @@ class Database:
                     update(TeamTask)
                     .where(
                         TeamTask.id == task_id,
-                        TeamTask.status == "queued",
+                        TeamTask.status.in_(["queued", "pending"]),
                         or_(TeamTask.assigned_to.is_(None), TeamTask.assigned_to == agent_node_id),
                     )
                     .values(
@@ -3229,6 +3229,128 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to fail task: {e}")
             return False
+
+    async def cancel_team_task(
+        self,
+        team_id: str,
+        task_id: str,
+        reason: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Terminally cancel active delegated work without applying retry policy.
+
+        The state guard makes retries idempotent and prevents cancellation
+        from overwriting a result that won the race to a terminal state.
+        Active attempts receive the same terminal reason as the task row;
+        queued work gets an attempt record as well so every cancellation has
+        a durable terminal audit entry.
+        """
+        active_statuses = ["blocked", "queued", "pending", "running"]
+        terminal_statuses = {
+            "submitted",
+            "accepted",
+            "failed",
+            "cancelled",
+            "skipped",
+            "completed",
+        }
+        cancellation_reason = reason or "Delegated agent cancelled"
+        now = datetime.now(timezone.utc)
+
+        async def _cancel(session: AsyncSession) -> Dict[str, Any]:
+            changed = await session.execute(
+                update(TeamTask)
+                .where(
+                    TeamTask.id == task_id,
+                    TeamTask.team_id == team_id,
+                    TeamTask.status.in_(active_statuses),
+                )
+                .values(
+                    status="cancelled",
+                    cancellation_requested=True,
+                    cancellation_reason=cancellation_reason,
+                    completed_at=now,
+                    revision=TeamTask.revision + 1,
+                )
+            )
+            task = (
+                await session.execute(
+                    select(TeamTask).where(
+                        TeamTask.id == task_id,
+                        TeamTask.team_id == team_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if task is None:
+                return {"found": False}
+
+            cancellation_applied = changed.rowcount == 1
+            if cancellation_applied:
+                attempt_id = f"{task_id}:attempt:{task.current_attempt}"
+                attempt = (
+                    await session.execute(
+                        select(TeamTaskAttempt).where(
+                            TeamTaskAttempt.id == attempt_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if attempt is None:
+                    session.add(
+                        TeamTaskAttempt(
+                            id=attempt_id,
+                            task_id=task_id,
+                            team_id=team_id,
+                            attempt_number=task.current_attempt,
+                            assignee_node_id=task.assigned_to,
+                            status="cancelled",
+                            child_workflow_id=task.child_workflow_id,
+                            child_run_id=task.child_run_id,
+                            runner_workflow_id=task.runner_workflow_id,
+                            runner_run_id=task.runner_run_id,
+                            parent_workflow_id=task.parent_workflow_id,
+                            parent_run_id=task.parent_run_id,
+                            error=cancellation_reason,
+                            created_at=task.created_at or now,
+                            started_at=task.started_at,
+                            completed_at=now,
+                        )
+                    )
+                else:
+                    attempt.status = "cancelled"
+                    attempt.error = cancellation_reason
+                    attempt.completed_at = now
+
+            if not cancellation_applied and task.status not in terminal_statuses:
+                return {
+                    "found": True,
+                    "status": task.status,
+                    "cancellation_applied": False,
+                    "valid_state": False,
+                }
+
+            snapshot = self._team_task_dict(task)
+            snapshot["found"] = True
+            snapshot["cancellation_applied"] = cancellation_applied
+            snapshot["valid_state"] = True
+            return snapshot
+
+        try:
+            result, _ = await self.run_runtime_mutation(
+                resource_type="team_task",
+                resource_id=task_id,
+                operation="cancel",
+                mutate=_cancel,
+            )
+            if not result.get("found") or not result.get("valid_state", True):
+                return None
+            return result
+        except Exception as e:
+            logger.error(
+                "Failed to cancel team task",
+                team_id=team_id,
+                task_id=task_id,
+                error=str(e),
+            )
+            return None
 
     async def get_claimable_tasks(self, team_id: str) -> List[Dict[str, Any]]:
         """Get pending tasks with resolved dependencies."""
@@ -3407,76 +3529,160 @@ class Database:
             return {"error": str(e)}
 
     async def acquire_subagent_permit(self, root_execution_id: str, permit_id: str, limit: int = 3) -> bool:
-        """Atomically acquire a root-global permit; retries by the owner succeed."""
+        """Atomically acquire a root-global permit; retries by the owner succeed.
+
+        Active leases older than the maximum delegated-workflow duration are
+        opportunistically reconciled in the same write transaction. This is a
+        last-resort capacity repair for workers that died before compensation.
+        """
         if limit < 1:
             return False
+        now = datetime.now(timezone.utc)
+        stale_before = now - timedelta(hours=3)
+
         try:
-            async with self.get_session() as session:
+            async def _acquire(session: AsyncSession) -> Dict[str, Any]:
+                stale = await session.execute(
+                    update(SubagentConcurrencyPermit)
+                    .where(
+                        SubagentConcurrencyPermit.root_execution_id
+                        == root_execution_id,
+                        SubagentConcurrencyPermit.status == "active",
+                        SubagentConcurrencyPermit.acquired_at < stale_before,
+                    )
+                    .values(status="released", released_at=now)
+                )
+                stale_count = max(int(stale.rowcount or 0), 0)
+                if stale_count:
+                    await session.execute(
+                        update(SubagentConcurrencyCounter)
+                        .where(
+                            SubagentConcurrencyCounter.root_execution_id
+                            == root_execution_id
+                        )
+                        .values(
+                            active_count=case(
+                                (
+                                    SubagentConcurrencyCounter.active_count
+                                    >= stale_count,
+                                    SubagentConcurrencyCounter.active_count
+                                    - stale_count,
+                                ),
+                                else_=0,
+                            ),
+                            updated_at=now,
+                        )
+                    )
+
                 existing = await session.execute(
-                    select(SubagentConcurrencyPermit).where(SubagentConcurrencyPermit.permit_id == permit_id)
+                    select(SubagentConcurrencyPermit).where(
+                        SubagentConcurrencyPermit.permit_id == permit_id
+                    )
                 )
                 permit = existing.scalar_one_or_none()
                 if permit:
-                    return permit.root_execution_id == root_execution_id and permit.status == "active"
+                    return {
+                        "acquired": (
+                            permit.root_execution_id == root_execution_id
+                            and permit.status == "active"
+                        )
+                    }
 
-                await session.execute(text(
-                    "INSERT OR IGNORE INTO subagent_concurrency_counters "
-                    "(root_execution_id, active_count, updated_at) VALUES (:root, 0, CURRENT_TIMESTAMP)"
-                ), {"root": root_execution_id})
+                await session.execute(
+                    text(
+                        "INSERT OR IGNORE INTO subagent_concurrency_counters "
+                        "(root_execution_id, active_count, updated_at) "
+                        "VALUES (:root, 0, CURRENT_TIMESTAMP)"
+                    ),
+                    {"root": root_execution_id},
+                )
                 claimed = await session.execute(
                     update(SubagentConcurrencyCounter)
                     .where(
-                        SubagentConcurrencyCounter.root_execution_id == root_execution_id,
+                        SubagentConcurrencyCounter.root_execution_id
+                        == root_execution_id,
                         SubagentConcurrencyCounter.active_count < limit,
                     )
                     .values(
                         active_count=SubagentConcurrencyCounter.active_count + 1,
-                        updated_at=datetime.now(timezone.utc),
+                        updated_at=now,
                     )
                 )
                 if claimed.rowcount != 1:
-                    await session.rollback()
-                    return False
-                session.add(SubagentConcurrencyPermit(
-                    permit_id=permit_id, root_execution_id=root_execution_id, status="active"
-                ))
-                await session.commit()
-                return True
+                    return {"acquired": False}
+                session.add(
+                    SubagentConcurrencyPermit(
+                        permit_id=permit_id,
+                        root_execution_id=root_execution_id,
+                        status="active",
+                        acquired_at=now,
+                    )
+                )
+                return {"acquired": True}
+
+            result, _ = await self.run_runtime_mutation(
+                resource_type="subagent_concurrency",
+                resource_id=root_execution_id,
+                operation="acquire",
+                mutate=_acquire,
+            )
+            return bool(result.get("acquired"))
         except IntegrityError:
             # A concurrent retry inserted the same permit. Resolve ownership
             # from durable state rather than incrementing the counter again.
             async with self.get_session() as session:
                 result = await session.execute(
-                    select(SubagentConcurrencyPermit).where(SubagentConcurrencyPermit.permit_id == permit_id)
+                    select(SubagentConcurrencyPermit).where(
+                        SubagentConcurrencyPermit.permit_id == permit_id
+                    )
                 )
                 permit = result.scalar_one_or_none()
-                return bool(permit and permit.root_execution_id == root_execution_id and permit.status == "active")
+                return bool(
+                    permit
+                    and permit.root_execution_id == root_execution_id
+                    and permit.status == "active"
+                )
         except Exception as e:
-            logger.error("Failed to acquire subagent permit", root_execution_id=root_execution_id, permit_id=permit_id, error=str(e))
+            logger.error(
+                "Failed to acquire subagent permit",
+                root_execution_id=root_execution_id,
+                permit_id=permit_id,
+                error=str(e),
+            )
             return False
 
     async def release_subagent_permit(self, root_execution_id: str, permit_id: str) -> bool:
-        """Idempotently release a permit and decrement its root counter once."""
+        """Idempotently release a permit and decrement its root counter once.
+
+        A lease that was never created is an expected no-op (not an ownership
+        error). A lease owned by another root remains a hard failure.
+        """
         try:
             async with self.get_session() as session:
                 released = await session.execute(
                     update(SubagentConcurrencyPermit)
                     .where(
                         SubagentConcurrencyPermit.permit_id == permit_id,
-                        SubagentConcurrencyPermit.root_execution_id == root_execution_id,
+                        SubagentConcurrencyPermit.root_execution_id
+                        == root_execution_id,
                         SubagentConcurrencyPermit.status == "active",
                     )
-                    .values(status="released", released_at=datetime.now(timezone.utc))
+                    .values(
+                        status="released",
+                        released_at=datetime.now(timezone.utc),
+                    )
                 )
                 if released.rowcount == 1:
                     await session.execute(
                         update(SubagentConcurrencyCounter)
                         .where(
-                            SubagentConcurrencyCounter.root_execution_id == root_execution_id,
+                            SubagentConcurrencyCounter.root_execution_id
+                            == root_execution_id,
                             SubagentConcurrencyCounter.active_count > 0,
                         )
                         .values(
-                            active_count=SubagentConcurrencyCounter.active_count - 1,
+                            active_count=SubagentConcurrencyCounter.active_count
+                            - 1,
                             updated_at=datetime.now(timezone.utc),
                         )
                     )
@@ -3484,16 +3690,26 @@ class Database:
                     return True
                 existing = await session.execute(
                     select(SubagentConcurrencyPermit).where(
-                        SubagentConcurrencyPermit.permit_id == permit_id,
-                        SubagentConcurrencyPermit.root_execution_id == root_execution_id,
+                        SubagentConcurrencyPermit.permit_id == permit_id
                     )
                 )
                 permit = existing.scalar_one_or_none()
-                already_released = bool(permit and permit.status == "released")
+                if permit is None:
+                    await session.rollback()
+                    return True
+                already_released = bool(
+                    permit.root_execution_id == root_execution_id
+                    and permit.status == "released"
+                )
                 await session.rollback()
                 return already_released
         except Exception as e:
-            logger.error("Failed to release subagent permit", root_execution_id=root_execution_id, permit_id=permit_id, error=str(e))
+            logger.error(
+                "Failed to release subagent permit",
+                root_execution_id=root_execution_id,
+                permit_id=permit_id,
+                error=str(e),
+            )
             return False
 
     # ============================================================================

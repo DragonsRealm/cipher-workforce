@@ -72,6 +72,10 @@ class WorkflowControlService:
             controller_workflow_id=f"workflow-control-{workflow_id}-g{generation}",
             session_id=session_id, graph_hash=_graph_hash(nodes, edges),
             graph_snapshot={"nodes": nodes, "edges": edges}, idempotency_key=idempotency_key,
+            # Revisions are monotonic across generations so a delayed request
+            # from an archived generation cannot pass CAS against a newer one
+            # that happens to be at the same lifecycle step.
+            revision=(latest.revision + 1) if latest else 0,
         )
         try:
             return await self.database.create_workflow_control(control), True

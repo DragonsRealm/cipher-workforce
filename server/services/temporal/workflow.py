@@ -92,6 +92,9 @@ AGENT_WORKFLOW_TYPES = frozenset(
 # namespace's replay/reset window, then deprecate the marker in a later
 # release before removing that branch.
 AGENT_CHILD_ID_V2_PATCH = "machina-agent-child-id-v2"
+COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
+    "machina-cooperative-pause-scheduling-v1"
+)
 
 
 def _agent_child_workflow_id_v2(root_workflow_id: str, agent_node_id: str) -> str:
@@ -140,6 +143,10 @@ class MachinaWorkflow:
     @workflow.signal
     async def resume(self) -> None:
         self._control_paused = False
+
+    async def _wait_until_resumed(self) -> None:
+        if self._control_paused:
+            await workflow.wait_condition(lambda: not self._control_paused)
 
     @workflow.signal
     async def on_event(self, event_payload: Dict[str, Any]) -> None:
@@ -249,6 +256,9 @@ class MachinaWorkflow:
         # new histories use the root Temporal id + exact canvas node id so
         # two same-label agents can start in the same graph execution.
         use_agent_child_id_v2 = workflow.patched(AGENT_CHILD_ID_V2_PATCH)
+        use_cooperative_pause_schedule_gate = workflow.patched(
+            COOPERATIVE_PAUSE_SCHEDULING_PATCH
+        )
 
         workflow.logger.info(f"Starting workflow orchestration: {len(nodes)} nodes, {len(edges)} edges")
 
@@ -305,6 +315,8 @@ class MachinaWorkflow:
                 # ``_trigger_output`` is ``{not_triggered: True}``, no
                 # downstream template should resolve against them.
                 if not trigger_output.get("not_triggered"):
+                    if use_cooperative_pause_schedule_gate:
+                        await self._wait_until_resumed()
                     await workflow.execute_activity(
                         "store_node_output_activity",
                         {
@@ -387,6 +399,11 @@ class MachinaWorkflow:
                 # flag is on. Tool calls inside the agent loop become
                 # per-type activities (F4.A path) automatically.
                 dispatch = self._resolve_dispatch(node_type)
+                if use_cooperative_pause_schedule_gate:
+                    # A preceding child start yields to the workflow event
+                    # loop, so a pause signal may have landed since ``ready``
+                    # was computed. Re-admit every command in the batch.
+                    await self._wait_until_resumed()
                 if dispatch["kind"] == "child_workflow":
                     # ``workflow.start_child_workflow`` is ``async def`` —
                     # awaiting it returns the ``ChildWorkflowHandle`` once
