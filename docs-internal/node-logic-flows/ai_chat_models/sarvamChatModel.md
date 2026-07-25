@@ -31,7 +31,7 @@ subclass); reasoning is on by default server-side.
 | `system_prompt` | string | `""` | no | - | System prompt |
 | `model` | string | `""` (injected) | no | - | `sarvam-105b` / `sarvam-30b` |
 | `temperature` | number\|null | `null` | no | - | 0-2. Sarvam's own default is 0.5 with reasoning on, 0.2 without |
-| `max_tokens` | number\|null | `null` | no | - | Defaults to the `llm_defaults.json` value (65536 / 32768) |
+| `max_tokens` | number\|null | `null` | no | - | Defaults to the `llm_defaults.json` value (4096 — the Starter-tier cap). Raising it here does nothing unless the JSON is raised too |
 | `top_p` | number\|null | `1.0` | no | - | |
 | `frequency_penalty` | number\|null | `0.0` | no | - | -2.0 to 2.0 |
 | `presence_penalty` | number\|null | `0.0` | no | - | -2.0 to 2.0 |
@@ -107,7 +107,7 @@ flowchart TD
 ## Edge cases & known limits
 
 - **No `/v1/models` endpoint.** Verified against <https://docs.sarvam.ai/openapi.json> (25 paths, none for model listing). Unhandled, the 404 surfaces as an `openai.OpenAIError` -> `NodeUserError`, which `AIService.fetch_models` re-raises *before* its curated fallback — breaking credential validation and the model dropdown for a valid key. The `supports_model_listing: false` flag routes around this generically.
-- **`max_output_tokens` is half the context window** (65536 / 32768), not Sarvam's documented Business-tier ceilings (128000 / 64000). Those are ~98% of the context window and `resolve_max_tokens` uses the value as both the unset default and the clamp ceiling, so a request at the documented ceiling could not fit a prompt.
+- **The output cap is a subscription tier, not a model limit.** Sarvam allows 4096 output tokens on Starter, 16384 / 8192 on Pro and 128000 / 64000 on Business, and 400s on anything above your tier ("max_tokens (65536) exceeds the maximum allowed for sarvam-105b for your subscription tier (starter): 4096"). `resolve_max_tokens` uses the `llm_defaults.json` number as both the unset default and the clamp ceiling, so it ships as the Starter cap (4096) — the only value that works on every account. Pro/Business users must raise it in the JSON; raising `max_tokens` on the node alone is clamped straight back down.
 - **`popular_models` is `[]`** per the >=1M-context policy (Sarvam maxes at 131072); the dropdown falls through to the `max_output_tokens` keys, so both models still appear.
 - **`sarvam-m` is deprecated** and removed from the API — deliberately absent from the config.
 - **`wiki_grounding` is not exposed.** Sarvam accepts it, but an extra `Params` field cannot reach the API today: `execute_chat` reads a closed key set off `flattened`. See [Sarvam AI Service](../../sarvam_service.md#known-limits).

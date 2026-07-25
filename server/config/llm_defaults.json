@@ -326,11 +326,11 @@
       "max_tokens_param": "max_tokens",
       "supported_params": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "stop", "seed", "n", "tools", "tool_choice", "response_format", "reasoning_effort"],
       "max_output_tokens": {
-        "sarvam-105b": 65536,
-        "sarvam-30b": 32768,
-        "_default": 8192
+        "sarvam-105b": 4096,
+        "sarvam-30b": 4096,
+        "_default": 4096
       },
-      "_max_output_note": "Sarvam documents per-tier output ceilings of Starter 4096 / Pro 16384 / Business 128000 (105b) and 4096 / 8192 / 64000 (30b). The Business figures are ~98% of each context window, and resolve_max_tokens uses these values BOTH as the default budget when the node leaves max_tokens unset AND as the clamp ceiling — a request at that budget could not fit any prompt. Half the window keeps paid tiers unclamped while staying usable; same shape as groq's gpt-oss-120b (131072 ctx / 65536 out).",
+      "_max_output_note": "SUBSCRIPTION-TIER CAP, not a model limit — this is the one provider here whose output ceiling depends on the ACCOUNT rather than the model. Sarvam documents Starter 4096 / Pro 16384 / Business 128000 for sarvam-105b and 4096 / 8192 / 64000 for sarvam-30b, and rejects anything above your tier with a 400 ('max_tokens (N) exceeds the maximum allowed ... for your subscription tier'). services/llm/config.py::resolve_max_tokens uses this number BOTH as the default budget when a node leaves max_tokens unset AND as the ceiling it clamps larger user values down to, so a single value has to hold for every account — hence the Starter cap, the only figure that succeeds on all tiers. Sarvam's own API default is 2048, so 4096 is already generous. ON PRO OR BUSINESS: raise these to your tier's ceiling (setting max_tokens on the node alone is NOT enough — resolve_max_tokens clamps it back down to whatever is written here). Do not use the Business figures as a default: they are ~98% of each context window, leaving no room for a prompt.",
       "context_length": {
         "sarvam-105b": 131072,
         "sarvam-30b": 65536,

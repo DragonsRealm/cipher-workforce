@@ -31,18 +31,49 @@ registered declaratively in
 
 | Model | Context | `max_output_tokens` in JSON | Notes |
 |---|---|---|---|
-| `sarvam-105b` | 131072 | 65536 | Flagship, `default_model` |
-| `sarvam-30b` | 65536 | 32768 | Cheaper tier |
+| `sarvam-105b` | 131072 | 4096 | Flagship, `default_model` |
+| `sarvam-30b` | 65536 | 4096 | Cheaper tier |
 
 `sarvam-m` is deprecated and removed from the API; it is deliberately absent.
 
-**`max_output_tokens` is half the context window, not Sarvam's documented
-ceiling.** Sarvam publishes per-tier output caps (Business: 128000 for the
-105b, 64000 for the 30b), but those are ~98% of the context window, and
-`resolve_max_tokens` uses this value as *both* the default budget when a node
-leaves `max_tokens` unset *and* the clamp ceiling — a request at the documented
-ceiling could not fit any prompt. Half the window keeps paid tiers unclamped
-and usable. The tier table is recorded in `_max_output_note`.
+### The output cap is a billing tier, not a model limit
+
+This is the one provider here whose output ceiling depends on the **account**
+rather than the model. Sarvam publishes:
+
+| Tier | `sarvam-105b` | `sarvam-30b` |
+|---|---|---|
+| Starter | 4096 | 4096 |
+| Pro | 16384 | 8192 |
+| Business | 128000 | 64000 |
+
+Exceeding your tier is a hard 400:
+
+```
+max_tokens (65536) exceeds the maximum allowed for sarvam-105b
+for your subscription tier (starter): 4096.
+```
+
+`resolve_max_tokens` ([`llm/config.py`](../server/services/llm/config.py))
+uses this number as **both** the default budget when a node leaves
+`max_tokens` unset **and** the ceiling it clamps larger user values down to.
+One static value therefore has to hold for every account, so the shipped
+figure is the **Starter cap** — the only one that succeeds on all tiers.
+Sarvam's own API default is 2048, so 4096 is already generous.
+
+**On Pro or Business**, raise these numbers in `llm_defaults.json` to your
+tier's ceiling. Setting `max_tokens` on the node is *not* enough — the
+resolver clamps it straight back down to whatever is written here. Do not
+simply use the Business figures as the default: they are ~98% of each context
+window and leave no room for a prompt.
+
+The context windows are untouched by any of this — those are real model
+properties (131072 / 65536) and drive compaction thresholds.
+
+Pinned by `TestSarvamSubscriptionTierCap` in
+[`tests/llm/test_max_tokens_resolution.py`](../server/tests/llm/test_max_tokens_resolution.py),
+which also guards against the assertions passing off the registry's hardcoded
+fallbacks.
 
 ### Reasoning is entirely JSON-driven
 

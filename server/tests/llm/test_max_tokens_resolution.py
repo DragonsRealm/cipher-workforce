@@ -129,6 +129,82 @@ class TestRegistryAliasNormalization:
         assert info.max_output_tokens == 65536
 
 
+class TestSarvamSubscriptionTierCap:
+    """Sarvam's output ceiling is set by the ACCOUNT tier, not the model.
+
+    Every other provider's max_output_tokens is a model capability, so a
+    single JSON number is correct for all users. Sarvam rejects anything
+    above the caller's tier with a 400 ('max_tokens (65536) exceeds the
+    maximum allowed for sarvam-105b for your subscription tier
+    (starter): 4096'), and since resolve_max_tokens uses this value both
+    as the unset default and as the clamp ceiling, the shipped number has
+    to be the Starter cap -- the only one that succeeds on every tier.
+
+    A well-meaning "these models support way more" edit would silently
+    break every Starter and Pro account, so it is pinned here.
+    """
+
+    STARTER_CAP = 4096
+
+    @pytest.fixture
+    def loaded_registry(self):
+        """A registry with llm_defaults.json actually loaded.
+
+        ``get_model_registry()`` only reads the JSON in ``startup()``, and
+        an unloaded registry falls through to hardcoded 4096 / 128000
+        defaults -- which would make every assertion below pass no matter
+        what the config says. Patching in a locally loaded instance keeps
+        the test honest without mutating the process-wide singleton.
+        """
+        from services.model_registry import ModelRegistryService
+
+        svc = ModelRegistryService()
+        svc._load_llm_defaults()
+        with patch("services.model_registry.get_model_registry", return_value=svc):
+            yield svc
+
+    def test_fixture_actually_loaded_the_config(self, loaded_registry):
+        """Guard against the other tests passing off the hard fallbacks.
+
+        128000 is the hardcoded context fallback; reading 131072 proves
+        the sarvam block was parsed.
+        """
+        assert loaded_registry.get_context_length("sarvam-105b", "sarvam") == 131072
+
+    @pytest.mark.parametrize("model", ["sarvam-105b", "sarvam-30b"])
+    def test_shipped_ceiling_is_the_starter_tier_cap(self, model):
+        from services.llm.config import LLM_DEFAULTS
+
+        caps = LLM_DEFAULTS["providers"]["sarvam"]["max_output_tokens"]
+        assert caps[model] <= self.STARTER_CAP, (
+            f"{model} ships max_output_tokens={caps[model]}, above the Starter "
+            f"tier cap of {self.STARTER_CAP}. Sarvam 400s on that for any "
+            "account below the matching tier, and resolve_max_tokens treats "
+            "this value as a hard ceiling."
+        )
+        assert caps["_default"] <= self.STARTER_CAP
+
+    @pytest.mark.parametrize("model", ["sarvam-105b", "sarvam-30b"])
+    def test_unset_max_tokens_resolves_within_the_cap(self, model, loaded_registry):
+        """The default budget must be sendable as-is on a Starter account."""
+        from services.llm.config import resolve_max_tokens
+
+        assert resolve_max_tokens({}, model, "sarvam") <= self.STARTER_CAP
+
+    def test_oversized_request_is_clamped_not_forwarded(self, loaded_registry):
+        from services.llm.config import resolve_max_tokens
+
+        assert resolve_max_tokens(
+            {"max_tokens": 65536}, "sarvam-105b", "sarvam"
+        ) <= self.STARTER_CAP
+
+    def test_context_length_is_untouched_by_the_tier_cap(self, loaded_registry):
+        """The tier limits OUTPUT only -- the context window is a real
+        model property and must not be shrunk along with it."""
+        assert loaded_registry.get_context_length("sarvam-105b", "sarvam") == 131072
+        assert loaded_registry.get_context_length("sarvam-30b", "sarvam") == 65536
+
+
 class TestStandaloneWorkerRegistryStartup:
     def test_standalone_worker_loads_model_registry(self):
         # Without startup(), a standalone worker's registry is empty and
