@@ -929,8 +929,8 @@ class TestNodeSpecContractInvariants:
             "isMonitorPanel",
             "isTaskManagerPanel",
             "isProcessManagerPanel",
-            # fileManager: workspace file browser with drag-to-parameter.
-            "isFileManagerPanel",
+            # gallery: workspace file browser with drag-to-parameter.
+            "isGalleryPanel",
             "showLocationPanel",
             "isAndroidToolkit",
             "isChatTrigger",
