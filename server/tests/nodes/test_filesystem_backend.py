@@ -225,7 +225,7 @@ def test_windows_fallback_revalidates_parent_before_writing_payload(
         )
         monkeypatch.setattr(
             backend_module,
-            "_write_utf8_to_fd",
+            "_write_payload_to_fd",
             fail_if_payload_is_written,
         )
 
@@ -233,7 +233,7 @@ def test_windows_fallback_revalidates_parent_before_writing_payload(
             ValueError,
             match="parent directory changed",
         ):
-            backend_module._atomic_write_text_windows(
+            backend_module._atomic_write_windows(
                 root,
                 Path("docs/victim.txt"),
                 "replacement",

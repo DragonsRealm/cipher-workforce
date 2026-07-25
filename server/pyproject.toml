@@ -40,6 +40,16 @@ dependencies = [
     # https://temporal.download/cli/archive/latest).
     "pooch>=1.8.2",
 
+    # Media metadata (services/media/inspect.py). Pure Python, zero native
+    # deps, MIT. Chosen over mutagen (GPL-2.0, incompatible with this
+    # project's MIT licence) and over pydub / ffprobe, which both require
+    # an ffmpeg binary on PATH that nothing installs on Windows.
+    "tinytag>=2.0.0",
+    # Multipart parsing for the workspace upload route. Already present
+    # transitively via mcp; declared explicitly so it survives that
+    # dependency changing.
+    "python-multipart>=0.0.20",
+
     # Auth
     "bcrypt>=4.2.0",
     # pyjwt replaced python-jose (2026-06): python-jose drags in python-ecdsa,

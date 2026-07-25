@@ -1,0 +1,287 @@
+"""Reading and writing media inside a workflow workspace.
+
+Everything here funnels through :func:`nodes.filesystem._backend.resolve_within`,
+which rejects ``..`` / ``~`` / drive-prefixed inputs before touching the
+filesystem and then re-checks containment after resolution so a symlink or
+Windows junction cannot redirect the result outside the workspace.
+
+That containment is not decorative. Before this module existed, the Sarvam
+speech-to-text node joined a user-supplied path onto the workspace root with
+no check at all, so ``audio_file="../../credentials.db"`` read the encrypted
+credential store and uploaded it to the provider. :func:`coerce_file_param`
+closes that by construction, for every node that adopts it.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import mimetypes
+import re
+from pathlib import Path
+from typing import Any, Optional, Tuple
+from uuid import uuid4
+
+from core.logging import get_logger
+from services.media.inspect import inspect_audio
+from services.media.limits import MEDIA_MAX_READ_BYTES
+from services.media.refs import AudioRef
+
+logger = get_logger(__name__)
+
+AUDIO_SUBDIR = "audio"
+UPLOAD_SUBDIR = "uploads"
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+# Windows treats these as devices no matter the extension, so a write to
+# "CON.wav" is a write to the console. Every generated name carries a uuid
+# suffix, which makes a bare reserved name unreachable, but the check stays
+# as defence for callers that pass an unusual stem.
+_WINDOWS_RESERVED = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+def _slugify(value: str, *, limit: int = 32) -> str:
+    slug = _SLUG_RE.sub("-", (value or "").lower()).strip("-")[:limit].strip("-")
+    if not slug or slug in _WINDOWS_RESERVED:
+        return "audio"
+    return slug
+
+
+def workspace_root(ctx: Any = None, *, workflow_id: Optional[str] = None) -> Path:
+    """Resolve the workspace directory for a context or workflow id.
+
+    Prefers the executor-injected ``ctx.workspace_dir``; falls back to
+    composing it from the workflow's slug so the HTTP routes -- which have
+    no NodeContext -- can resolve the same directory.
+    """
+    from services.plugin import NodeUserError
+
+    direct = getattr(ctx, "workspace_dir", None) if ctx is not None else None
+    if not direct and ctx is not None:
+        raw = getattr(ctx, "raw", None)
+        if isinstance(raw, dict):
+            direct = raw.get("workspace_dir")
+    if direct:
+        return Path(direct)
+
+    if workflow_id is None and ctx is not None:
+        workflow_id = getattr(ctx, "workflow_id", None)
+    if not workflow_id:
+        raise NodeUserError(
+            "No workspace is available for this execution, so media cannot be "
+            "read or written. Save the workflow and run it again."
+        )
+    from core.paths import workspace_dir as _workspace_dir
+
+    return Path(_workspace_dir(workflow_id))
+
+
+def resolve_media(
+    ref: AudioRef | str,
+    *,
+    ctx: Any = None,
+    workflow_id: Optional[str] = None,
+) -> Path:
+    """Resolve a ref or a path string to a contained absolute path."""
+    from nodes.filesystem._backend import resolve_within
+    from services.plugin import NodeUserError
+
+    key = ref.path if isinstance(ref, AudioRef) else str(ref or "")
+    if not key.strip():
+        raise NodeUserError("No media path was provided.")
+
+    if isinstance(ref, AudioRef) and ref.workflow_id and workflow_id is None:
+        workflow_id = ref.workflow_id
+
+    candidate = Path(key)
+    if candidate.is_absolute():
+        # Tolerated for back-compat with nodes that stored absolute paths
+        # before AudioRef existed, but still contained: an absolute path
+        # outside the workspace is refused rather than read.
+        root = workspace_root(ctx, workflow_id=workflow_id)
+        try:
+            key = candidate.resolve(strict=False).relative_to(root).as_posix()
+        except ValueError as exc:
+            raise NodeUserError(
+                f"'{candidate}' is outside this workflow's workspace."
+            ) from exc
+    else:
+        root = workspace_root(ctx, workflow_id=workflow_id)
+
+    try:
+        return resolve_within(root, key)
+    except ValueError as exc:
+        raise NodeUserError(f"'{key}' is outside this workflow's workspace.") from exc
+
+
+def read_media_bytes(
+    ref: AudioRef | str,
+    *,
+    ctx: Any = None,
+    workflow_id: Optional[str] = None,
+    max_bytes: int = MEDIA_MAX_READ_BYTES,
+) -> Tuple[str, bytes]:
+    """Return ``(filename, bytes)`` for a contained media reference."""
+    from services.plugin import NodeUserError
+
+    target = resolve_media(ref, ctx=ctx, workflow_id=workflow_id)
+    if not target.is_file():
+        raise NodeUserError(f"Media file not found: {target.name}")
+
+    size = target.stat().st_size
+    if size == 0:
+        raise NodeUserError(f"Media file is empty: {target.name}")
+    if size > max_bytes:
+        raise NodeUserError(
+            f"{target.name} is {size // (1024 * 1024)} MB; the limit is "
+            f"{max_bytes // (1024 * 1024)} MB."
+        )
+    return target.name, target.read_bytes()
+
+
+def write_audio(
+    payload: bytes,
+    *,
+    ctx: Any,
+    stem: str,
+    ext: str,
+    mime_type: Optional[str] = None,
+    subdir: str = AUDIO_SUBDIR,
+    inspect: bool = True,
+    sample_rate: Optional[int] = None,
+    channels: int = 1,
+) -> AudioRef:
+    """Atomically write audio into the workspace and return a reference.
+
+    The filename shape (``<stem>-<node8>-<rand6>.<ext>``) matches what the
+    Sarvam TTS node produced before this helper existed, so porting it is
+    behaviour-preserving. The random suffix also means retries and repeated
+    runs never collide or silently overwrite earlier audio.
+    """
+    from nodes.filesystem._backend import atomic_write_bytes
+    from services.plugin import NodeUserError
+
+    if not payload:
+        raise NodeUserError("Refusing to write an empty audio file.")
+
+    root = workspace_root(ctx)
+    node_id = str(getattr(ctx, "node_id", "") or "node")
+    name = f"{_slugify(stem)}-{node_id[:8]}-{uuid4().hex[:6]}.{ext.lstrip('.')}"
+    rel = f"{subdir}/{name}"
+
+    target = resolve_media(rel, ctx=ctx)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(target, payload, root_dir=root)
+
+    probe = (
+        inspect_audio(
+            target,
+            declared_format=ext,
+            pcm_sample_rate=sample_rate,
+            pcm_channels=channels,
+        )
+        if inspect
+        else None
+    )
+    workflow_id = getattr(ctx, "workflow_id", None)
+
+    return AudioRef(
+        path=rel,
+        workflow_id=workflow_id,
+        filename=name,
+        mime_type=mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream",
+        format=ext.lstrip(".").lower(),
+        size_bytes=len(payload),
+        duration_seconds=probe.duration_seconds if probe else None,
+        sample_rate=(probe.sample_rate if probe else None) or sample_rate,
+        channels=(probe.channels if probe else None),
+        sha256=hashlib.sha256(payload).hexdigest(),
+        url=workspace_file_url(workflow_id, rel),
+    )
+
+
+def workspace_file_url(workflow_id: Optional[str], rel_path: str) -> Optional[str]:
+    """Path-only URL for the workspace file route. No scheme, no host."""
+    if not workflow_id:
+        return None
+    from urllib.parse import quote
+
+    return f"/api/workspace/{quote(str(workflow_id))}/files/{quote(rel_path)}"
+
+
+def coerce_file_param(
+    value: Any,
+    *,
+    ctx: Any = None,
+    max_bytes: int = MEDIA_MAX_READ_BYTES,
+) -> Tuple[str, bytes]:
+    """Read a file parameter in any of the three shapes the UI can produce.
+
+    1. A serialized :class:`AudioRef` -- what the upload route now returns.
+    2. The legacy ``{"type": "upload", "data": "<base64>"}`` envelope the
+       file widget used to emit. Still accepted indefinitely: saved
+       workflow rows carry it and are not migrated. Logs one warning
+       naming the node so operators can find and re-save them.
+    3. A bare path string, typed by the user or dragged from an upstream
+       node -- now resolved with containment.
+    """
+    import base64
+    import binascii
+
+    from services.plugin import NodeUserError
+
+    if isinstance(value, dict) and value.get("kind") == "audio":
+        ref = AudioRef.model_validate(value)
+        return read_media_bytes(ref, ctx=ctx, max_bytes=max_bytes)
+
+    if isinstance(value, dict) and value.get("type") == "upload":
+        data = value.get("data") or ""
+        if not data:
+            raise NodeUserError(
+                "The uploaded file carried no data. Re-select it in the "
+                "parameter panel."
+            )
+        logger.warning(
+            "legacy base64 upload parameter; re-select the file to migrate it",
+            node_id=str(getattr(ctx, "node_id", "") or "unknown"),
+            characters=len(data),
+        )
+        try:
+            blob = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise NodeUserError(f"Uploaded file is not valid base64: {exc}") from exc
+        if len(blob) > max_bytes:
+            raise NodeUserError(
+                f"Uploaded file is {len(blob) // (1024 * 1024)} MB; the limit "
+                f"is {max_bytes // (1024 * 1024)} MB."
+            )
+        if not blob:
+            raise NodeUserError("Uploaded file is empty.")
+        return str(value.get("filename") or "upload.bin"), blob
+
+    if isinstance(value, dict):
+        raise NodeUserError(
+            "File parameter is an object but not a recognised file reference. "
+            "Re-select the file in the parameter panel."
+        )
+
+    text = str(value or "").strip()
+    if not text:
+        raise NodeUserError("No file was provided.")
+    return read_media_bytes(text, ctx=ctx, max_bytes=max_bytes)
+
+
+__all__ = [
+    "AUDIO_SUBDIR",
+    "UPLOAD_SUBDIR",
+    "coerce_file_param",
+    "read_media_bytes",
+    "resolve_media",
+    "workspace_file_url",
+    "workspace_root",
+    "write_audio",
+]

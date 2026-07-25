@@ -160,13 +160,26 @@ def _verify_posix_directory(
         os.close(current_fd)
 
 
-def _write_utf8_to_fd(
+def _write_payload_to_fd(
     file_fd: int,
-    content: str,
+    payload: str | bytes,
     existing_mode: Optional[int],
 ) -> None:
-    with os.fdopen(file_fd, "w", encoding="utf-8", newline="") as handle:
-        handle.write(content)
+    """Write ``payload`` to an already-opened fd, then fsync.
+
+    Accepts ``str`` (UTF-8, newline-preserving) or ``bytes``. The binary
+    branch exists so generated media — audio from a TTS provider, an
+    uploaded clip — reaches disk through the same anchored-write path that
+    refuses to follow a mutable symlink or Windows junction. Those bytes
+    are later served over HTTP, so the containment matters more than for
+    ordinary text writes.
+    """
+    if isinstance(payload, bytes):
+        mode, kwargs = "wb", {}
+    else:
+        mode, kwargs = "w", {"encoding": "utf-8", "newline": ""}
+    with os.fdopen(file_fd, mode, **kwargs) as handle:
+        handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
         if existing_mode is not None and hasattr(os, "fchmod"):
@@ -186,10 +199,10 @@ def _replace_posix_entry(
     )
 
 
-def _atomic_write_text_posix(
+def _atomic_write_posix(
     root: Path,
     relative: Path,
-    content: str,
+    payload: str | bytes,
 ) -> None:
     parent_components = tuple(relative.parts[:-1])
     target_name = relative.parts[-1]
@@ -250,7 +263,7 @@ def _atomic_write_text_posix(
                 "Could not allocate a unique atomic-write temporary file"
             )
 
-        _write_utf8_to_fd(temporary_fd, content, existing_mode)
+        _write_payload_to_fd(temporary_fd, payload, existing_mode)
         _verify_posix_directory(root, parent_components, parent_fd)
         _replace_posix_entry(
             temporary_name,
@@ -323,10 +336,10 @@ def _verify_windows_temp(
         )
 
 
-def _atomic_write_text_windows(
+def _atomic_write_windows(
     root: Path,
     relative: Path,
-    content: str,
+    payload: str | bytes,
 ) -> None:
     """Best-effort contained atomic replacement for Windows.
 
@@ -393,7 +406,7 @@ def _atomic_write_text_windows(
 
         write_fd = temporary_fd
         temporary_fd = -1
-        _write_utf8_to_fd(write_fd, content, existing_mode)
+        _write_payload_to_fd(write_fd, payload, existing_mode)
         if existing_mode is not None:
             # Windows has no ``os.fchmod``. Apply its supported mode bits
             # (notably the read-only flag) to the still-private temporary
@@ -459,19 +472,11 @@ def _atomic_write_text_windows(
                 pass
 
 
-def atomic_write_text(
+def _atomic_write(
     path: os.PathLike[str] | str,
-    content: str,
-    *,
-    root_dir: os.PathLike[str] | str | None = None,
+    payload: str | bytes,
+    root_dir: os.PathLike[str] | str | None,
 ) -> None:
-    """Atomically replace UTF-8 text without traversing mutable symlinks.
-
-    Production callers pass the workspace root. The optional default keeps
-    direct helper callers compatible by treating the existing parent as the
-    root, but it does not establish a broader containment boundary.
-    """
-
     target = Path(os.path.abspath(os.fspath(path)))
     root = Path(
         os.path.abspath(
@@ -488,9 +493,41 @@ def atomic_write_text(
         raise IsADirectoryError(f"Cannot replace workspace root: {target}")
 
     if _anchored_write_supported():
-        _atomic_write_text_posix(root, relative, content)
+        _atomic_write_posix(root, relative, payload)
     else:
-        _atomic_write_text_windows(root, relative, content)
+        _atomic_write_windows(root, relative, payload)
+
+
+def atomic_write_text(
+    path: os.PathLike[str] | str,
+    content: str,
+    *,
+    root_dir: os.PathLike[str] | str | None = None,
+) -> None:
+    """Atomically replace UTF-8 text without traversing mutable symlinks.
+
+    Production callers pass the workspace root. The optional default keeps
+    direct helper callers compatible by treating the existing parent as the
+    root, but it does not establish a broader containment boundary.
+    """
+    _atomic_write(path, content, root_dir)
+
+
+def atomic_write_bytes(
+    path: os.PathLike[str] | str,
+    payload: bytes,
+    *,
+    root_dir: os.PathLike[str] | str | None = None,
+) -> None:
+    """Atomically replace binary content, with the same containment rules.
+
+    Used by ``services.media`` for generated and uploaded audio. Atomicity
+    is load-bearing here rather than merely tidy: the frontend renders an
+    ``<audio src>`` the moment it sees a reference, so a half-written file
+    is a broken player, and Temporal retries a synthesis activity against
+    the *same* target path.
+    """
+    _atomic_write(path, payload, root_dir)
 
 
 def _validate_virtual_path(path: str) -> str:
@@ -506,6 +543,30 @@ def _validate_virtual_path(path: str) -> str:
     if ".." in normalized.split("/"):
         raise ValueError(f"Path traversal detected after normalization: {path}")
     return normalized
+
+
+def resolve_within(root: os.PathLike[str] | str, key: str) -> Path:
+    """Resolve ``key`` under ``root``, refusing anything that escapes it.
+
+    Two layers: reject ``..`` / ``~`` / drive-prefixed inputs *before*
+    touching the filesystem, then resolve and re-check containment so a
+    symlink or Windows junction cannot redirect the result outside the
+    root.
+
+    Module-level rather than a ``WorkspaceBackend`` method because
+    ``services.media`` and the workspace HTTP route both need it without
+    paying for a backend instance (whose ``__init__`` mkdirs, copies the
+    environment, and mints a sandbox id).
+    """
+    root_path = Path(os.path.abspath(os.fspath(root)))
+    virtual = _validate_virtual_path(key)
+    candidate = root_path / virtual.lstrip("/")
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(root_path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError(f"Path '{key}' resolves outside workspace root") from exc
+    return resolved
 
 
 def normalize_virtual_path(path: str) -> str:
@@ -611,16 +672,7 @@ class WorkspaceBackend:
         return self._sandbox_id
 
     def _resolve_path(self, key: str) -> Path:
-        virtual = _validate_virtual_path(key)
-        candidate = self.cwd / virtual.lstrip("/")
-        try:
-            resolved = candidate.resolve(strict=False)
-            resolved.relative_to(self.cwd)
-        except (OSError, RuntimeError, ValueError) as exc:
-            raise ValueError(
-                f"Path '{key}' resolves outside workspace root"
-            ) from exc
-        return resolved
+        return resolve_within(self.cwd, key)
 
     def _to_virtual_path(self, path: Path) -> str:
         resolved = path.resolve(strict=False)
