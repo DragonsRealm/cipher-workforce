@@ -40,7 +40,7 @@ by the executor for code-executor node types) and the workflow's
 ## Node.js client singleton
 
 Shares `get_nodejs_client()` in [`_nodejs.py`](../../../server/nodes/code/_nodejs.py)
-with the JS plugin — one `NodeJSClient(base_url="http://localhost:5680",
+with the JS plugin — one `NodeJSClient(base_url="http://localhost:5682",
 timeout=30)` instance, hard-coded defaults.
 
 ## Outputs (handles)
@@ -71,7 +71,7 @@ flowchart TD
   C --> D[input_data = ctx.raw connected_outputs or {}<br/>inject workspace_dir]
   D --> F[get_nodejs_client<br/>lazy singleton]
   F --> G[client.execute<br/>POST /execute<br/>language=typescript]
-  G -- ClientConnectorError --> H1[raise NodeUserError<br/>TS executor not running on :3020]
+  G -- ClientConnectorError --> H1[raise NodeUserError<br/>TS executor not running on :5682]
   G -- success=false --> H2[raise NodeUserError<br/>error=result.error]
   G -- success=true --> I[Return dict<br/>output, console_output]
 ```
@@ -85,7 +85,7 @@ wire-level difference is the POST body's `language` field.
 
 - **Database writes**: none.
 - **Broadcasts**: none.
-- **External API calls**: `POST http://localhost:5680/execute` with body
+- **External API calls**: `POST http://localhost:5682/execute` with body
   `{code, input_data, language: "typescript", timeout}`.
 - **Subprocess**: none directly.
 - **Module-level state**: shares the `_nodejs_client` singleton with the JS
@@ -93,7 +93,7 @@ wire-level difference is the POST body's `language` field.
 
 ## External Dependencies
 
-- **Services**: Persistent Node.js executor at `http://localhost:5680`.
+- **Services**: Persistent Node.js executor at `http://localhost:5682`.
   The server must have `tsx` available (pinned in `server/nodejs/package.json`).
 - **Python packages**: `aiohttp`.
 - **Environment variables**: `NODEJS_EXECUTOR_URL`, `NODEJS_EXECUTOR_TIMEOUT`.

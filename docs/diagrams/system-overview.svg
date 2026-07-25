@@ -81,17 +81,17 @@
   <rect class="panel p-orange" x="230" y="726" width="960" height="120" rx="10"/>
 
   <rect class="box p-orange" x="250" y="746" width="215" height="80" rx="8"/>
-  <text class="h2" x="357" y="772" text-anchor="middle">Node.js executor :5680</text>
+  <text class="h2" x="357" y="772" text-anchor="middle">Node.js executor :5682</text>
   <text class="small" x="357" y="792" text-anchor="middle">Express + tsx</text>
   <text class="small" x="357" y="808" text-anchor="middle">JS/TS code nodes</text>
 
   <rect class="box p-orange" x="485" y="746" width="215" height="80" rx="8"/>
-  <text class="h2" x="592" y="772" text-anchor="middle">WhatsApp RPC :5681</text>
+  <text class="h2" x="592" y="772" text-anchor="middle">WhatsApp RPC :5683</text>
   <text class="small" x="592" y="792" text-anchor="middle">Go whatsmeow binary</text>
 
   <rect class="box p-orange" x="720" y="746" width="215" height="80" rx="8"/>
   <text class="h2" x="827" y="772" text-anchor="middle">Temporal server</text>
-  <text class="small" x="827" y="792" text-anchor="middle">gRPC :5682 - Web UI :5683</text>
+  <text class="small" x="827" y="792" text-anchor="middle">gRPC :5681 - Web UI :5680</text>
 
   <rect class="box p-orange" x="955" y="746" width="215" height="80" rx="8"/>
   <text class="h2" x="1062" y="772" text-anchor="middle">Temporal workers</text>

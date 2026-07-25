@@ -110,7 +110,7 @@ Idempotent on re-runs (compileall only rewrites stale pyc; esbuild is determinis
 
 1. `pnpm --filter react-flow-client run typecheck` → <5s, zero errors.
 2. `ANALYZE=1 pnpm --filter react-flow-client run build` → open `client/dist/stats.html`. Expect: no chunk above 600 KB gz, main < 200 KB gz, `vendor-flow` split.
-3. `cd server/nodejs && npm run build && node dist/index.js` → starts on :3020 in <100ms.
+3. `cd server/nodejs && npm run build && node dist/index.js` → starts on :5682 in <100ms.
 4. `cd server && uv run python -m compileall -q -j 0 services` → plain `__pycache__/*.pyc` present (no `.opt-1.pyc` — nothing loads those).
 5. Cold-start: clean install + `company start > start.log 2>&1` → `Application startup complete` at ≤+50s (was +66.9s).
 6. `npm pack --dry-run` → `server/nodejs/dist/index.js` included; no `__pycache__/`; tarball size ≤ v0.0.76.

@@ -25,7 +25,7 @@ def status_command() -> None:
     wd = _state.workdir()
     ip = _terraform.tf_output(wd, "external_ip")
     url = _terraform.tf_output(wd, "url") or (
-        f"http://{ip}:{meta.get('port', 8080)}" if ip else None
+        f"http://{ip}:{meta.get('port') or load_config().backend_port}" if ip else None
     )
 
     console.print("  Deployment:  OpenCompany")

@@ -14,7 +14,7 @@ class NodeJSClient:
         """Initialize client with base URL and timeout.
 
         Args:
-            base_url: Base URL of Node.js server (e.g., http://127.0.0.1:5680)
+            base_url: Base URL of Node.js server (composed from NODEJS_EXECUTOR_PORT; defaults live in .env.template)
             timeout: Default request timeout in seconds
         """
         self._base_url = base_url.rstrip("/")

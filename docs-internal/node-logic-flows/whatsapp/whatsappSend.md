@@ -124,16 +124,16 @@ flowchart TD
 
 - **Database writes**: none directly from this handler. (API-usage cost is recorded by the `@Operation` `cost` metadata via `BaseNode.execute()`.)
 - **Broadcasts**: none directly - standard node_status transitions come from `BaseNode.execute()`.
-- **External calls**: WebSocket RPC to the Go `whatsapp-rpc` service via [`nodes/whatsapp/_service.py::whatsapp_rpc_call`](../../../server/nodes/whatsapp/_service.py). Default URL `ws://localhost:5681/ws/rpc` (overridable via `WHATSAPP_RPC_URL`). For media URLs, `_service.py` additionally downloads via `httpx`.
+- **External calls**: WebSocket RPC to the Go `whatsapp-rpc` service via [`nodes/whatsapp/_service.py::whatsapp_rpc_call`](../../../server/nodes/whatsapp/_service.py). Default URL `ws://localhost:5683/ws/rpc` (overridable via `WHATSAPP_RPC_URL`). For media URLs, `_service.py` additionally downloads via `httpx`.
 - **File I/O**: none in this handler - file uploads are handled in `_service.py`.
 - **Subprocess**: none.
 
 ## External Dependencies
 
 - **Credentials**: none at the node handler level. Pairing state is owned by the Go service; the handler is credential-free.
-- **Services**: `whatsapp-rpc` (Go) on port 5681 (default). `services.markdown_formatter.to_whatsapp` when `format_markdown` is enabled.
+- **Services**: `whatsapp-rpc` (Go) on port 5683 (default). `services.markdown_formatter.to_whatsapp` when `format_markdown` is enabled.
 - **Python packages**: `asyncio`. (`httpx` is used inside `_service.py` for URL media fetches.)
-- **Environment variables**: `WHATSAPP_RPC_URL` (optional, default `ws://localhost:5681/ws/rpc`).
+- **Environment variables**: `WHATSAPP_RPC_URL` (optional, default `ws://localhost:5683/ws/rpc`).
 
 ## Edge cases & known limits
 

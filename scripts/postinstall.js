@@ -9,7 +9,7 @@
 import { spawn, execSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, chmodSync } from 'fs';
+import { existsSync, chmodSync, readFileSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -129,7 +129,12 @@ async function main() {
     console.log('========================================');
     console.log('');
     console.log('Run: company start');
-    console.log('Open: http://localhost:5678');
+    // App port comes from .env.template (the single place port numbers live).
+    let appPort = '';
+    try {
+      appPort = /^PYTHON_BACKEND_PORT=(\d+)/m.exec(readFileSync(resolve(ROOT, '.env.template'), 'utf-8'))[1];
+    } catch { /* template missing - skip the URL line */ }
+    if (appPort) console.log(`Open: http://localhost:${appPort}`);
     console.log('');
 
   } catch (err) {

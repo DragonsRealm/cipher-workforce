@@ -188,7 +188,7 @@ Also changed `receive_timeout=540` to `receive_timeout=None` on `ws_connect()` -
 
 **Symptom**: Backend logs show:
 ```
-WhatsApp RPC timeout - Go service not responding at ws://localhost:5681/ws/rpc
+WhatsApp RPC timeout - Go service not responding at ws://localhost:5683/ws/rpc
 ```
 
 WhatsApp service health check (`/health`) returns 200 OK, but the WebSocket RPC connection fails.

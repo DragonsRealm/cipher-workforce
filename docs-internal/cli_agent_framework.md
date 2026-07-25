@@ -237,8 +237,8 @@ Lockfile path: `~/.claude/ide/<pid>.lock` (Claude) or `<tmpdir>/gemini/ide/gemin
 
 ```json
 {
-  "port": 3010,
-  "url": "http://127.0.0.1:3010/mcp/ide",
+  "port": 5678,
+  "url": "http://127.0.0.1:5678/mcp/ide",
   "authToken": "<32-byte hex>",
   "workspaceFolders": ["<absolute path to per-task git worktree>"],
   "ideName": "opencompany",
@@ -553,7 +553,7 @@ Live verification (needs a real Claude install + auth):
 3. Click Disconnect. Modal flips Disconnected (`claude auth logout` clears CLI creds + marker dropped).
 4. Add a `claude_code_agent` node, set `tasks=[{prompt:"echo A"},{prompt:"echo B"},{prompt:"echo C"}]`, run. Three distinct `claude:<task_id>` Terminal streams interleaved. Three distinct session_ids. Three worktrees created and removed. `summary.wall_clock_ms < sum(duration_ms)` (proves parallelism).
 5. With a Claude task running, `cat ~/.claude/ide/<pid>.lock` and confirm format. Stream-json shows an `mcp__opencompany__*` tool invocation.
-6. `curl -H "Authorization: Bearer <wrong>" http://127.0.0.1:3010/mcp/ide/...` → 401.
+6. `curl -H "Authorization: Bearer <wrong>" http://127.0.0.1:5678/mcp/ide/...` → 401.
 
 ## Risks / open considerations
 

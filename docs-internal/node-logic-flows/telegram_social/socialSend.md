@@ -144,7 +144,7 @@ flowchart TD
 - **External API calls**: delegated to the WhatsApp send handler resolved via
   `get_social_send_handler("whatsapp")` (the whatsapp plugin self-registers it
   from `nodes/whatsapp/__init__.py`), which hits the WhatsApp RPC service
-  (default `http://localhost:5681`).
+  (default `http://localhost:5683`).
 - **File I/O**: none from this handler. `mediaSource=file` reads are delegated.
 - **Subprocess**: none.
 

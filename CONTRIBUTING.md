@@ -129,7 +129,7 @@ Development from source uses **pnpm** (not npm). The `scripts/preinstall.js` hoo
 
 ```bash
 pnpm install           # install workspace dependencies
-pnpm run dev           # start frontend + backend + Temporal + WhatsApp
+pnpm run dev           # start the app (Vite HMR + backend; Temporal starts from the backend when TEMPORAL_ENABLED, WhatsApp only on demand)
 pnpm run stop          # stop everything
 pnpm run build         # production build
 pnpm exec tsc --noEmit # typecheck client (from client/)

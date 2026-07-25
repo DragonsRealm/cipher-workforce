@@ -5,4 +5,4 @@
 cd /app/nodejs && npm start &
 
 # Start Python server (foreground)
-python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-5678} --log-level warning
+python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:?not set - defaults live in .env.template} --log-level warning

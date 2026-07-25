@@ -56,7 +56,9 @@ async def _probe_tcp_port(port: int, host: str = "localhost") -> bool:
 
 
 def executor_port() -> int:
-    return int(os.environ.get("NODEJS_EXECUTOR_PORT") or 5680)
+    from core.env_defaults import env_int
+
+    return env_int("NODEJS_EXECUTOR_PORT")
 
 
 def _sidecar_dir() -> Path:

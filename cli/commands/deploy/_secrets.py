@@ -55,7 +55,6 @@ def build_app_env(
         "TEMPORAL_ENABLED": "false",
         "EVENT_FRAMEWORK_ENABLED": "false",
         "REDIS_ENABLED": "false",
-        "NODEJS_EXECUTOR_PORT": "5680",
         "LOG_FORMAT": "text",
         "JWT_SECRET_KEY": new_key(),
         "SECRET_KEY": new_key(),

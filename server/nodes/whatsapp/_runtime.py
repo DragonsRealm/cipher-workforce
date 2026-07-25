@@ -70,7 +70,9 @@ class WhatsAppRuntime(BaseProcessSupervisor):
 
     @property
     def port(self) -> int:
-        return int(os.environ.get("WHATSAPP_RPC_PORT") or 5681)
+        from core.env_defaults import env_int
+
+        return env_int("WHATSAPP_RPC_PORT")
 
     @property
     def bind_host(self) -> str:

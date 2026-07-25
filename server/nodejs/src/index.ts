@@ -12,7 +12,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // All configuration from environment variables
-const PORT = parseInt(process.env.NODEJS_EXECUTOR_PORT ?? '', 10) || 5680;
+const PORT = parseInt(process.env.NODEJS_EXECUTOR_PORT ?? '', 10);
+if (!PORT) {
+  // Spawned by nodes/code/_runtime.py, which always injects the port
+  // (canonical default lives in .env.template). No hardcoded fallback.
+  throw new Error('NODEJS_EXECUTOR_PORT is not set - defaults live in .env.template');
+}
 const HOST = process.env.NODEJS_EXECUTOR_HOST ?? 'localhost';
 const BODY_LIMIT = process.env.NODEJS_EXECUTOR_BODY_LIMIT ?? '10mb';
 const USER_PACKAGES_DIR = process.env.NODEJS_USER_PACKAGES_DIR ?? path.join(__dirname, '..', 'user-packages');

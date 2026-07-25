@@ -181,7 +181,7 @@ No logout WebSocket handler — user can manually delete the credentials file or
 
 ### 2.7 Pattern G — QR pairing (WhatsApp)
 
-**Credentials stored**: nothing in OpenCompany DB. Session lives inside the bundled `whatsapp-rpc` Go service (default port 5681).
+**Credentials stored**: nothing in OpenCompany DB. Session lives inside the bundled `whatsapp-rpc` Go service (default port 5683).
 
 **Happy path**:
 ```

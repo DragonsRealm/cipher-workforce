@@ -560,7 +560,7 @@ The DIY widget registry (RHF + zod + a tester+rank dispatch) is modeled on n8n's
 ```bash
 # from repo root
 pnpm install            # client deps + server Python deps via postinstall
-pnpm run dev            # concurrently: client (Vite :3000) + server (uvicorn :3010) + temporal + whatsapp
+pnpm run dev            # supervisor: Vite client (app port, proxying) + uvicorn backend; Temporal/WhatsApp are backend-owned on-demand daemons
 pnpm run build          # full prod build; bundle analyzer at dist/stats.html if ANALYZE=1
 
 # client-only

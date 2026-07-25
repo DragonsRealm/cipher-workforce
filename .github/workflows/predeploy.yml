@@ -72,10 +72,11 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
+          APP_PORT=$(grep -E '^PYTHON_BACKEND_PORT=' .env.template | cut -d= -f2)
           pnpm run start &
           PID=$!
           for i in {1..15}; do
-            curl -sf http://localhost:5678/health > /dev/null 2>&1 && break
+            curl -sf "http://localhost:${APP_PORT}/health" > /dev/null 2>&1 && break
             sleep 2
           done
           kill -0 $PID 2>/dev/null && pnpm run stop || (echo FAILED; exit 1)

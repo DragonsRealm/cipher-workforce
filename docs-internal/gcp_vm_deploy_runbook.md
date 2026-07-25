@@ -63,7 +63,8 @@ print('ENC='+secrets.token_hex(24))"
    on **:3010**) plus an nginx reverse proxy on :80/:443 — it works on every release.
    **Releases after 0.0.95**: `company start` became single-port itself (uvicorn
    serves the SPA; no :3000 static server) AND the default ports moved to the
-   serial 5678 block (backend :5678, WhatsApp :5681, Temporal :5682/:5683).
+   serial 5678 block (backend :5678, Temporal UI :5680, Temporal gRPC :5681,
+   Node.js executor :5682, WhatsApp :5683).
    When upgrading a VM past 0.0.95, point EVERY nginx `proxy_pass` in step 2
    (`/api/`, `/ws/`, `/webhook/`, `/health`, and `location /`) at
    `http://127.0.0.1:5678;` and reload nginx.
@@ -411,7 +412,7 @@ gcloud compute ssh <VM_NAME> --zone=<ZONE> --quiet --command="sudo npm install -
 # flip an env toggle (sudo on EVERY command touching the 600 env file - pitfall 13c):
 gcloud compute ssh <VM_NAME> --zone=<ZONE> --quiet --command="sudo sed -i 's/TEMPORAL_ENABLED=false/TEMPORAL_ENABLED=true/' /etc/opencompany/opencompany.env; sudo systemctl restart opencompany"
 # Temporal Web UI (localhost-bound on the VM; gRPC :7233, UI :8080 on
-# releases <= 0.0.95; :5682/:5683 after the serial-port change):
+# releases <= 0.0.95; :5681/:5680 after the serial-port change):
 gcloud compute ssh <VM_NAME> --zone=<ZONE> --tunnel-through-iap -- -L 8080:localhost:8080
 #   then open http://localhost:8080. Note: `company start` runs the Temporal dev
 #   server regardless of TEMPORAL_ENABLED; the flag only controls whether the

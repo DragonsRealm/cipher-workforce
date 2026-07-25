@@ -30,7 +30,7 @@ Each workflow node executes as a **Temporal activity** with its own isolated con
 **Running with Temporal** — the Temporal server and the embedded worker start automatically with every launch script:
 
 ```bash
-npm run start            # Starts Temporal server + all services
+npm run start            # Starts the app; the backend lifespan starts the Temporal dev server when TEMPORAL_ENABLED
 npm run dev              # Starts Temporal server + all services (dev mode)
 npm run stop             # Stops all services including Temporal
 ```
@@ -49,7 +49,7 @@ This invokes `run_standalone_worker()` from `services/temporal/worker.py`.
 ## System Architecture
 
 ```
-                        TEMPORAL SERVER (port 5682)
+                        TEMPORAL SERVER (port 5681)
                                   |
               Task Queue: machina-tasks  (workflows + framework activities)
   +---------------------------------------------------------------+
@@ -577,7 +577,7 @@ client = await Client.connect(server_address, namespace=namespace, runtime=runti
 
 The Temporal binary + persistence are managed in-process by the plugin-folder pattern at [`server/services/temporal/`](../server/services/temporal/). Single supervised process — the official `temporal` CLI's `server start-dev` mode, per [docs.temporal.io/develop/python/set-up-your-local-python](https://docs.temporal.io/develop/python/set-up-your-local-python). Five sibling files (`_install.py`, `_runtime.py`, `_handlers.py`, `_refresh.py`, `client.py`, plus `__init__.py` for registry wiring) match the [Wave 11 plugin-folder pattern](./plugin_system.md#self-contained-plugin-folders) that `server/nodes/whatsapp/` uses for its Go binary.
 
-**What runs**: one process — `temporal server start-dev --port 5682 --ui-port 5683 --db-filename ~/.opencompany/temporal.db --namespace default`. Both gRPC + Web UI bind to the same process (per docs.temporal.io/cli/server — "all running in a single process"). SQLite-backed durability; history persisted across restarts.
+**What runs**: one process — `temporal server start-dev --port 5681 --ui-port 5680 --db-filename ~/.opencompany/temporal.db --namespace default`. Both gRPC + Web UI bind to the same process (per docs.temporal.io/cli/server — "all running in a single process"). SQLite-backed durability; history persisted across restarts.
 
 **Modern libs doing the heavy lifting** (zero custom infrastructure code):
 - **[`pooch`](https://pypi.org/project/pooch/)** — `services/temporal/_install.py` downloads the official `temporal` CLI archive from `https://temporal.download/cli/archive/latest?platform=<os>&arch=<arch>`. Cross-platform (Windows zip / macOS+Linux tar.gz), cached at `<DATA_DIR>/packages/temporal/` via `_cache_dir() = core.paths.package_dir("temporal")` (pooch's `path=` argument). The retrieve call passes an explicit `downloader=pooch.HTTPDownloader(timeout=300, progressbar=True)`: the timeout is per-socket-read (not total transfer), so arbitrarily slow links can finish the ~114 MB fetch — pooch's 30 s default aborted them — and `progressbar` must live on the downloader because `retrieve()` ignores its own kwarg when `downloader=` is explicit. Failed downloads never poison the cache (pooch writes to a temp file and renames atomically on success). Standalone entry: `python -m services.temporal._install` — invoked **fatally** by `company build` step [6/6] (so first `company start` doesn't pay the download; contract locked by `test_temporal_install_is_fatal_on_failure`) and **non-fatally** by npm postinstall (`scripts/install.js` try/catch — `TemporalServerRuntime._pre_spawn()` re-downloads lazily on first `company start`, so a failed eager fetch never fails `npm install -g`). The binary cache survives `company clean` (`packages` is in `_OPENCOMPANY_KEEP`, `cli/commands/clean.py`). Pre-fix this used `pooch.os_cache("opencompany-temporal")` (`~/.cache/OpenCompany/opencompany-temporal/` etc.) — a separate OS-cache namespace operators reported as "not local"; it now sits under DATA_DIR alongside the Stripe binary and the shared npm tree.
@@ -589,7 +589,7 @@ The Temporal binary + persistence are managed in-process by the plugin-folder pa
 
 **Resumption toggle**: [`TemporalClientWrapper.terminate_running_workflows`](../server/services/temporal/client.py) — runs once at server lifespan startup, between client connect and worker start, gated on `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP` (default `true`). Queries Visibility for every `Running` workflow and calls `handle.terminate(reason="OpenCompany startup: auto-resumption disabled")`. **History is preserved** (UI shows workflows as `Terminated`, not deleted); only active execution stops. Disables resumption while `DeploymentManager` has no boot-time reconcile against Temporal Visibility yet — resumed workflows would otherwise keep executing but be invisible to the OpenCompany UI. Flip to `false` once the reconcile lands.
 
-**Port management**: Temporal owns ports 5682 (gRPC) + 5683 (Web UI). Both bound by the same `temporal.exe` process; both listed in `cli.config.Config.all_ports` so `company stop`'s port-freeing pre-flight covers them.
+**Port management**: Temporal owns ports 5681 (gRPC) + 5680 (Web UI). Both bound by the same `temporal.exe` process; both listed in `cli.config.Config.all_ports` so `company stop`'s port-freeing pre-flight covers them.
 
 **Direct CLI access**: the pooch-installed `temporal` binary lives under `<DATA_DIR>/packages/temporal/` (= `~/.opencompany/packages/temporal/` by default, on every OS). Run `temporal --version`, `temporal workflow list`, etc. directly from there.
 
@@ -598,13 +598,13 @@ The Temporal binary + persistence are managed in-process by the plugin-folder pa
 | Setting | Env var | `.env.template` default | Purpose |
 |---|---|---|---|
 | `temporal_enabled` | `TEMPORAL_ENABLED` | `true` | Master toggle. When false, `WorkflowService` falls back to the sequential executor. |
-| `temporal_server_address` | `TEMPORAL_SERVER_ADDRESS` | `localhost:5682` | Address the Python SDK client connects to. |
+| `temporal_server_address` | `TEMPORAL_SERVER_ADDRESS` | `localhost:5681` | Address the Python SDK client connects to. |
 | `temporal_namespace` | `TEMPORAL_NAMESPACE` | `default` | Bootstrapped at server start. |
 | `temporal_task_queue` | `TEMPORAL_TASK_QUEUE` | `machina-tasks` | Default task queue for the embedded worker. |
 | `temporal_per_type_dispatch` | `TEMPORAL_PER_TYPE_DISPATCH` | `true` | F4.A flag — per-type activity dispatch. |
 | `temporal_agent_workflow_enabled` | `TEMPORAL_AGENT_WORKFLOW_ENABLED` | `true` | F4.B flag — agent-as-child-workflow. |
-| `temporal_frontend_grpc_port` | `TEMPORAL_FRONTEND_GRPC_PORT` | `5682` | gRPC port (`--port`). Drives the readiness probe. |
-| `temporal_ui_port` | `TEMPORAL_UI_PORT` | `5683` | Web UI port (`--ui-port`). CLI default is `--port + 1000`; pinned into the serial 5678-block instead. |
+| `temporal_frontend_grpc_port` | `TEMPORAL_FRONTEND_GRPC_PORT` | `5681` | gRPC port (`--port`). Drives the readiness probe. |
+| `temporal_ui_port` | `TEMPORAL_UI_PORT` | `5680` | Web UI port (`--ui-port`). CLI default is `--port + 1000`; pinned into the serial 5678-block instead. |
 | `temporal_sqlite_path` | `TEMPORAL_SQLITE_PATH` | `temporal.db` | SQLite file (`--db-filename`). Resolved relative to `DATA_DIR` (= `~/.opencompany/`) unless absolute — flat under `~/.opencompany/` like `credentials.db` / `workflow.db`. |
 | `temporal_graceful_shutdown_seconds` | `TEMPORAL_GRACEFUL_SHUTDOWN_SECONDS` | `30` | `CTRL_BREAK_EVENT` (Windows) / `SIGTERM` (POSIX) → tree-kill grace window. Shared with the embedded worker shutdown. |
 | `temporal_terminate_running_on_startup` | `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP` | `true` | Resumption toggle (see above). |
@@ -622,7 +622,7 @@ through `Settings`:
 
 ## Debugging
 
-The Web UI is at http://localhost:5683; the UI's HTTP API rides the gRPC port + 1000 (6682).
+The Web UI is at http://localhost:5680; the UI's HTTP API rides the gRPC port + 1000 (6681).
 
 ### Reading Temporal tracing output
 
@@ -671,10 +671,10 @@ duplicate execution.
 
 ```bash
 # Temporal Web UI
-open http://localhost:5683
+open http://localhost:5680
 
 # List workflows via the local CLI binary (under <DATA_DIR>/packages/temporal/)
-~/.opencompany/packages/temporal/.../temporal.exe workflow list --address localhost:5682
+~/.opencompany/packages/temporal/.../temporal.exe workflow list --address localhost:5681
 
 # Re-fetch the binary at any time
 uv run python -m services.temporal._install

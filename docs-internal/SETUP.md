@@ -12,7 +12,7 @@ OpenCompany/
 │   ├── routers/            # API endpoints
 │   ├── core/               # DI container, database, cache
 │   ├── models/             # SQLModel definitions
-│   ├── whatsapp-rpc/       # Go WhatsApp service (port 5681)
+│   ├── whatsapp-rpc/       # Go WhatsApp service (port 5683)
 │   └── requirements.txt
 ├── scripts/                # Build and utility scripts
 └── package.json            # Workspace root with npm scripts
@@ -50,8 +50,8 @@ cd server && uv sync --extra local-embeddings
 
 Services (production `company start`):
 - **App (API + WS + SPA)**: http://localhost:5678
-- **WhatsApp Service**: http://localhost:5681 (backend-spawned on demand)
-- **Temporal dev server**: gRPC :5682, Web UI :5683 (backend-spawned when `TEMPORAL_ENABLED`)
+- **WhatsApp Service**: http://localhost:5683 (backend-spawned on demand)
+- **Temporal dev server**: gRPC :5681, Web UI :5680 (backend-spawned when `TEMPORAL_ENABLED`)
 
 `company dev` serves the same URL (http://localhost:5678) from the Vite HMR server, which proxies /api /ws /webhook to the backend on :5679.
 
@@ -76,7 +76,7 @@ Services (production `company start`):
 - `POST /api/ai/*` - AI model execution
 - `POST /api/android/*` - Android device operations
 
-### WhatsApp Service (Go - Default Port 9400)
+### WhatsApp Service (Go — optional, on-demand; port `WHATSAPP_RPC_PORT`)
 - Go service using whatsmeow library
 - QR code authentication (base64 PNG in memory, no file I/O)
 - Message send/receive via JSON-RPC
@@ -86,7 +86,7 @@ Services (production `company start`):
 - Provides durable workflow execution with per-node retry and horizontal scaling
 - Official `temporal` CLI downloaded by `pooch` from `https://temporal.download/cli/archive/latest` on `company build` (or first backend boot with Temporal enabled)
 - Backend-owned: the FastAPI lifespan starts `temporal server start-dev` via `TemporalServerRuntime.ensure_started()` when `TEMPORAL_ENABLED` and the configured address is loopback (external clusters are detected via TCP probe and left alone) — SQLite at `~/.opencompany/temporal.db`
-- Ports: gRPC 5682, Web UI 5683
+- Ports: gRPC 5681, Web UI 5680
 - Embedded worker runs inside Python backend (`TemporalWorkerManager` in `main.py`)
 - Workflow auto-resumption disabled at startup (history preserved); see `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP`
 - See [Temporal Architecture](./TEMPORAL_ARCHITECTURE.md) and [CLI Services Guide](./cli_services_integration.md)
@@ -145,7 +145,7 @@ When `VITE_AUTH_ENABLED=false` (the default):
 
 | Command | Description |
 |---------|-------------|
-| `npm run start` | Start all services |
+| `npm run start` | Start the app (backend-owned daemons start on demand) |
 | `npm run stop` | Stop all services |
 | `npm run build` | Install dependencies |
 | `npm run dev` | Start development server |

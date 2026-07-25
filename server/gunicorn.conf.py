@@ -10,9 +10,12 @@ Usage:
 import os
 import multiprocessing
 
-# Load from environment (same vars used by config.py)
+from core.env_defaults import env_value
+
+# Load from environment (same vars used by config.py); the canonical
+# PORT default lives in .env.template via core.env_defaults.
 host = os.getenv("HOST", "0.0.0.0")
-port = os.getenv("PORT", "5678")
+port = env_value("PORT")
 workers_env = os.getenv("WORKERS", "0")  # 0 = auto-calculate
 log_level = os.getenv("LOG_LEVEL", "INFO").lower()
 debug = os.getenv("DEBUG", "false").lower() == "true"

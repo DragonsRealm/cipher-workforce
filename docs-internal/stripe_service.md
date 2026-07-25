@@ -729,7 +729,7 @@ class attributes:
 | Binary name | `StripeListenSource.binary_name` | `"stripe"` |
 | Daemon process key | `StripeListenSource.workflow_namespace` | `"_stripe"` (logical `ProcessService` key; cwd is the shared `daemons_dir()` = `<DATA_DIR>/daemons/`, not a per-namespace subdir) |
 | Webhook path | `StripeWebhookSource.path` | `"stripe"` (i.e. `/webhook/stripe`) |
-| Forward-to port | derived from `Settings().port` | typically `3010` |
+| Forward-to port | derived from `Settings().port` | the app port (`PYTHON_BACKEND_PORT`) |
 | Verifier | `StripeWebhookSource.verifier` | `StripeVerifier` |
 | Action operation cost | `@Operation("run", cost=…)` | `{service: "stripe", action: "run", count: 1}` |
 

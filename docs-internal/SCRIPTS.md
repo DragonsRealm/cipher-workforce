@@ -111,9 +111,9 @@ Key variables in `.env` (see `.env.template` for the full list):
 |----------|---------|-------------|
 | `VITE_CLIENT_PORT` | 5678 | App port (Vite dev server; proxies backend prefixes) |
 | `PYTHON_BACKEND_PORT` | 5678 | Backend port (5679 in dev via `.env.dev`, behind the Vite proxy) |
-| `WHATSAPP_RPC_PORT` | 5681 | WhatsApp API port |
-| `NODEJS_EXECUTOR_PORT` | 5680 | Node.js code-executor sidecar |
-| — | 5682 / 5683 | Temporal gRPC / Temporal Web UI |
+| `WHATSAPP_RPC_PORT` | 5683 | WhatsApp API port |
+| `NODEJS_EXECUTOR_PORT` | 5682 | Node.js code-executor sidecar |
+| — | 5681 / 5680 | Temporal gRPC / Temporal Web UI |
 
 ### Features
 | Variable | Default | Description |

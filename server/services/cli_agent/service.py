@@ -163,12 +163,13 @@ class AICliService:
         )
 
         # Per-batch bearer token + MCP context
+        from core.env_defaults import env_value
+
         token = issue_token()
         port = mcp_port or int(
-            os.environ.get(
-                "OPENCOMPANY_BACKEND_PORT",
-                os.environ.get("MACHINA_BACKEND_PORT", "5678"),
-            )
+            os.environ.get("OPENCOMPANY_BACKEND_PORT")
+            or os.environ.get("MACHINA_BACKEND_PORT")
+            or env_value("PYTHON_BACKEND_PORT")
         )
         ctx = BatchContext(
             workflow_id=workflow_id,

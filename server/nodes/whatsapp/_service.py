@@ -33,9 +33,18 @@ def qr_code_to_base64(code: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-WHATSAPP_RPC_URL = os.getenv("WHATSAPP_RPC_URL") or (
-    f"ws://localhost:{os.getenv('WHATSAPP_RPC_PORT') or 5681}/ws/rpc"
-)
+def rpc_url() -> str:
+    """Configured RPC endpoint — env-driven, no hardcoded port.
+
+    ``WHATSAPP_RPC_URL`` wins outright (external service override);
+    otherwise the URL composes from the plugin-owned port, whose
+    canonical default lives in ``.env.template`` (core.env_defaults).
+    """
+    from core.env_defaults import env_value
+
+    return os.getenv("WHATSAPP_RPC_URL") or (
+        f"ws://localhost:{env_value('WHATSAPP_RPC_PORT')}/ws/rpc"
+    )
 
 
 def extract_phone_from_jid(jid: str | None) -> str | None:
@@ -339,19 +348,20 @@ async def get_client(force_reconnect: bool = False, *, spawn: bool = True) -> RP
             _client = None
 
         if not _client or not _client.connected:
-            logger.info(f"[WhatsApp RPC] Creating new connection to {WHATSAPP_RPC_URL}")
-            _client = RPCClient(WHATSAPP_RPC_URL)
+            url = rpc_url()
+            logger.info(f"[WhatsApp RPC] Creating new connection to {url}")
+            _client = RPCClient(url)
             try:
                 await _client.connect()
                 logger.info("[WhatsApp RPC] Connected successfully")
             except asyncio.TimeoutError:
                 _client = None
-                logger.error(f"WhatsApp RPC timeout - Go service not responding at {WHATSAPP_RPC_URL}")
+                logger.error(f"WhatsApp RPC timeout - Go service not responding at {url}")
                 raise Exception("WhatsApp service timeout - is Go service running?")
             except (ConnectionRefusedError, OSError) as e:
                 _client = None
                 logger.error(f"WhatsApp RPC connection refused: {e}")
-                raise Exception("WhatsApp service not running - start Go whatsmeow service on port 5681")
+                raise Exception(f"WhatsApp service not running - start the Go whatsmeow service at {url}")
             except Exception as e:
                 _client = None
                 logger.error(f"WhatsApp RPC error: {e}")

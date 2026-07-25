@@ -121,6 +121,18 @@ sys.modules["core.auth_cookies"] = _auth_cookies_mod
 _auth_cookies_spec.loader.exec_module(_auth_cookies_mod)
 setattr(_core_pkg, "auth_cookies", _auth_cookies_mod)
 
+# core.env_defaults is stdlib-only (the .env.template-backed env
+# resolver plugin folders use instead of hardcoded port fallbacks) —
+# expose the real module so plugin imports resolve during collection.
+_env_defaults_spec = _importlib_util.spec_from_file_location(
+    "core.env_defaults",
+    SERVER_DIR / "core" / "env_defaults.py",
+)
+_env_defaults_mod = _importlib_util.module_from_spec(_env_defaults_spec)
+sys.modules["core.env_defaults"] = _env_defaults_mod
+_env_defaults_spec.loader.exec_module(_env_defaults_mod)
+setattr(_core_pkg, "env_defaults", _env_defaults_mod)
+
 # core.encryption depends only on stdlib + cryptography, and its
 # fingerprint_credential is imported at module load by services.llm.unifier
 # and services.memory.vector_store, so expose the real module.

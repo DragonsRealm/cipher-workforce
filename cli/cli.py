@@ -105,7 +105,7 @@ def _build() -> None:
 
 @app.command(
     "serve",
-    help="Run on a single public port (API + WebSocket + built SPA + sidecar). Used by `company deploy`.",
+    help="Run on a single public port (API + WebSocket + built SPA). Used by `company deploy`.",
 )
 def _serve(
     port: int | None = typer.Option(
@@ -195,7 +195,7 @@ def _deploy_up(
     source: str = typer.Option("local", "--source", help="Install source: local (npm pack) or release (npm registry)."),
     version: str = typer.Option("latest", "--version", help="opencompany version when --source release."),
     machine_type: str = typer.Option("e2-standard-2", "--machine-type", help="VM size."),
-    port: int = typer.Option(5678, "--port", help="Public port the app binds + the firewall opens."),
+    port: int | None = typer.Option(None, "--port", help="Public port the app binds + the firewall opens (default: PYTHON_BACKEND_PORT from .env.template)."),
     allow_cidr: str = typer.Option("0.0.0.0/0", "--allow-cidr", help="Firewall source range (restrict to your IP/32)."),
     region: str | None = typer.Option(None, "--region", help="Cloud region (provider default if omitted)."),
     zone: str | None = typer.Option(None, "--zone", help="Cloud zone (provider default if omitted)."),
@@ -203,6 +203,10 @@ def _deploy_up(
 ) -> None:
     from cli.commands.deploy.up import up_command
 
+    if port is None:
+        from cli.config import load_config
+
+        port = load_config().backend_port
     up_command(
         provider=provider,
         region=region,

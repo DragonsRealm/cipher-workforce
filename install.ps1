@@ -209,7 +209,8 @@ function Main {
     Write-Host "    company start"
     Write-Host ""
     Write-Host "  Open in browser:"
-    Write-Host "    http://localhost:5678"
+    $appPort = (Select-String -Path ".env.template" -Pattern "^PYTHON_BACKEND_PORT=(\d+)" -ErrorAction SilentlyContinue).Matches.Groups[1].Value
+    Write-Host "    http://localhost:$appPort"
     Write-Host ""
     Write-Host "  For development from source, install pnpm:"
     Write-Host "    npm install -g pnpm"

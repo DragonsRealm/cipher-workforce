@@ -4,11 +4,10 @@ OpenCompany integrates external services that manage their own lifecycle via CLI
 
 ## Principles
 
-1. **Install globally** -- CLI tools must be available system-wide (`npm install -g <package>`)
-2. **Use the CLI** -- Check status, start, stop via the package's own commands. No port-sniffing, no TCP socket checks, no hardcoded port detection.
-3. **Don't manage their ports** -- External service ports are NOT added to `allPorts` in `utils.js`. OpenCompany only kills ports it owns (client, backend, WhatsApp, Node.js executor).
-4. **Handle "already running"** -- Before adding a service to `concurrently`, check if it's already up. If it is, skip it. This prevents `--kill-others` cascade kills in `start.js`.
-5. **Keep dependencies in package.json** -- Even if installed globally, keep the package in `dependencies` so npm scripts (`npm run temporal:start`) work.
+1. **Plugin-owned binaries** -- OpenCompany-managed CLIs/binaries install into `<DATA_DIR>/packages/` from the plugin's own `_install.py` (pooch or the shared npm tree); truly external tools stay system-installed.
+2. **Backend-owned lifecycle** -- long-lived daemons are `BaseProcessSupervisor` subclasses in the plugin folder, spawned on demand and stopped by `shutdown_all_supervisors()` at lifespan shutdown.
+3. **Ports are declared in `.env.template`** -- the single place port numbers live. The CLI frees only the ports in `cli.config.Config.all_ports`; plugin daemons own theirs.
+4. **Status is passive** -- status refreshes and WS status commands consult the supervisor (`is_running()`), never spawn.
 
 ## Integrated CLI Services
 
@@ -23,8 +22,8 @@ Wraps the official `temporal` CLI's `server start-dev` mode (per [docs.temporal.
 **Ports (declared in `.env.template`, freed by `company stop`'s port-kill pre-flight):**
 | Service | Port | Env var |
 |---------|------|---------|
-| gRPC    | 5682 | `TEMPORAL_FRONTEND_GRPC_PORT` |
-| Web UI  | 5683 | `TEMPORAL_UI_PORT` (CLI default is 8233; we override) |
+| gRPC    | 5681 | `TEMPORAL_FRONTEND_GRPC_PORT` |
+| Web UI  | 5680 | `TEMPORAL_UI_PORT` (CLI default is 8233; we override) |
 
 Both bound by the same `temporal.exe` process. Killing the process releases both.
 
@@ -42,81 +41,32 @@ cd server && python -m services.temporal.worker
 
 ## Adding a New CLI Service
 
-Follow this pattern when integrating a new external CLI service:
+Follow the plugin-runtime pattern (references: `nodes/whatsapp/_runtime.py`,
+`nodes/code/_runtime.py`, `services/temporal/_runtime.py`):
 
-### 1. Install globally and add to dependencies
-
-```bash
-npm install -g <service-package>
-npm install <service-package>
-```
-
-### 2. Add npm scripts in package.json
-
-```json
-{
-  "<service>:start": "<service-cli> start",
-  "<service>:stop": "<service-cli> stop",
-  "<service>:status": "<service-cli> status"
-}
-```
-
-### 3. Integrate in start.js (with --kill-others protection)
-
-```javascript
-let serviceRunning = false;
-try {
-  const status = execSync('<service-cli> status', {
-    encoding: 'utf-8', timeout: 5000, stdio: 'pipe'
-  });
-  serviceRunning = /running|UP/i.test(status);
-} catch {
-  serviceRunning = false;
-}
-
-if (serviceRunning) {
-  log('<Service> already running, skipping');
-}
-
-// Add to services list only if not running
-if (!serviceRunning) services.push('npm:<service>:start');
-
-// Add ready-detection pattern only if not running
-if (!serviceRunning) {
-  readyPatterns.push({
-    name: '<Service>',
-    pattern: /<service>.*started|<service>.*ready/i
-  });
-}
-```
-
-### 4. Integrate in stop.js
-
-```javascript
-// Kill by process name pattern -- NOT by port
-const pids = await killByPattern('<service>');
-if (pids.length > 0) {
-  console.log(`Killed ${pids.length} <service> processes`);
-}
-```
-
-### 5. Do NOT add ports to allPorts
-
-The service manages its own ports. Do not add them to `loadEnvConfig().allPorts` in `utils.js`.
-
-### 6. dev.js -- usually no special handling needed
-
-`dev.js` does not use `--kill-others`, so services exiting early is harmless. Just add `npm:<service>:start` to the services list unconditionally.
-
----
+1. **Install** — plugin-owned `_install.py` that materialises the binary
+   under `<DATA_DIR>/packages/<name>/` (pooch for release archives, the
+   shared npm tree for npm packages). Idempotent; callable one-shot from
+   `company build` when pre-caching is worth it.
+2. **Supervise** — a `BaseProcessSupervisor` subclass in the plugin folder
+   (`_runtime.py`) owning argv/cwd/env, with `ensure_started()`
+   (probe-or-spawn) for on-demand starts. Register the singleton via
+   `services._supervisor.register_supervisor` from the plugin
+   `__init__.py` so lifespan shutdown reaches it.
+3. **Start on demand** — the demand signals own the starts: node
+   execution, user-initiated connect/login WS commands, or deploy-time
+   trigger prechecks. Never start from a status refresh.
+4. **Configure via env** — the service's port/vars are declared in
+   `.env.template` (annotated plugin-owned) and read through
+   `core.env_defaults` — no fallback literals in code.
 
 ## Common Mistakes to Avoid
 
 | Mistake | Why it's wrong | Correct approach |
 |---------|---------------|-----------------|
-| TCP socket check (`net.connect(port)`) | Fragile, races with other services, hardcodes ports | Use `<service-cli> status` |
-| Adding service ports to `allPorts` | `killPort()` would kill the service during startup | Service manages its own ports |
+| Spawning from a status refresh | a passive probe boots an optional daemon | Consult the supervisor (`is_running()`); demand signals own the starts |
+| Adding plugin-daemon ports to `Config.all_ports` | the CLI would kill a backend-owned daemon during startup | The backend supervises them; the CLI carries no plugin knowledge |
 | Resolving `node_modules/.bin/<cli>` path | Breaks if not in PATH, tribal workaround | Install globally |
 | Using `npx <service-cli>` in `execSync` | Slow, may use wrong version, npx overhead | Install globally, call directly |
 | Wrapping CLI in a JS script | Unnecessary indirection | Use CLI commands directly |
-| Hardcoding port numbers for detection | Breaks if service config changes | Use CLI status command |
+| Hardcoding port numbers in code or docs | drifts when ports change | Declare in `.env.template`; read via `core.env_defaults` |

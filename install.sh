@@ -315,7 +315,8 @@ main() {
   echo "    company start"
   echo ""
   echo "  Open in browser:"
-  echo "    http://localhost:5678"
+  APP_PORT=$(grep -E '^PYTHON_BACKEND_PORT=' .env.template 2>/dev/null | cut -d= -f2)
+  echo "    http://localhost:${APP_PORT}"
   echo ""
   echo "  Optional: Enable JS-rendered web scraping:"
   echo "    playwright install chromium"
