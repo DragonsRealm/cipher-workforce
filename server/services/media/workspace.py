@@ -18,13 +18,13 @@ import hashlib
 import mimetypes
 import re
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, get_args
 from uuid import uuid4
 
 from core.logging import get_logger
 from services.media.inspect import inspect_audio
 from services.media.limits import MEDIA_MAX_READ_BYTES
-from services.media.refs import AudioRef
+from services.media.refs import AudioRef, FileKind, FileRef
 
 logger = get_logger(__name__)
 
@@ -100,7 +100,7 @@ def workspace_root(
 
 
 def resolve_media(
-    ref: AudioRef | str,
+    ref: FileRef | str,
     *,
     ctx: Any = None,
     workspace_dir: Optional[str] = None,
@@ -110,11 +110,11 @@ def resolve_media(
     from nodes.filesystem._backend import resolve_within
     from services.plugin import NodeUserError
 
-    key = ref.path if isinstance(ref, AudioRef) else str(ref or "")
+    key = ref.path if isinstance(ref, FileRef) else str(ref or "")
     if not key.strip():
         raise NodeUserError("No media path was provided.")
 
-    if isinstance(ref, AudioRef) and ref.workflow_id and workflow_id is None:
+    if isinstance(ref, FileRef) and ref.workflow_id and workflow_id is None:
         workflow_id = ref.workflow_id
 
     root = workspace_root(ctx, workspace_dir=workspace_dir, workflow_id=workflow_id)
@@ -138,7 +138,7 @@ def resolve_media(
 
 
 def read_media_bytes(
-    ref: AudioRef | str,
+    ref: FileRef | str,
     *,
     ctx: Any = None,
     workspace_dir: Optional[str] = None,
@@ -254,10 +254,25 @@ def coerce_file_param(
     import base64
     import binascii
 
+    from pydantic import ValidationError
+
     from services.plugin import NodeUserError
 
-    if isinstance(value, dict) and value.get("kind") == "audio":
-        ref = AudioRef.model_validate(value)
+    if isinstance(value, dict) and value.get("kind") in get_args(FileKind):
+        # The model is picked explicitly rather than always validating as the
+        # base: ``extra="forbid"`` means an audio payload does NOT validate as
+        # a plain FileRef (it carries duration_seconds/sample_rate/channels).
+        model = AudioRef if value.get("kind") == "audio" else FileRef
+        try:
+            ref = model.model_validate(value)
+        except ValidationError as exc:
+            # A well-known ``kind`` with a malformed body is still a bad file
+            # parameter, not a server fault: keep it on the NodeUserError path
+            # so it logs one WARN line instead of a pydantic traceback.
+            raise NodeUserError(
+                "File parameter is not a usable file reference. "
+                "Re-select the file in the parameter panel."
+            ) from exc
         return read_media_bytes(ref, ctx=ctx, max_bytes=max_bytes)
 
     if isinstance(value, dict) and value.get("type") == "upload":

@@ -246,6 +246,115 @@ class TestCoerceFileParam:
                 coerce_file_param(value, ctx=_ctx(tmp_path))
 
 
+class TestFileRefBase:
+    """FileRef is the base every kind shares; AudioRef narrows it.
+
+    The base exists because a file manager lists arbitrary files, most of
+    which are not media at all, and ``AudioRef`` forbids extras so it cannot
+    stand in for them.
+    """
+
+    def test_audio_ref_is_a_file_ref(self):
+        from services.media.refs import FileRef
+
+        ref = AudioRef(path="audio/x.wav", filename="x.wav")
+        assert isinstance(ref, FileRef)
+
+    def test_file_ref_structurally_cannot_carry_bytes(self):
+        """Same invariant as AudioRef: adding a payload field must fail."""
+        from services.media.refs import FileRef
+
+        for field in ("data", "content", "bytes", "audio_base64"):
+            with pytest.raises(ValidationError):
+                FileRef.model_validate(
+                    {"path": "a.bin", "filename": "a.bin", field: "QUJD"}
+                )
+
+    def test_audio_ref_keeps_its_field_set_after_the_refactor(self):
+        """Guards the inheritance change against silently dropping a field."""
+        keys = set(AudioRef(path="audio/x.wav", filename="x.wav").model_dump())
+        assert {
+            "kind", "path", "workflow_id", "filename", "mime_type", "size_bytes",
+            "sha256", "url", "format", "duration_seconds", "sample_rate", "channels",
+        } <= keys
+
+    def test_audio_payload_does_not_validate_as_the_plain_base(self):
+        """Why coerce_file_param must pick the model instead of always
+        validating as FileRef: extra='forbid' rejects the audio-only fields."""
+        from services.media.refs import FileRef
+
+        payload = AudioRef(path="audio/x.wav", filename="x.wav").model_dump()
+        with pytest.raises(ValidationError):
+            FileRef.model_validate(payload)
+
+
+class TestCoerceFileParamAcceptsFileRefs:
+    def test_accepts_a_plain_file_ref(self, tmp_path):
+        from services.media.refs import FileRef
+
+        (tmp_path / "chart.png").write_bytes(b"PNGDATA")
+        ref = FileRef(path="chart.png", filename="chart.png", mime_type="image/png")
+
+        name, blob = coerce_file_param(ref.model_dump(), ctx=_ctx(tmp_path))
+
+        assert name == "chart.png"
+        assert blob == b"PNGDATA"
+
+    def test_still_accepts_an_audio_ref(self, tmp_path):
+        (tmp_path / "audio").mkdir(exist_ok=True)
+        (tmp_path / "audio" / "x.wav").write_bytes(b"RIFFDATA")
+        ref = AudioRef(path="audio/x.wav", filename="x.wav")
+
+        assert coerce_file_param(ref.model_dump(), ctx=_ctx(tmp_path))[1] == b"RIFFDATA"
+
+    def test_malformed_ref_is_a_user_error_not_a_validation_traceback(self, tmp_path):
+        """A known kind with a broken body still belongs on the NodeUserError
+        path — one WARN line, no pydantic traceback in the operator log."""
+        from services.plugin import NodeUserError
+
+        with pytest.raises(NodeUserError):
+            coerce_file_param({"kind": "image"}, ctx=_ctx(tmp_path))
+
+
+class TestResolveEntryWithin:
+    """Mutations must name the entry, not what a symlink points at."""
+
+    def test_refuses_the_root_and_non_entries(self, tmp_path):
+        from nodes.filesystem._backend import resolve_entry_within
+
+        for key in ("", "/", "..", "../../etc/passwd", "~/x", "C:/Windows/x"):
+            with pytest.raises(ValueError):
+                resolve_entry_within(tmp_path, key)
+
+    def test_contains_nested_paths(self, tmp_path):
+        from nodes.filesystem._backend import resolve_entry_within
+
+        target = resolve_entry_within(tmp_path, "sub/dir/file.txt")
+        assert target.relative_to(tmp_path) == Path("sub/dir/file.txt")
+
+    def test_names_the_link_not_its_target(self, tmp_path):
+        """resolve_within would return the target, so deleting it would
+        destroy the pointed-at file instead of removing the link."""
+        import os
+
+        from nodes.filesystem._backend import resolve_entry_within, resolve_within
+
+        (tmp_path / "real.txt").write_text("IMPORTANT")
+        try:
+            os.symlink(tmp_path / "real.txt", tmp_path / "link.txt")
+        except (OSError, NotImplementedError):
+            pytest.skip("symlink creation not permitted on this platform")
+
+        assert resolve_within(tmp_path, "link.txt").name == "real.txt"
+
+        entry = resolve_entry_within(tmp_path, "link.txt")
+        assert entry.name == "link.txt"
+
+        os.unlink(entry)
+        assert not (tmp_path / "link.txt").exists()
+        assert (tmp_path / "real.txt").read_text() == "IMPORTANT"
+
+
 class TestInspectNeverRaises:
     """D8: a parser miss degrades billing, it does not fail a workflow."""
 

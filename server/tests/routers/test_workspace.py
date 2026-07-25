@@ -47,7 +47,12 @@ def workspace(tmp_path, monkeypatch):
     """A workspaces root containing one workflow directory, keyed by SLUG."""
     root = tmp_path / "workspaces"
     (root / SLUG / "audio").mkdir(parents=True)
-    monkeypatch.setattr(workspace_router, "workspaces_dir", lambda: root)
+    # The id->slug translation now lives in services.workspace_locator, which
+    # this router delegates to, so that is where the roots directory has to be
+    # patched.
+    from services import workspace_locator
+
+    monkeypatch.setattr(workspace_locator, "workspaces_dir", lambda: root)
     return root / SLUG
 
 

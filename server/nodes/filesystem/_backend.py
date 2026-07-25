@@ -569,6 +569,38 @@ def resolve_within(root: os.PathLike[str] | str, key: str) -> Path:
     return resolved
 
 
+def resolve_entry_within(root: os.PathLike[str] | str, key: str) -> Path:
+    """Contained path that names the entry itself, not a symlink's target.
+
+    :func:`resolve_within` fully resolves the path, which is correct for
+    reads and wrong for mutations: a symlink inside the workspace pointing
+    at another file inside the workspace resolves *inside* (so containment
+    passes), and unlinking or renaming the resolved path then acts on the
+    target instead of the link.
+
+    Containment is instead proved on the **parent**, which is fully
+    resolved -- so no component along the way can redirect outside the root
+    -- and the basename is appended unresolved. ``unlink`` / ``rename`` then
+    act on the entry the caller named.
+
+    Refuses the root itself: no mutation may delete or rename the workspace.
+
+    Raises ``ValueError`` on escape or on a refused target, matching
+    :func:`resolve_within` so callers translate the same way.
+    """
+    root_path = Path(os.path.abspath(os.fspath(root)))
+    virtual = _validate_virtual_path(key).strip("/")
+    if not virtual:
+        raise ValueError("Refusing to operate on the workspace root itself")
+
+    parent_virtual, _, basename = virtual.rpartition("/")
+    if basename in ("", ".", ".."):
+        raise ValueError(f"Path '{key}' does not name an entry")
+
+    parent = resolve_within(root_path, parent_virtual or "/")
+    return parent / basename
+
+
 def normalize_virtual_path(path: str) -> str:
     """Normalize user paths to canonical workspace-relative virtual paths."""
     from services.plugin import NodeUserError

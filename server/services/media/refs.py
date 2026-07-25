@@ -1,10 +1,16 @@
-"""``AudioRef`` — a reference to audio, never the audio itself.
+"""``FileRef`` / ``AudioRef`` — a reference to a file, never the file itself.
 
-The one rule this module exists to enforce: **audio bytes do not travel
+The one rule this module exists to enforce: **file bytes do not travel
 through the workflow engine.** See :mod:`services.media.limits` for the
-measured reason. This model has no bytes field, no base64 field, and
+measured reason. These models have no bytes field, no base64 field, and
 ``extra="forbid"`` so that adding one is a validation error rather than a
 silent regression.
+
+``FileRef`` is the base every kind shares; ``AudioRef`` narrows it with the
+container metadata a probe produced. Kind-specific siblings (image, video,
+document) subclass the same base as they are needed — see
+``docs-internal/media_transport.md``, which rejects one fat generic model
+because the metadata that matters differs per kind.
 """
 
 from __future__ import annotations
@@ -14,8 +20,15 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class AudioRef(BaseModel):
-    """A pointer to an audio file inside a workflow workspace.
+# The narrowing a producer may claim. ``file`` is the honest default: it
+# asserts nothing beyond "this exists in the workspace". A node that has not
+# probed the container must not claim a richer kind — a fabricated duration
+# silently mis-bills per-second providers downstream.
+FileKind = Literal["file", "audio", "image", "video", "document"]
+
+
+class FileRef(BaseModel):
+    """A pointer to a file inside a workflow workspace.
 
     Serializes to roughly 400 bytes, i.e. about 5,200 refs before
     approaching Temporal's 2 MiB error limit -- the envelope is
@@ -24,10 +37,12 @@ class AudioRef(BaseModel):
     ``path`` is workspace-**relative** POSIX, never an absolute host path.
     Absolute paths embed the mutable workflow slug, leak the operator's
     home directory into the database / WebSocket broadcasts / LLM context,
-    and cannot be safely turned into an HTTP URL.
+    and cannot be safely turned into an HTTP URL. A leading slash is also
+    not merely cosmetic: ``resolve_media`` treats it as absolute on POSIX
+    (and not on Windows), so the wrong shape fails only in production.
     """
 
-    kind: Literal["audio"] = "audio"
+    kind: FileKind = "file"
 
     path: str = Field(
         description="Workspace-relative POSIX path, no leading slash "
@@ -40,14 +55,10 @@ class AudioRef(BaseModel):
 
     filename: str = Field(description="Display name. Never used for resolution.")
     mime_type: str = "application/octet-stream"
-    format: str = Field(default="", description="Container/codec: wav, mp3, opus, ...")
     size_bytes: int = 0
 
-    # None whenever the container could not be inspected. Never guessed --
-    # a fabricated duration would silently mis-bill per-second providers.
-    duration_seconds: Optional[float] = None
-    sample_rate: Optional[int] = None
-    channels: Optional[int] = None
+    # ISO 8601. Advisory only -- a listing snapshot, not a cache key.
+    modified_at: Optional[str] = None
 
     sha256: Optional[str] = None
 
@@ -59,4 +70,23 @@ class AudioRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-__all__ = ["AudioRef"]
+class AudioRef(FileRef):
+    """A :class:`FileRef` whose container has actually been probed.
+
+    Only set ``kind="audio"`` when the duration/rate fields come from
+    :func:`services.media.inspect.inspect_audio`. Guessing the kind from a
+    file extension is what ``FileRef`` is for.
+    """
+
+    kind: Literal["audio"] = "audio"
+
+    format: str = Field(default="", description="Container/codec: wav, mp3, opus, ...")
+
+    # None whenever the container could not be inspected. Never guessed --
+    # a fabricated duration would silently mis-bill per-second providers.
+    duration_seconds: Optional[float] = None
+    sample_rate: Optional[int] = None
+    channels: Optional[int] = None
+
+
+__all__ = ["AudioRef", "FileKind", "FileRef"]

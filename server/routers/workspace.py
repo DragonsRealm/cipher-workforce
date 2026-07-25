@@ -26,7 +26,6 @@ import hashlib
 import mimetypes
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path as PathParam, UploadFile
 from fastapi.responses import FileResponse
@@ -34,7 +33,6 @@ from fastapi.responses import FileResponse
 from core.container import container
 from core.database import Database
 from core.logging import get_logger
-from core.paths import workspaces_dir
 from services.media import MEDIA_MAX_UPLOAD_BYTES, AudioRef, write_audio
 from services.media.workspace import UPLOAD_SUBDIR
 
@@ -64,19 +62,14 @@ def _db() -> Database:
 async def _workspace_root(workflow_id: str, database: Database) -> Path:
     """Resolve a workflow id to its on-disk workspace directory.
 
-    Mirrors ``WorkflowService._resolve_workflow_slug`` including the
-    ``"default"`` fallback, which is the anonymous workspace a one-off run
-    without a saved row writes into.
+    Delegates to :mod:`services.workspace_locator`, which owns the id->slug
+    translation for every consumer. Both routes here are reads, so the
+    ``"default"`` fallback (the anonymous workspace a one-off run without a
+    saved row writes into) stays enabled.
     """
-    slug: Optional[str] = None
-    try:
-        workflow = await database.get_workflow(workflow_id)
-        slug = getattr(workflow, "slug", None) if workflow else None
-    except Exception as exc:
-        logger.warning(
-            "workspace slug lookup failed", workflow_id=workflow_id, error=str(exc)
-        )
-    return workspaces_dir() / (slug or "default")
+    from services.workspace_locator import resolve_workspace_root
+
+    return await resolve_workspace_root(workflow_id, database)
 
 
 def _resolve(root: Path, rel_path: str) -> Path:
