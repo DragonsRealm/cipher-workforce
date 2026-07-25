@@ -35,6 +35,7 @@ from __future__ import annotations
 from services.deployment.canary_registry import register_canary_trigger_type
 from services.event_waiter import register_filter_builder, register_trigger_precheck
 from services.node_output_schemas import register_output_schema
+from services.plugin.shutdown_hooks import register_shutdown_hook
 from services.status_broadcaster import register_service_refresh
 from services.ws_handler_registry import register_ws_handlers
 
@@ -68,6 +69,29 @@ register_output_schema("telegramSend", TelegramSendOutput)
 # so the legacy path stays default. See
 # services/deployment/canary_registry.py.
 register_canary_trigger_type(TelegramReceiveNode.type, "com.opencompany.telegram.message.received")
+
+
+async def _shutdown_telegram() -> None:
+    """Release the getUpdates slot before the process exits.
+
+    Telegram allows exactly one getUpdates consumer per bot token and keeps
+    an in-flight long poll reserved until it times out — up to the 30s read
+    timeout ``connect()`` configures. Without this hook the polling task was
+    never cancelled and ``Application.stop()`` never ran: the process simply
+    died holding the slot, so the next start collided with its own predecessor
+    and logged a Conflict for the remainder of the drain window. Restarts are
+    frequent in dev (uvicorn --reload), which made it look like a permanent
+    second instance.
+
+    Only helps on graceful teardown; a hard kill still leaves Telegram to time
+    the poll out. ``disconnect()`` is a no-op when nothing is connected.
+    """
+    service = get_telegram_service()
+    if service.connected:
+        await service.disconnect()
+
+
+register_shutdown_hook("telegram", _shutdown_telegram)
 
 __all__ = [
     "TelegramCredential",

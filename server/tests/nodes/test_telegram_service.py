@@ -501,6 +501,55 @@ def test_transient_and_fatal_polling_messages_are_distinguishable():
     assert "bot disconnected" not in callback_src
 
 
+# ---------------------------------------------------------------------------
+# shutdown: release the getUpdates slot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hook_releases_the_polling_slot(monkeypatch):
+    """Telegram reserves the single getUpdates slot until an in-flight long
+    poll times out (~30s). Without a shutdown hook the process died holding
+    it, so the next start collided with its own predecessor and logged a
+    Conflict for the whole drain window.
+    """
+    import nodes.telegram as tg
+    from services.plugin.shutdown_hooks import run_shutdown_hooks
+
+    service = MagicMock()
+    service.connected = True
+    service.disconnect = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(tg, "get_telegram_service", lambda: service)
+
+    await run_shutdown_hooks()
+
+    service.disconnect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hook_is_a_noop_when_not_connected(monkeypatch):
+    import nodes.telegram as tg
+    from services.plugin.shutdown_hooks import run_shutdown_hooks
+
+    service = MagicMock()
+    service.connected = False
+    service.disconnect = AsyncMock()
+    monkeypatch.setattr(tg, "get_telegram_service", lambda: service)
+
+    await run_shutdown_hooks()
+
+    service.disconnect.assert_not_awaited()
+
+
+def test_telegram_registers_a_shutdown_hook():
+    """Locks the registration itself — the hook body being correct is
+    useless if nobody wires it into lifespan teardown."""
+    import nodes.telegram  # noqa: F401  (import registers)
+    from services.plugin.shutdown_hooks import registered_labels
+
+    assert "telegram" in registered_labels()
+
+
 def test_media_content_types_covers_every_downloadable_kind():
     assert _MEDIA_CONTENT_TYPES == {
         "photo",
