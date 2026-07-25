@@ -28,79 +28,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Send-method dispatch table -- replaces the long if/elif chain that was
-# previously inlined in handle_telegram_send.
-# ---------------------------------------------------------------------------
-
-
-def _send_text(svc, data, parse_mode):
-    text = data.get("text")
-    if not text:
-        return None, "text required for text message"
-    return svc.send_message(
-        chat_id=data["chat_id"],
-        text=text,
-        parse_mode=parse_mode,
-    ), None
-
-
-def _send_photo(svc, data, parse_mode):
-    photo_url = data.get("media_url")
-    if not photo_url:
-        return None, "media_url required for photo"
-    return svc.send_photo(
-        chat_id=data["chat_id"],
-        photo=photo_url,
-        caption=data.get("caption"),
-        parse_mode=parse_mode,
-    ), None
-
-
-def _send_document(svc, data, parse_mode):
-    doc_url = data.get("media_url")
-    if not doc_url:
-        return None, "media_url required for document"
-    return svc.send_document(
-        chat_id=data["chat_id"],
-        document=doc_url,
-        caption=data.get("caption"),
-        parse_mode=parse_mode,
-    ), None
-
-
-def _send_location(svc, data, parse_mode):
-    lat, lon = data.get("latitude"), data.get("longitude")
-    if lat is None or lon is None:
-        return None, "latitude and longitude required"
-    return svc.send_location(
-        chat_id=data["chat_id"],
-        latitude=float(lat),
-        longitude=float(lon),
-    ), None
-
-
-def _send_contact(svc, data, parse_mode):
-    phone, first_name = data.get("phone_number"), data.get("first_name")
-    if not phone or not first_name:
-        return None, "phone_number and first_name required"
-    return svc.send_contact(
-        chat_id=data["chat_id"],
-        phone_number=phone,
-        first_name=first_name,
-        last_name=data.get("last_name"),
-    ), None
-
-
-_SEND_DISPATCH: Dict[str, Callable] = {
-    "text": _send_text,
-    "photo": _send_photo,
-    "document": _send_document,
-    "location": _send_location,
-    "contact": _send_contact,
-}
-
-
-# ---------------------------------------------------------------------------
 # Handlers — one per `telegram_*` WebSocket message type.
 # ---------------------------------------------------------------------------
 
@@ -133,21 +60,26 @@ async def handle_telegram_send(data: Dict[str, Any], websocket: WebSocket) -> Di
     ``{success: False, error: str(e)}`` automatically. Early-return
     validation stays since those are deterministic input checks.
     """
+    from pydantic import ValidationError
+
+    from ._send import perform_send
+    from .telegram_send import TelegramSendParams
+
     service = get_telegram_service()
     if not service.connected:
         return {"success": False, "error": "Telegram bot not connected"}
     if not data.get("chat_id"):
         return {"success": False, "error": "chat_id required"}
 
-    message_type = data.get("message_type", "text")
-    dispatch = _SEND_DISPATCH.get(message_type)
-    if dispatch is None:
-        return {"success": False, "error": f"Unsupported message type: {message_type}"}
+    # Validate through the node's own Params model so this path enforces the
+    # same contract as the workflow node — and honours ``silent`` /
+    # ``reply_to_message_id``, which the previous hand-rolled dispatch dropped.
+    try:
+        params = TelegramSendParams.model_validate(data)
+    except ValidationError as exc:
+        return {"success": False, "error": f"Invalid parameters: {exc}"}
 
-    coro_or_none, err = dispatch(service, data, data.get("parse_mode"))
-    if err:
-        return {"success": False, "error": err}
-    result = await coro_or_none
+    result = await perform_send(service, data["chat_id"], params)
     return {"success": True, "result": result}
 
 

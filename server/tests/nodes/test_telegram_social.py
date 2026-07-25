@@ -213,6 +213,73 @@ class TestTelegramSend:
         harness.assert_envelope(result, success=False)
         assert "invalid parameters" in result["error"].lower()
 
+    async def test_sent_flag_is_emitted_on_success(self, harness):
+        """``sent`` was declared on the Output model but never populated, so
+        ``exclude_unset=True`` meant the data picker advertised a phantom
+        field. It must now appear in the payload."""
+        svc = _make_telegram_service(connected=True, owner_chat_id=9999)
+
+        with _patch_telegram_service(svc):
+            result = await harness.execute(
+                "telegramSend",
+                {"recipient_type": "self", "message_type": "text", "text": "hello"},
+            )
+
+        harness.assert_envelope(result, success=True)
+        assert result["result"]["sent"] is True
+
+    async def test_multipart_send_reports_the_whole_chain(self, harness):
+        """A text over 4096 becomes several Telegram messages; the caller
+        needs every id, not just the first."""
+        svc = _make_telegram_service(connected=True, owner_chat_id=1)
+        svc.send_message = AsyncMock(
+            return_value={
+                "message_id": 42,
+                "chat_id": 111,
+                "date": "2026-04-15T00:00:00",
+                "text": "hi",
+                "parts": 3,
+                "message_ids": [42, 43, 44],
+            }
+        )
+
+        with _patch_telegram_service(svc):
+            result = await harness.execute(
+                "telegramSend",
+                {"recipient_type": "self", "message_type": "text", "text": "x" * 9000},
+            )
+
+        payload = result["result"]
+        assert payload["parts"] == 3
+        assert payload["message_ids"] == [42, 43, 44]
+
+    async def test_caption_spill_surfaces_on_the_output(self, harness):
+        svc = _make_telegram_service(connected=True, owner_chat_id=1)
+        svc.send_photo = AsyncMock(
+            return_value={
+                "message_id": 43,
+                "chat_id": 111,
+                "date": "2026-04-15T00:00:00",
+                "caption_truncated": True,
+                "follow_up_message_ids": [44],
+            }
+        )
+
+        with _patch_telegram_service(svc):
+            result = await harness.execute(
+                "telegramSend",
+                {
+                    "recipient_type": "self",
+                    "message_type": "photo",
+                    "media_url": "https://example.com/a.jpg",
+                    "caption": "A" * 2000,
+                },
+            )
+
+        payload = result["result"]
+        assert payload["caption_truncated"] is True
+        assert payload["follow_up_message_ids"] == [44]
+
 
 # ============================================================================
 # telegramReceive (trigger via generic handle_trigger_node + event_waiter)
@@ -294,6 +361,45 @@ class TestTelegramReceive:
         assert result["result"]["chat_id"] == 555
         # Plugin trigger calls register synchronously and awaits waiter.future.
         waiter.register.assert_called_once()
+
+    async def test_media_event_survives_the_trigger_envelope(self, harness):
+        """A voice message must reach the workflow with its normalized media
+        block intact — before this, video/audio/voice/sticker file_ids were
+        dropped entirely."""
+        svc = _make_telegram_service(connected=True, owner_chat_id=42)
+        event = {
+            **self.CANNED,
+            "text": "",
+            "content_type": "voice",
+            "has_media": True,
+            "voice": {"file_id": "VOICE-1", "duration": 4, "mime_type": "audio/ogg"},
+            "media": {
+                "kind": "voice",
+                "file_id": "VOICE-1",
+                "mime_type": "audio/ogg",
+                "file_name": "uv.ogg",
+                "duration": 4,
+                "file_path": None,
+                "downloaded": False,
+            },
+        }
+        waiter = _make_waiter_stub(canned_event=event)
+
+        with _patch_telegram_service(svc), patched_broadcaster(), patch("services.event_waiter", waiter):
+            result = await harness.execute(
+                "telegramReceive",
+                {"sender_filter": "all", "content_type_filter": "media"},
+            )
+
+        harness.assert_envelope(result, success=True)
+        payload = result["result"]
+        assert payload["content_type"] == "voice"
+        assert payload["media"]["file_id"] == "VOICE-1"
+        assert payload["media"]["kind"] == "voice"
+        assert payload["has_media"] is True
+        # The trigger never carries bytes.
+        assert payload["media"]["file_path"] is None
+        assert payload["media"]["downloaded"] is False
 
     async def test_bot_not_connected_returns_error(self, harness):
         svc = _make_telegram_service(connected=False)

@@ -74,7 +74,13 @@ def build_telegram_filter(params: Dict) -> Callable[[Dict], bool]:
             return None
 
     def matches(m: Dict) -> bool:
-        if content_type_filter != "all":
+        if content_type_filter == "media":
+            # Any message carrying a downloadable file, regardless of kind.
+            from ._service import _MEDIA_CONTENT_TYPES
+
+            if m.get("content_type", "") not in _MEDIA_CONTENT_TYPES:
+                return False
+        elif content_type_filter != "all":
             if m.get("content_type", "") != content_type_filter:
                 return False
 

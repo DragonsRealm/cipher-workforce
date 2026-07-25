@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import os
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -68,37 +69,289 @@ _TG_TEXT_LIMIT = 4096
 _TG_CAPTION_LIMIT = 1024
 
 
+def _tg_len(text: str) -> int:
+    """Length as Telegram counts it: UTF-16 code units, not code points.
+
+    The Bot API measures its 4096 / 1024 caps in UTF-16 units, so an emoji
+    costs 2 and Python's ``len()`` under-counts. A 1024-code-point caption of
+    emoji is rejected as "caption is too long" even though ``len()`` says it
+    fits. See https://core.telegram.org/api/entities.
+    """
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _split_head(text: str, limit: int) -> tuple[str, str]:
+    """Split off the first <=``limit`` chunk at the cleanest boundary.
+
+    Returns ``(head, tail)``; ``tail`` is ``""`` when the whole text fits.
+    Prefers paragraph -> line -> sentence -> space breaks found past the
+    halfway mark so we don't leave tiny tail chunks, else cuts hard.
+    """
+    if _tg_len(text) <= limit:
+        return text, ""
+
+    # Start from a code-point slice, then shrink until it fits in UTF-16
+    # units too (an all-emoji window is twice as long as it looks).
+    window = text[:limit]
+    while window and _tg_len(window) > limit:
+        window = window[: len(window) - (_tg_len(window) - limit)]
+
+    cut = -1
+    for sep in ("\n\n", "\n", ". ", "! ", "? ", " "):
+        idx = window.rfind(sep)
+        if idx > limit // 2:
+            cut = idx + len(sep)
+            break
+    if cut <= 0:
+        # No clean break -- hard cut at the end of the fitted window.
+        cut = len(window)
+    return text[:cut].rstrip(), text[cut:].lstrip()
+
+
 def _split_text(text: str, limit: int) -> list[str]:
-    """Split ``text`` into chunks no longer than ``limit`` characters,
+    """Split ``text`` into chunks no longer than ``limit`` UTF-16 units,
     preferring paragraph -> line -> sentence -> space boundaries before
     falling back to a hard cut. Used for Telegram's 4096 / 1024 caps.
 
     Pure stdlib, no regex outside ``str`` ops -- the splitting heuristic
     should stay legible.
     """
-    if len(text) <= limit:
+    if _tg_len(text) <= limit:
         return [text]
 
     chunks: list[str] = []
     remaining = text
-    while len(remaining) > limit:
-        # Search for a clean break point in the last ~25% of the window
-        # so we don't end up with tiny tail chunks.
-        window = remaining[:limit]
-        cut = -1
-        for sep in ("\n\n", "\n", ". ", "! ", "? ", " "):
-            idx = window.rfind(sep)
-            if idx > limit // 2:
-                cut = idx + len(sep)
-                break
-        if cut <= 0:
-            # No clean break -- hard cut at the limit.
-            cut = limit
-        chunks.append(remaining[:cut].rstrip())
-        remaining = remaining[cut:].lstrip()
+    while _tg_len(remaining) > limit:
+        head, remaining = _split_head(remaining, limit)
+        chunks.append(head)
     if remaining:
         chunks.append(remaining)
     return chunks
+
+
+# Inbound content-type probes, in priority order.
+#
+# ORDER IS LOAD-BEARING: Telegram sets ``message.document`` on animation
+# messages (an animation *is* a document carrying an extra ``animation``
+# field), so probing ``document`` first misclassifies every GIF. Same for
+# video_note vs video. Probe the most specific object first.
+_CONTENT_PROBES: tuple[tuple[str, Callable[[Any], Any]], ...] = (
+    ("photo", lambda m: m.photo),
+    ("animation", lambda m: getattr(m, "animation", None)),
+    ("video_note", lambda m: getattr(m, "video_note", None)),
+    ("video", lambda m: m.video),
+    ("voice", lambda m: m.voice),
+    ("audio", lambda m: m.audio),
+    ("sticker", lambda m: m.sticker),
+    ("document", lambda m: m.document),
+    ("location", lambda m: m.location),
+    ("contact", lambda m: m.contact),
+    ("poll", lambda m: m.poll),
+)
+
+# Media kinds — the subset of content types that carry a downloadable file.
+_MEDIA_CONTENT_TYPES = frozenset(
+    {"photo", "animation", "video_note", "video", "voice", "audio", "sticker", "document"}
+)
+
+
+def _detect_content_type(msg: Any) -> str:
+    for name, probe in _CONTENT_PROBES:
+        try:
+            if probe(msg):
+                return name
+        except AttributeError:
+            continue
+    return "text"
+
+
+# Per-type detail extraction. Deliberately scalar-only: no thumbnails, no
+# PhotoSize arrays, no vcard blobs. Node results are amplified ~5x (Temporal
+# payload -> WS broadcast -> 3 DB keys -> LLM conversation, replayed every
+# turn), so each dict stays 5-10 scalars, a few hundred bytes.
+_DETAIL_EXTRACTORS: Dict[str, Callable[[Any], Dict[str, Any]]] = {
+    "photo": lambda m: {
+        "file_id": m.photo[-1].file_id,
+        "file_unique_id": m.photo[-1].file_unique_id,
+        "width": m.photo[-1].width,
+        "height": m.photo[-1].height,
+        "file_size": m.photo[-1].file_size,
+    },
+    "video": lambda m: {
+        "file_id": m.video.file_id,
+        "file_unique_id": m.video.file_unique_id,
+        "width": m.video.width,
+        "height": m.video.height,
+        "duration": m.video.duration,
+        "file_name": m.video.file_name,
+        "mime_type": m.video.mime_type,
+        "file_size": m.video.file_size,
+    },
+    "animation": lambda m: {
+        "file_id": m.animation.file_id,
+        "file_unique_id": m.animation.file_unique_id,
+        "width": m.animation.width,
+        "height": m.animation.height,
+        "duration": m.animation.duration,
+        "file_name": m.animation.file_name,
+        "mime_type": m.animation.mime_type,
+        "file_size": m.animation.file_size,
+    },
+    "video_note": lambda m: {
+        "file_id": m.video_note.file_id,
+        "file_unique_id": m.video_note.file_unique_id,
+        "length": m.video_note.length,
+        "duration": m.video_note.duration,
+        "file_size": m.video_note.file_size,
+    },
+    "audio": lambda m: {
+        "file_id": m.audio.file_id,
+        "file_unique_id": m.audio.file_unique_id,
+        "duration": m.audio.duration,
+        "performer": m.audio.performer,
+        "title": m.audio.title,
+        "file_name": m.audio.file_name,
+        "mime_type": m.audio.mime_type,
+        "file_size": m.audio.file_size,
+    },
+    "voice": lambda m: {
+        "file_id": m.voice.file_id,
+        "file_unique_id": m.voice.file_unique_id,
+        "duration": m.voice.duration,
+        "mime_type": m.voice.mime_type,
+        "file_size": m.voice.file_size,
+    },
+    "sticker": lambda m: {
+        "file_id": m.sticker.file_id,
+        "file_unique_id": m.sticker.file_unique_id,
+        "width": m.sticker.width,
+        "height": m.sticker.height,
+        "emoji": m.sticker.emoji,
+        "set_name": m.sticker.set_name,
+        "is_animated": m.sticker.is_animated,
+        "is_video": m.sticker.is_video,
+        "file_size": m.sticker.file_size,
+    },
+    "document": lambda m: {
+        "file_id": m.document.file_id,
+        "file_unique_id": m.document.file_unique_id,
+        "file_name": m.document.file_name,
+        "mime_type": m.document.mime_type,
+        "file_size": m.document.file_size,
+    },
+    "location": lambda m: {
+        "latitude": m.location.latitude,
+        "longitude": m.location.longitude,
+        "horizontal_accuracy": getattr(m.location, "horizontal_accuracy", None),
+        "live_period": getattr(m.location, "live_period", None),
+    },
+    "contact": lambda m: {
+        "phone_number": m.contact.phone_number,
+        "first_name": m.contact.first_name,
+        "last_name": m.contact.last_name,
+        "user_id": m.contact.user_id,
+    },
+    "poll": lambda m: {
+        "id": m.poll.id,
+        "question": m.poll.question,
+        "options": [o.text for o in (m.poll.options or [])[:12]],
+        "type": m.poll.type,
+        "is_anonymous": m.poll.is_anonymous,
+        "allows_multiple_answers": m.poll.allows_multiple_answers,
+        "is_closed": m.poll.is_closed,
+        "total_voter_count": m.poll.total_voter_count,
+    },
+}
+
+# Telegram omits mime_type on several kinds; synthesise it so downstream
+# nodes get a usable content type without per-kind branching.
+_SYNTHETIC_MIME: Dict[str, str] = {
+    "photo": "image/jpeg",
+    "voice": "audio/ogg",
+    "video_note": "video/mp4",
+    "animation": "video/mp4",
+    "sticker": "image/webp",
+}
+_SYNTHETIC_EXT: Dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "audio/ogg": ".ogg",
+    "video/mp4": ".mp4",
+    "application/x-tgsticker": ".tgs",
+    "video/webm": ".webm",
+}
+
+
+def _normalize_media(
+    content_type: str,
+    detail: Optional[Dict[str, Any]],
+    caption: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Collapse any media kind into one type-agnostic block.
+
+    Downstream nodes and agents should never branch on content_type to find
+    a file_id — this is the single shape they read.
+    """
+    if content_type not in _MEDIA_CONTENT_TYPES or not detail:
+        return None
+
+    mime = detail.get("mime_type") or _SYNTHETIC_MIME.get(content_type)
+    if content_type == "sticker":
+        if detail.get("is_animated"):
+            mime = "application/x-tgsticker"
+        elif detail.get("is_video"):
+            mime = "video/webm"
+
+    file_name = detail.get("file_name")
+    if not file_name:
+        ext = _SYNTHETIC_EXT.get(mime or "") or mimetypes.guess_extension(mime or "") or ".bin"
+        file_name = f"{detail.get('file_unique_id') or content_type}{ext}"
+
+    return {
+        "kind": content_type,
+        "file_id": detail.get("file_id"),
+        "file_unique_id": detail.get("file_unique_id"),
+        "mime_type": mime,
+        "file_name": file_name,
+        "file_size": detail.get("file_size"),
+        "duration": detail.get("duration"),
+        "width": detail.get("width"),
+        "height": detail.get("height"),
+        "caption": caption or "",
+        # Populated only by an explicit download; the trigger never fetches
+        # bytes and never carries base64.
+        "file_path": None,
+        "downloaded": False,
+    }
+
+
+def _summarize_reply_to(replied: Any) -> Optional[Dict[str, Any]]:
+    """Bounded summary of the message being replied to.
+
+    Without this an agent sees a bare ``reply_to_message_id`` it cannot act
+    on — "transcribe this" / "summarise this" needs the quoted media.
+    """
+    if replied is None:
+        return None
+    content_type = _detect_content_type(replied)
+    summary: Dict[str, Any] = {
+        "message_id": replied.message_id,
+        "content_type": content_type,
+        "text": ((replied.text or replied.caption or "")[:500]),
+    }
+    extractor = _DETAIL_EXTRACTORS.get(content_type)
+    if extractor is not None and content_type in _MEDIA_CONTENT_TYPES:
+        try:
+            detail = extractor(replied)
+            summary["media"] = {
+                "kind": content_type,
+                "file_id": detail.get("file_id"),
+                "mime_type": detail.get("mime_type") or _SYNTHETIC_MIME.get(content_type),
+            }
+        except Exception:  # noqa: BLE001
+            pass
+    return summary
 
 
 class TelegramService(ServiceSingleton):
@@ -488,25 +741,7 @@ class TelegramService(ServiceSingleton):
 
     def _format_message(self, msg) -> Dict[str, Any]:
         """Format Telegram message to unified event data."""
-        content_type = "text"
-        if msg.photo:
-            content_type = "photo"
-        elif msg.video:
-            content_type = "video"
-        elif msg.audio:
-            content_type = "audio"
-        elif msg.voice:
-            content_type = "voice"
-        elif msg.document:
-            content_type = "document"
-        elif msg.sticker:
-            content_type = "sticker"
-        elif msg.location:
-            content_type = "location"
-        elif msg.contact:
-            content_type = "contact"
-        elif msg.poll:
-            content_type = "poll"
+        content_type = _detect_content_type(msg)
 
         data = {
             "message_id": msg.message_id,
@@ -518,40 +753,36 @@ class TelegramService(ServiceSingleton):
             "from_first_name": msg.from_user.first_name if msg.from_user else None,
             "from_last_name": msg.from_user.last_name if msg.from_user else None,
             "is_bot": msg.from_user.is_bot if msg.from_user else False,
+            # ``text`` keeps its historical caption fallback: workflows read it
+            # on photo messages. ``caption`` below is additive, never a swap.
             "text": msg.text or msg.caption or "",
+            "caption": msg.caption or "",
             "content_type": content_type,
             "date": msg.date.isoformat() if msg.date else datetime.now().isoformat(),
             "reply_to_message_id": msg.reply_to_message.message_id if msg.reply_to_message else None,
+            # Album correlation: several media messages sharing this id were
+            # sent as one album.
+            "media_group_id": getattr(msg, "media_group_id", None),
         }
 
-        if msg.photo:
-            photo = msg.photo[-1]
-            data["photo"] = {
-                "file_id": photo.file_id,
-                "file_unique_id": photo.file_unique_id,
-                "width": photo.width,
-                "height": photo.height,
-                "file_size": photo.file_size,
-            }
-        elif msg.document:
-            data["document"] = {
-                "file_id": msg.document.file_id,
-                "file_name": msg.document.file_name,
-                "mime_type": msg.document.mime_type,
-                "file_size": msg.document.file_size,
-            }
-        elif msg.location:
-            data["location"] = {
-                "latitude": msg.location.latitude,
-                "longitude": msg.location.longitude,
-            }
-        elif msg.contact:
-            data["contact"] = {
-                "phone_number": msg.contact.phone_number,
-                "first_name": msg.contact.first_name,
-                "last_name": msg.contact.last_name,
-                "user_id": msg.contact.user_id,
-            }
+        extractor = _DETAIL_EXTRACTORS.get(content_type)
+        if extractor is not None:
+            try:
+                data[content_type] = extractor(msg)
+            except Exception as exc:  # noqa: BLE001
+                # A malformed/partial payload from one message must never stop
+                # the event reaching its workflow.
+                logger.warning(
+                    "[Telegram] Could not extract %s details: %s", content_type, exc
+                )
+
+        media = _normalize_media(content_type, data.get(content_type), msg.caption)
+        data["media"] = media
+        data["has_media"] = media is not None
+
+        reply_to = _summarize_reply_to(getattr(msg, "reply_to_message", None))
+        if reply_to is not None:
+            data["reply_to"] = reply_to
         return data
 
     async def _broadcast_status(self):
@@ -685,6 +916,75 @@ class TelegramService(ServiceSingleton):
             "message_ids": message_ids,
         }
 
+    async def _send_captioned_media(
+        self,
+        method: Callable[..., Awaitable[Any]],
+        *,
+        media_kw: str,
+        media: Any,
+        caption: Optional[str],
+        parse_mode: Optional[str],
+        chat_id: str | int,
+        disable_notification: bool = False,
+        reply_to_message_id: Optional[int] = None,
+        **extras: Any,
+    ) -> Dict[str, Any]:
+        """Send one media message, spilling an over-long caption.
+
+        Telegram caps captions at 1024 UTF-16 units and rejects the whole
+        send with BadRequest("Message caption is too long") past that. We
+        truncate at the cap and thread the remainder underneath as a reply,
+        so the content is never silently lost — the behaviour the limit
+        constants above have documented since they were introduced.
+
+        Ordering matters: the caption is split while still **raw**, before
+        ``_resolve_body`` converts markdown to HTML. Splitting after
+        conversion could cut a ``<b>`` from its closing tag and produce
+        BadRequest("can't find end of the entity"). Telegram measures the
+        cap against entity-parsed text, so truncating the raw markdown is
+        conservative and can never come out over-long.
+        """
+        head, tail = _split_head(caption, _TG_CAPTION_LIMIT) if caption else ("", "")
+        if tail:
+            logger.info(
+                "[Telegram] Caption is %d units (cap %d) — remainder threaded as a follow-up",
+                _tg_len(caption or ""),
+                _TG_CAPTION_LIMIT,
+            )
+
+        msg = await self._send_with_parse_fallback(
+            method,
+            body_kw="caption",
+            body=head or None,
+            parse_mode=parse_mode,
+            chat_id=chat_id,
+            **{media_kw: media},
+            disable_notification=disable_notification,
+            reply_to_message_id=reply_to_message_id,
+            **extras,
+        )
+
+        follow_up_ids: list[int] = []
+        if tail:
+            # send_message already chunks at 4096 and chains replies, so a
+            # very long remainder threads under itself correctly.
+            spill = await self.send_message(
+                chat_id=chat_id,
+                text=tail,
+                parse_mode=parse_mode,
+                disable_notification=True,  # one notification per logical message
+                reply_to_message_id=msg.message_id,
+            )
+            follow_up_ids = list(spill.get("message_ids") or [])
+
+        return {
+            "message_id": msg.message_id,
+            "chat_id": msg.chat.id,
+            "date": msg.date.isoformat(),
+            "caption_truncated": bool(tail),
+            "follow_up_message_ids": follow_up_ids,
+        }
+
     async def send_photo(
         self,
         chat_id: str | int,
@@ -695,21 +995,16 @@ class TelegramService(ServiceSingleton):
         reply_to_message_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         bot = self._require_bot()
-        msg = await self._send_with_parse_fallback(
+        return await self._send_captioned_media(
             bot.send_photo,
-            body_kw="caption",
-            body=caption,
+            media_kw="photo",
+            media=photo,
+            caption=caption,
             parse_mode=parse_mode,
             chat_id=chat_id,
-            photo=photo,
             disable_notification=disable_notification,
             reply_to_message_id=reply_to_message_id,
         )
-        return {
-            "message_id": msg.message_id,
-            "chat_id": msg.chat.id,
-            "date": msg.date.isoformat(),
-        }
 
     async def send_document(
         self,
@@ -721,21 +1016,16 @@ class TelegramService(ServiceSingleton):
         reply_to_message_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         bot = self._require_bot()
-        msg = await self._send_with_parse_fallback(
+        return await self._send_captioned_media(
             bot.send_document,
-            body_kw="caption",
-            body=caption,
+            media_kw="document",
+            media=document,
+            caption=caption,
             parse_mode=parse_mode,
             chat_id=chat_id,
-            document=document,
             disable_notification=disable_notification,
             reply_to_message_id=reply_to_message_id,
         )
-        return {
-            "message_id": msg.message_id,
-            "chat_id": msg.chat.id,
-            "date": msg.date.isoformat(),
-        }
 
     async def send_location(
         self,

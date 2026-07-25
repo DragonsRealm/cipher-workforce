@@ -9,7 +9,7 @@ converts to a declarative ``TelegramCredential``.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -147,6 +147,18 @@ class TelegramSendOutput(BaseModel):
     message_id: Optional[int] = None
     chat_id: Optional[int] = None
     sent: Optional[bool] = None
+    # ``message_type`` and ``date`` were always returned but never declared,
+    # surviving only via ``extra="allow"``. Declaring them makes them visible
+    # in the frontend data picker; the runtime payload is unchanged.
+    message_type: Optional[str] = None
+    date: Optional[str] = None
+    # Populated when one logical send became several Telegram messages:
+    # text over the 4096 cap, or a caption over 1024 whose remainder was
+    # threaded underneath as a follow-up.
+    parts: Optional[int] = None
+    message_ids: Optional[List[int]] = None
+    caption_truncated: Optional[bool] = None
+    follow_up_message_ids: Optional[List[int]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -183,97 +195,31 @@ class TelegramSendNode(ActionNode):
                 "Telegram bot not connected. Add bot token in Credentials.",
             )
 
-        if params.recipient_type == "self":
-            chat_id = service.owner_chat_id
-            if not chat_id:
-                try:
-                    from services.plugin.deps import get_auth_service
+        # Validation + dispatch live in _send.py so the WebSocket command path
+        # cannot drift from this one.
+        from ._send import perform_send, resolve_chat_id
 
-                    saved = await get_auth_service().get_api_key("telegram_owner_chat_id")
-                    if saved:
-                        owner_id = int(saved)
-                        await service.set_owner(owner_id)
-                        chat_id = owner_id
-                        log.info(f"[Telegram] Owner restored from credentials: {owner_id}")
-                except Exception as e:
-                    log.warning(f"[Telegram] Failed to restore owner: {e}")
-            if not chat_id:
-                raise RuntimeError(
-                    "Bot owner not detected. Send any private message to your bot "
-                    "on Telegram to auto-detect, or set TELEGRAM_OWNER_CHAT_ID in .env",
-                )
-        else:
-            chat_id = params.chat_id
-            if not chat_id:
-                raise RuntimeError("chat_id is required")
-
-        # Empty string = no parse mode (Python None); other values pass through
-        # so the TelegramService can handle "Auto" and the formal parse modes.
-        parse_mode = params.parse_mode or None
-        reply_to = int(params.reply_to_message_id) if params.reply_to_message_id else None
-
-        common = dict(
-            chat_id=chat_id,
-            disable_notification=params.silent,
-            reply_to_message_id=reply_to,
-        )
+        chat_id = await resolve_chat_id(service, params)
         mt = params.message_type
-        if mt == "text":
-            if not params.text:
-                raise RuntimeError("text is required for text message")
-            result = await service.send_message(
-                text=params.text,
-                parse_mode=parse_mode,
-                **common,
-            )
-        elif mt == "photo":
-            if not params.media_url:
-                raise RuntimeError("media_url is required for photo message")
-            result = await service.send_photo(
-                photo=params.media_url,
-                caption=params.caption or None,
-                parse_mode=parse_mode,
-                **common,
-            )
-        elif mt == "document":
-            if not params.media_url:
-                raise RuntimeError("media_url is required for document message")
-            result = await service.send_document(
-                document=params.media_url,
-                caption=params.caption or None,
-                parse_mode=parse_mode,
-                **common,
-            )
-        elif mt == "location":
-            if params.latitude is None or params.longitude is None:
-                raise RuntimeError(
-                    "latitude and longitude are required for location message",
-                )
-            result = await service.send_location(
-                latitude=float(params.latitude),
-                longitude=float(params.longitude),
-                **common,
-            )
-        elif mt == "contact":
-            if not params.phone_number or not params.first_name:
-                raise RuntimeError(
-                    "phone_number and first_name are required for contact message",
-                )
-            result = await service.send_contact(
-                phone_number=params.phone_number,
-                first_name=params.first_name,
-                last_name=params.last_name or None,
-                **common,
-            )
-        else:
-            raise RuntimeError(f"Unsupported message type: {mt}")
+        result = await perform_send(service, chat_id, params)
 
         log.info(
             f"[Telegram] Message sent: type={mt}, chat={chat_id}, " f"msg_id={result.get('message_id')}",
         )
-        return {
+        # ``sent`` has been declared on TelegramSendOutput since the node was
+        # written but was never populated, and ``_serialize_result`` dumps with
+        # ``exclude_unset=True`` — so the data picker advertised a field that
+        # never materialised. Emit it.
+        payload = {
             "message_id": result.get("message_id"),
             "chat_id": result.get("chat_id"),
             "message_type": mt,
             "date": result.get("date"),
+            "sent": True,
         }
+        # Multi-part sends (text over 4096, or a caption that spilled into a
+        # threaded follow-up) report the whole chain, not just the first id.
+        for key in ("parts", "message_ids", "caption_truncated", "follow_up_message_ids"):
+            if key in result:
+                payload[key] = result[key]
+        return payload
