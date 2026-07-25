@@ -526,6 +526,8 @@ Frontend does **not** declare output shapes anymore. The backend owns them exclu
 
 **Adding a new node type's output shape:** define a Pydantic model in `node_output_schemas.py`, register it in `NODE_OUTPUT_SCHEMAS`. The frontend picks it up automatically — no client change, no rebuild. Research and rationale in [docs-internal/schema_source_of_truth_rfc.md](./schema_source_of_truth_rfc.md).
 
+**`jsonSchemaToShape` must resolve Pydantic's indirection.** `model_json_schema()` does not emit a flat `{field: {type}}` map: `Optional[X]` becomes `{anyOf: [<X>, {type: 'null'}]}` with **no top-level `type`**, and a nested `BaseModel` becomes `{$ref: '#/$defs/Name'}` with the body in `$defs`. A reader that only inspects `prop.type` types both as `'any'`. Since every field on the trigger output models is Optional, that mistyped *every* field and left nested blocks (`telegramReceive.media`, `whatsappReceive.group_info`) with no drillable leaves — the useful drag target is `media.file_id`, not `media`. `resolveSchemaNode` unwraps unions (first non-null branch) and follows local `#/$defs/` pointers, threading the expanded-ref chain through the mutual recursion so a self-referencing model cannot recurse until the stack blows and takes the panel with it. Locked by [jsonSchemaToShape.test.ts](../client/src/components/parameterPanel/__tests__/jsonSchemaToShape.test.ts).
+
 ### Renderer registry shape (Phase 6 — pending)
 
 When the backend `get_node_spec` handler lands, the inspector will own a 4-file colocated layout under `client/src/components/inspector/`:

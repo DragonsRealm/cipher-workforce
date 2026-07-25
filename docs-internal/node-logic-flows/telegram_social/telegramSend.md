@@ -3,8 +3,8 @@
 | Field | Value |
 |------|-------|
 | **Category** | social (workflow-only) |
-| **Backend handler** | [`server/nodes/telegram/telegram_send.py`](../../../server/nodes/telegram/telegram_send.py) (`TelegramSendNode`); dispatch via `BaseNode.execute()` -> `@Operation("send")` |
-| **Tests** | [`server/tests/nodes/test_telegram_social.py`](../../../server/tests/nodes/test_telegram_social.py) |
+| **Backend handler** | [`server/nodes/telegram/telegram_send.py`](../../../server/nodes/telegram/telegram_send.py) (`TelegramSendNode`); dispatch via `BaseNode.execute()` -> `@Operation("send")` -> [`_send.py`](../../../server/nodes/telegram/_send.py) (`resolve_chat_id` + `perform_send`) |
+| **Tests** | [`server/tests/nodes/test_telegram_social.py`](../../../server/tests/nodes/test_telegram_social.py) (node level), [`test_telegram_service.py`](../../../server/tests/nodes/test_telegram_service.py) (service level: split / caption spill) |
 | **Skill (if any)** | none |
 | **Dual-purpose tool** | no - group is `("social",)` only; `usable_as_tool` not set (AI-tool exposure was dropped in Wave 11) |
 
@@ -12,9 +12,16 @@
 
 Send text, photo, document, location, or contact messages through a connected
 Telegram bot (python-telegram-bot v22.x). The node leans on the `TelegramService`
-singleton for the actual Bot API calls; the `send` operation only does recipient
-resolution, parameter validation, and envelope packaging. The operation body is
-inlined directly in the plugin file (no `handlers/telegram.py` shim).
+singleton for the actual Bot API calls; the `send` operation only resolves the
+recipient and packages the envelope.
+
+**Validation and message-type dispatch live in [`_send.py`](../../../server/nodes/telegram/_send.py)**,
+not in the operation body. The direct WebSocket command
+(`_handlers.py::handle_telegram_send`) routes through the same `perform_send`,
+so the two entry points cannot diverge. They previously carried independent
+copies and had already drifted — the socket path never forwarded `silent` or
+`reply_to_message_id`. Dispatch is a table keyed by message type, so adding a
+type is one entry plus one `Literal` member rather than a branch in two files.
 
 ## Inputs (handles)
 
@@ -49,17 +56,31 @@ inlined directly in the plugin file (no `handlers/telegram.py` shim).
 
 ### Output payload
 
-The operation returns this dict (validated against `TelegramSendOutput`, which
-declares `message_id` / `chat_id` / `sent` and `extra="allow"`):
+The operation returns this dict (validated against `TelegramSendOutput`,
+`extra="allow"`):
 
 ```ts
 {
-  message_id: number;
+  message_id: number;              // first message when the send became several
   chat_id: number;
   message_type: 'text' | 'photo' | 'document' | 'location' | 'contact';
-  date: string; // ISO timestamp from Telegram
+  date: string;                    // ISO timestamp from Telegram
+  sent: true;
+
+  // Present only when one logical send became several Telegram messages.
+  parts?: number;                  // text over 4096 -> chunk count
+  message_ids?: number[];          // every id in the chunk chain
+  caption_truncated?: boolean;     // caption over 1024 spilled
+  follow_up_message_ids?: number[];// ids of the threaded caption remainder
 }
 ```
+
+`sent` was declared on the model from the start but never populated, and
+`_serialize_result` dumps with `exclude_unset=True`, so until it was emitted
+the data picker advertised a field that never materialised. `message_type` and
+`date` were always returned but undeclared, surviving only through
+`extra="allow"`; declaring them changed nothing at runtime and made them
+visible in the picker.
 
 `BaseNode.execute()` wraps it as `{ success: true, result: <payload>, execution_time, timestamp, node_id, node_type }`.
 
@@ -77,30 +98,19 @@ flowchart TD
   D3 -- missing --> Efail
   C -- user/group --> E{chat_id truthy?}
   E -- no --> Efail
-  E -- yes --> F[Read message_type / parse_mode / silent / reply_to]
-  F --> G{message_type}
-  G -- text --> T{text set?}
-  T -- no --> Efail
-  T -- yes --> Tsend[service.send_message]
-  G -- photo --> P{media_url set?}
-  P -- no --> Efail
-  P -- yes --> Psend[service.send_photo]
-  G -- document --> Doc{media_url set?}
-  Doc -- no --> Efail
-  Doc -- yes --> Dsend[service.send_document]
-  G -- location --> L{lat and lng<br/>not None?}
-  L -- no --> Efail
-  L -- yes --> Lsend[service.send_location]
-  G -- contact --> Ct{phone + first_name?}
-  Ct -- no --> Efail
-  Ct -- yes --> Ctsend[service.send_contact]
-  G -- other --> Efail
+  E -- yes --> F[_send.perform_send<br/>table lookup on message_type]
+  F --> G{known type?}
+  G -- no --> Efail
+  G -- yes --> H[Per-type validation<br/>NodeUserError when unmet]
+  H --> I{captioned media?}
+  I -- no --> Tsend[service.send_message / location / contact]
+  I -- yes --> Msend[service.send_photo / send_document<br/>-> _send_captioned_media]
+  Msend --> J{caption over 1024<br/>UTF-16 units?}
+  J -- no --> Ok
+  J -- yes --> K[Truncate at boundary<br/>send remainder as threaded reply]
+  K --> Ok
   Tsend --> Ok
-  Psend --> Ok
-  Dsend --> Ok
-  Lsend --> Ok
-  Ctsend --> Ok
-  Ok[Return success=true<br/>with message_id, chat_id, message_type, date]
+  Ok[Return success=true<br/>message_id, chat_id, message_type, date, sent]
 ```
 
 ## Decision Logic
@@ -118,9 +128,20 @@ flowchart TD
   `Auto` (GFM -> Telegram HTML via `markdown_formatter.to_telegram_html`) plus the
   `BadRequest "can't parse entities"` fallback that retries with `parse_mode=None`
   and the original unescaped text.
-- **Message type dispatch**: Uses an `if/elif/else` chain on `message_type`. An
-  unknown value falls into the `else` and raises
-  `RuntimeError("Unsupported message type: <x>")`.
+- **Message type dispatch**: `_send.perform_send` looks the type up in a
+  module-level table. An unknown value raises
+  `NodeUserError("Unsupported message type: <x>")`. Per-type validation
+  (`text` present, `media_url` present, both coordinates set, phone plus first
+  name) also raises `NodeUserError`, so the operator log gets one WARN line
+  with no traceback — these are user-correctable inputs, not server bugs.
+- **Caption spill**: Telegram caps captions at 1024 units and rejects the whole
+  send past that. `_send_captioned_media` truncates at the cap and sends the
+  remainder as a reply threaded under the media message, reusing the chunking
+  `send_message` already performs. The split runs on the **raw** caption before
+  `_resolve_body` converts markdown to HTML — splitting after conversion could
+  separate a `<b>` from its closing tag, which Telegram rejects with
+  "can't find end of the entity". Telegram measures the cap against
+  entity-parsed text, so truncating raw markdown is conservative.
 - **Reply-to coercion**: `reply_to_message_id` is cast via `int(...)` only when
   truthy. A non-numeric string here raises `ValueError`, which `BaseNode.execute()`
   catches and surfaces as an error envelope.
@@ -157,6 +178,13 @@ flowchart TD
   sees the downstream "Bot owner not detected" error.
 - **Silent ValueError on `reply_to_message_id`**: A non-numeric value raises
   `ValueError`, surfaced by `BaseNode.execute()` as the error message.
+- **Long captions arrive as two messages**: A caption over 1024 units produces
+  the media message plus one or more threaded follow-ups. The follow-up carries
+  `disable_notification=True` so a single logical send still pings once.
+  `caption_truncated` and `follow_up_message_ids` report it.
+- **Length is counted in UTF-16 units, not characters**: an emoji costs 2. A
+  1024-character caption of emoji is 2048 units and will spill. This matches
+  how the Bot API measures its own limits; `len()` under-counts.
 - **`recipient_type` is a `Literal["self","user","group"]`**: Pydantic rejects
   any other value at param validation. For `user`/`group` an empty `chat_id`
   raises `RuntimeError("chat_id is required")`.
