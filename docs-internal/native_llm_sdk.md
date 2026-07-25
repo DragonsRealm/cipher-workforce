@@ -40,8 +40,8 @@ server/services/llm/
     |-- openai.py         OpenAIProvider (openai SDK)
     |-- gemini.py         GeminiProvider (google-genai SDK)
     |-- openrouter.py     OpenRouterProvider (extends OpenAIProvider with headers)
-    `-- _compat.py        Registers the 8 OpenAI-compatible providers (xai, deepseek, kimi,
-                          mistral, groq, cerebras, ollama, lmstudio) via base_url specs
+    `-- _compat.py        Registers the 9 OpenAI-compatible providers (xai, deepseek, kimi,
+                          mistral, groq, cerebras, ollama, lmstudio, sarvam) via base_url specs
 ```
 
 Each provider module calls `register_provider(ProviderSpec(...))` at module
@@ -51,7 +51,7 @@ providers share `_compat.py` and its explicit `_COMPAT_PROVIDERS` tuple.
 
 ## Supported Providers
 
-The native layer currently supports **12 providers**, grouped by implementation:
+The native layer currently supports **13 providers**, grouped by implementation:
 
 | Provider | Implementation | SDK | Notes |
 |---|---|---|---|
@@ -67,14 +67,19 @@ The native layer currently supports **12 providers**, grouped by implementation:
 | `lmstudio` | `providers/openai.py` + `{provider}_proxy` URL | `openai` (chat) + `lmstudio` (probe) | Local server. Validator probes via `lmstudio.AsyncClient.llm.list_loaded()` for typed `LlmInstanceInfo.context_length`. Same OpenAI-compat runtime path as Ollama. |
 | `groq` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible (chat-path LangChain fallback retired in Phase D) |
 | `cerebras` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible (chat-path LangChain fallback retired in Phase D) |
+| `sarvam` | `providers/_compat.py` + base_url | `openai` | Indic-first (`sarvam-105b` 128K, `sarvam-30b` 64K) at `api.sarvam.ai/v1`. Ships **no model-list route**, so it sets `supports_model_listing: false` — see below. Reasoning is on by default and returns in `reasoning_content`, which `OpenAIProvider._normalize` already reads. |
 
 Source of truth for this list: `server/config/llm_defaults.json` (the `providers` dict) and the `register_provider(ProviderSpec(...))` calls in `server/services/llm/providers/` (each provider module registers itself at import; the legacy `factory.py` was removed).
 
 ### Native chat path vs agent dropdown — two different counts
 
-- **Native chat path (`execute_chat` / `fetch_models`) supports 12 providers, all native** — Anthropic and Gemini via their own SDKs; OpenAI and OpenRouter via the openai SDK; and 8 more through the shared OpenAI-compatible client with a per-provider `base_url` (xai, deepseek, kimi, mistral, groq, cerebras, ollama, lmstudio — registered in `providers/_compat.py`). `execute_chat` delegates every provider to `ChatUnifier.chat`; there is no per-provider branch and no chat-path LangChain fallback. `xai` lives here.
-- **The agent dropdown exposes the same 12 providers** for `aiAgent`,
+- **Native chat path (`execute_chat` / `fetch_models`) supports 13 providers, all native** — Anthropic and Gemini via their own SDKs; OpenAI and OpenRouter via the openai SDK; and 9 more through the shared OpenAI-compatible client with a per-provider `base_url` (xai, deepseek, kimi, mistral, groq, cerebras, ollama, lmstudio, sarvam — registered in `providers/_compat.py`). `execute_chat` delegates every provider to `ChatUnifier.chat`; there is no per-provider branch and no chat-path LangChain fallback. `xai` lives here.
+- **The agent dropdown exposes the same 13 providers** for `aiAgent`,
   `chatAgent` (Zeenie), and all specialized agents, including `xai`.
+  `test_plugin_shape.py` asserts exact set equality between the registry and
+  the `provider` Literal in all three agent Params classes, so registering a
+  provider without updating `nodes/agent/ai_agent`, `nodes/agent/chat_agent`
+  and `nodes/agent/_specialized` fails CI immediately.
 - Groq, Cerebras, xAI, and the other compatible endpoints use the same native
   OpenAI SDK adapter for both standalone chat and agent tool calls.
 
@@ -436,11 +441,12 @@ the plugin folder or add a `visuals.json` entry (`"openrouterChatModel":
 
 **Backend steps:**
 
-1. **OpenAI-compatible provider** (DeepSeek, Kimi, Mistral pattern):
+1. **OpenAI-compatible provider** (DeepSeek, Kimi, Mistral, Sarvam pattern):
    - Add an entry to `llm_defaults.json` with `base_url`, `default_model`, `detection_patterns`, `max_output_tokens._default`, `context_length._default`, `temperature_range`.
    - Add the provider name to the compat list in `services/llm/providers/_compat.py` — its import loop calls `register_provider(ProviderSpec(...))` for every listed name.
    - Chat and agent calls both use the native OpenAI SDK with that configured
      `base_url`; do not add a branch in `AIService`.
+   - **If the endpoint has no `/v1/models` route**, set `"supports_model_listing": false` on the JSON block. `OpenAIProvider.fetch_models` then serves the curated list (`popular_models`, else the `max_output_tokens` keys) and validates the key with a one-token completion instead. Without the flag the 404 surfaces as an `openai.OpenAIError`, which `ChatUnifier` converts to `NodeUserError` and `AIService.fetch_models` re-raises **before** its curated fallback — breaking credential validation and the model dropdown for a valid key. Sarvam is the reference case; the flag defaults to `true` so no other provider is affected. Locked by `tests/llm/test_model_listing_fallback.py`.
 
 2. **Custom-SDK provider** (Anthropic, Gemini pattern):
    - Create `services/llm/providers/<name>.py` implementing the `LLMProvider` protocol.

@@ -135,6 +135,28 @@ class XaiCredential(_LLMApiKey):
     docs_url = "https://console.x.ai"
 
 
+class SarvamCredential(_LLMApiKey):
+    """One subscription key for every Sarvam API.
+
+    Sarvam's chat endpoint is OpenAI-compatible and accepts the key as a
+    Bearer token, which is what the openai SDK sends — so the chat path
+    never reads ``key_name``. Its other APIs (translate / transliterate /
+    text-lid / speech-to-text / text-to-speech, all under
+    ``server/nodes/sarvam/``) accept ONLY ``api-subscription-key``, and
+    those nodes authenticate through ``ctx.connection("sarvam")`` ->
+    :meth:`ApiKeyCredential.inject`. Declaring the native header here
+    means a single stored key serves both surfaces.
+
+    Same override shape as :class:`AnthropicCredential`'s ``x-api-key``.
+    """
+
+    id = "sarvam"
+    display_name = "Sarvam AI"
+    docs_url = "https://dashboard.sarvam.ai"
+    key_name = "api-subscription-key"
+    key_location = "header"
+
+
 class _LocalLLM(_LLMApiKey):
     """Base for local-server credentials (Ollama, LM Studio).
 

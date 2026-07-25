@@ -684,6 +684,7 @@ _CHAT_MODEL_TYPES = [
     "deepseekChatModel",
     "kimiChatModel",
     "mistralChatModel",
+    "sarvamChatModel",
 ]
 
 _SEARCH_TYPES = ["braveSearch", "serperSearch", "perplexitySearch"]

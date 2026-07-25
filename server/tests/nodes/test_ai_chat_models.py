@@ -1,10 +1,10 @@
-"""Contract tests for the 9 ai_chat_models nodes.
+"""Contract tests for the 10 ai_chat_models nodes.
 
 Covered nodes: openaiChatModel, anthropicChatModel, geminiChatModel,
 openrouterChatModel, groqChatModel, cerebrasChatModel, deepseekChatModel,
-kimiChatModel, mistralChatModel.
+kimiChatModel, mistralChatModel, sarvamChatModel.
 
-All 9 nodes share the SAME registry binding:
+All 10 nodes share the SAME registry binding:
     partial(handle_ai_chat_model, ai_service=self.ai_service)
 
 `handle_ai_chat_model` is a thin pass-through that awaits
@@ -44,6 +44,7 @@ ALL_PROVIDERS = [
     ("deepseekChatModel", "deepseek"),
     ("kimiChatModel", "kimi"),
     ("mistralChatModel", "mistral"),
+    ("sarvamChatModel", "sarvam"),
 ]
 
 

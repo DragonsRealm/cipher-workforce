@@ -263,7 +263,7 @@ class TestPhase3cCoverage:
         "ai_employee",
         "rlm_agent",
         "claude_code_agent",
-        # Chat models (9)
+        # Chat models (10)
         "openaiChatModel",
         "anthropicChatModel",
         "geminiChatModel",
@@ -273,6 +273,7 @@ class TestPhase3cCoverage:
         "deepseekChatModel",
         "kimiChatModel",
         "mistralChatModel",
+        "sarvamChatModel",
     ]
 
     def test_all_have_metadata(self):

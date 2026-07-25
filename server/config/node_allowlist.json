@@ -19,6 +19,7 @@
     "openaiChatModel",
     "anthropicChatModel",
     "geminiChatModel",
+    "sarvamChatModel",
 
     "calculatorTool",
     "currentTimeTool",

@@ -46,6 +46,7 @@ class SpecializedAgentParams(BaseModel):
         "deepseek",
         "kimi",
         "mistral",
+        "sarvam",
         # Local-server providers — see ai_agent.Params for the proxy_url
         # rationale. Same fix; same reason.
         "ollama",

@@ -87,8 +87,18 @@ class Connection:
         params: Optional[Dict[str, Any]] = None,
         json: Optional[Any] = None,
         data: Optional[Any] = None,
+        files: Optional[Any] = None,
         _retry_on_auth: bool = True,
     ) -> httpx.Response:
+        """Issue an authed request.
+
+        ``files`` is handed straight to httpx for ``multipart/form-data``
+        uploads; pair it with ``data=`` for the non-file form fields and
+        do NOT set a ``Content-Type`` header — httpx generates the
+        boundary. Pass file **bytes**, not an open file handle: the
+        auth-retry path below re-sends the same kwargs, and a consumed
+        handle would replay as an empty part.
+        """
         secrets = await self.credentials()
         req: Dict[str, Any] = {
             "headers": dict(headers or {}),
@@ -98,6 +108,8 @@ class Connection:
             req["json"] = json
         if data is not None:
             req["data"] = data
+        if files is not None:
+            req["files"] = files
         req = self._cred_cls.inject(secrets, req)
 
         client = self._get_client()
@@ -119,6 +131,7 @@ class Connection:
                     "params": dict(params or {}),
                     **({"json": json} if json is not None else {}),
                     **({"data": data} if data is not None else {}),
+                    **({"files": files} if files is not None else {}),
                 },
             )
             response = await client.request(method, url, **req_retry)

@@ -47,6 +47,7 @@ match its doc here, and each doc must still describe what the code does.
 - [Ollama Chat Model (`ollamaChatModel`)](./ai_chat_models/ollamaChatModel.md)
 - [OpenAI Chat Model (`openaiChatModel`)](./ai_chat_models/openaiChatModel.md)
 - [OpenRouter Chat Model (`openrouterChatModel`)](./ai_chat_models/openrouterChatModel.md)
+- [Sarvam AI Chat Model (`sarvamChatModel`)](./ai_chat_models/sarvamChatModel.md)
 
 ### ai_tools
 
@@ -129,6 +130,17 @@ match its doc here, and each doc must still describe what the code does.
 - [Proxy Config (`proxyConfig`)](./http_proxy/proxyConfig.md)
 - [Proxy Request (`proxyRequest`)](./http_proxy/proxyRequest.md)
 - [Proxy Status (`proxyStatus`)](./http_proxy/proxyStatus.md)
+
+### language
+
+Sarvam AI's non-chat REST APIs. The chat models live under `ai_chat_models`
+and share the same credential.
+
+- [Sarvam Detect Language (`sarvamDetectLanguage`)](./language/sarvamDetectLanguage.md)
+- [Sarvam Speech to Text (`sarvamSpeechToText`)](./language/sarvamSpeechToText.md)
+- [Sarvam Text to Speech (`sarvamTextToSpeech`)](./language/sarvamTextToSpeech.md)
+- [Sarvam Translate (`sarvamTranslate`)](./language/sarvamTranslate.md)
+- [Sarvam Transliterate (`sarvamTransliterate`)](./language/sarvamTransliterate.md)
 
 ### search
 

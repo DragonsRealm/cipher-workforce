@@ -49,6 +49,7 @@ class AIAgentParams(BaseModel):
         "deepseek",
         "kimi",
         "mistral",
+        "sarvam",
         # Local-server providers — agent execution reads
         # ``{provider}_proxy`` to point the native OpenAI client at the
         # user's localhost server. Without these entries the dropdown

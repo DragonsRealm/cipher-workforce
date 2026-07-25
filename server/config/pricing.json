@@ -88,6 +88,12 @@
       "open-mistral-nemo": {"input": 0.15, "output": 0.15},
       "_default": {"input": 0.20, "output": 0.60}
     },
+    "sarvam": {
+      "_note": "Sarvam publishes INR list prices; converted at 1 INR = 0.0113 USD (~88.5 INR/USD, 2026-07). Source rates per MTok: sarvam-105b 4 in / 16 out / 2.5 cached; sarvam-30b 2.5 / 10 / 1.5. _default mirrors sarvam-105b (the provider default_model) so an unresolved id never under-reports. PricingService._build_llm_registry skips non-dict values, so this key is inert.",
+      "sarvam-105b": {"input": 0.045, "output": 0.181, "cache_read": 0.028},
+      "sarvam-30b": {"input": 0.028, "output": 0.113, "cache_read": 0.017},
+      "_default": {"input": 0.045, "output": 0.181, "cache_read": 0.028}
+    },
     "ollama": {
       "_description": "Local inference is free at the API layer — user-borne hardware costs are not tracked here.",
       "_default": {"input": 0.00, "output": 0.00}
@@ -246,6 +252,18 @@
       "sonar_search": 0.005,
       "sonar_pro_search": 0.005,
       "_default": 0.005
+    },
+    "sarvam": {
+      "_description": "Sarvam non-chat APIs. Text endpoints bill per CHARACTER and speech-to-text bills per SECOND, so these are per-unit prices and the nodes pass the unit count as resource_count. Converted from Sarvam's INR list prices at 1 INR = 0.0113 USD (~88.5 INR/USD, 2026-07): translate 20 INR/10K chars, language ID 3.5 INR/10K chars, TTS bulbul:v3 30 INR/10K chars and bulbul:v2 15 INR/10K chars, speech-to-text 30 INR/hour. Transliteration has no separately published rate and is priced as translation. Chat-model token pricing lives under `llm.sarvam`.",
+      "_source": "https://docs.sarvam.ai/api/getting-started/pricing",
+      "_updated": "2026-07",
+      "translate": 0.0000226,
+      "transliterate": 0.0000226,
+      "detect_language": 0.00000396,
+      "text_to_speech": 0.0000339,
+      "text_to_speech_v2": 0.00001695,
+      "speech_to_text": 0.00009417,
+      "_default": 0.0000226
     }
   },
 
@@ -342,6 +360,14 @@
     },
     "perplexity": {
       "sonar_search": "sonar_search"
+    },
+    "sarvam": {
+      "translate": "translate",
+      "transliterate": "transliterate",
+      "detect_language": "detect_language",
+      "text_to_speech": "text_to_speech",
+      "text_to_speech_v2": "text_to_speech_v2",
+      "speech_to_text": "speech_to_text"
     }
   },
 

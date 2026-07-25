@@ -312,6 +312,35 @@
       },
       "temperature_range": [0.0, 1.5]
     },
+    "sarvam": {
+      "default_model": "sarvam-105b",
+      "popular_models": [],
+      "_popular_note": "Empty per the 1M-context policy — sarvam-105b tops out at 131072. Both models stay reachable via the per-node dropdown (fetch_models returns the curated list) and via the global selector, which falls back to the max_output_tokens keys when popular_models is empty.",
+      "_models_note": "sarvam-105b (128K ctx) and sarvam-30b (64K ctx), OpenAI-compatible at api.sarvam.ai/v1. sarvam-m is deprecated/removed and deliberately absent. Reasoning is ON by default (reasoning_effort defaults to 'medium' server-side) and the trace comes back as message.reasoning_content, which OpenAIProvider._normalize already reads.",
+      "detection_patterns": ["sarvam"],
+      "base_url": "https://api.sarvam.ai/v1",
+      "models_endpoint": "",
+      "supports_model_listing": false,
+      "_models_listing_note": "Sarvam ships NO model-list endpoint — verified against https://docs.sarvam.ai/openapi.json (25 paths, none for model listing). OpenAIProvider.fetch_models reads this flag and swaps models.list() for a 1-token chat probe plus the curated list. Without it the 404 becomes an openai.OpenAIError, ChatUnifier turns that into NodeUserError, and AIService.fetch_models re-raises before its curated fallback — breaking both credential validation and the model dropdown.",
+      "api_key_param": "api_key",
+      "max_tokens_param": "max_tokens",
+      "supported_params": ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "stop", "seed", "n", "tools", "tool_choice", "response_format", "reasoning_effort"],
+      "max_output_tokens": {
+        "sarvam-105b": 65536,
+        "sarvam-30b": 32768,
+        "_default": 8192
+      },
+      "_max_output_note": "Sarvam documents per-tier output ceilings of Starter 4096 / Pro 16384 / Business 128000 (105b) and 4096 / 8192 / 64000 (30b). The Business figures are ~98% of each context window, and resolve_max_tokens uses these values BOTH as the default budget when the node leaves max_tokens unset AND as the clamp ceiling — a request at that budget could not fit any prompt. Half the window keeps paid tiers unclamped while staying usable; same shape as groq's gpt-oss-120b (131072 ctx / 65536 out).",
+      "context_length": {
+        "sarvam-105b": 131072,
+        "sarvam-30b": 65536,
+        "_default": 65536
+      },
+      "thinking_models": ["sarvam-"],
+      "thinking_type": "effort",
+      "_thinking_note": "reasoning_models is deliberately empty: listing sarvam there would set temperature_allowed=False and pin temperature to 1.0, but Sarvam accepts temperature alongside reasoning. thinking_default_on is deliberately absent too — it emits Moonshot's proprietary extra_body.thinking={'type':'disabled'}, which Sarvam never documented. With both omitted, thinking off = Sarvam's own default (reasoning on, effort medium) and thinking on = our reasoning_effort.",
+      "temperature_range": [0.0, 2.0]
+    },
 
     "ollama": {
       "_description": "Local Ollama server (OpenAI-compatible /v1). No `default_model` because the dropdown should reflect the user's actually-pulled models — fetch_models hits the user's saved {provider}_proxy URL and returns whatever Ollama reports; when the server is offline we want an empty list (a 'start your server' cue), not a placeholder name the user almost certainly doesn't have.",

@@ -119,6 +119,7 @@ _PROVIDER_KEYS = {
     "deepseek": ("DEEPSEEK_API_KEY",),
     "kimi": ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
     "mistral": ("MISTRAL_API_KEY",),
+    "sarvam": ("SARVAM_API_KEY",),
     "groq": ("GROQ_API_KEY",),
     "cerebras": ("CEREBRAS_API_KEY",),
 }
@@ -135,6 +136,7 @@ _LIVE_MODELS = {
     "deepseek": "deepseek-chat",
     "kimi": "kimi-k2.6",
     "mistral": "mistral-small-latest",
+    "sarvam": "sarvam-30b",
     "groq": "openai/gpt-oss-120b",
     "cerebras": "gpt-oss-120b",
     "ollama": None,    # discovered from server

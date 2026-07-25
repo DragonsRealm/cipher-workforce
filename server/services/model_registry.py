@@ -59,6 +59,7 @@ DEFAULT_TEMP_RANGES = {
     "deepseek": (0.0, 2.0),
     "kimi": (0.0, 1.0),
     "mistral": (0.0, 1.0),
+    "sarvam": (0.0, 2.0),
 }
 
 

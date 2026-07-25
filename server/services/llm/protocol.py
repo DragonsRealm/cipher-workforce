@@ -357,6 +357,7 @@ class LLMError(Exception):
             "deepseek": "DeepSeek",
             "kimi": "Kimi",
             "mistral": "Mistral",
+            "sarvam": "Sarvam AI",
             "ollama": "Ollama",
             "lmstudio": "LM Studio",
         }

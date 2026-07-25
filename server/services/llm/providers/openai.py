@@ -156,9 +156,43 @@ class OpenAIProvider:
     # ------------------------------------------------------------------
 
     async def fetch_models(self, api_key: str) -> List[str]:
-        """Fetch models using the client's configured base_url."""
-        models = await self._client.models.list()
-        return sorted([m.id for m in models.data])
+        """Fetch models using the client's configured base_url.
+
+        Providers that declare ``supports_model_listing: false`` in
+        llm_defaults.json expose no model-list route at all (Sarvam).
+        Calling ``models.list()`` there 404s, and that 404 arrives as an
+        ``openai.OpenAIError`` which ``ChatUnifier.fetch_models``
+        translates into ``NodeUserError`` and ``AIService.fetch_models``
+        re-raises *before* reaching its curated fallback — breaking both
+        credential validation and the model dropdown for a perfectly
+        valid key. For those providers, serve the JSON-curated list and
+        validate the key with the cheapest real call the OpenAI wire
+        format offers: a one-token completion. An invalid key still
+        raises the typed SDK error the unifier already knows how to
+        translate, so the probe stays a real credential check.
+
+        The flag is read per provider from config rather than branched on
+        a provider name, so any future no-listing endpoint is a JSON edit.
+        """
+        from services.llm.config import curated_models, supports_model_listing
+
+        if supports_model_listing(self.provider_name):
+            models = await self._client.models.list()
+            return sorted([m.id for m in models.data])
+
+        curated = curated_models(self.provider_name)
+        if not curated:
+            raise ValueError(
+                f"llm_defaults.json providers.{self.provider_name} sets "
+                "supports_model_listing=false but declares no models "
+                "(popular_models and max_output_tokens are both empty)"
+            )
+        await self._client.chat.completions.create(
+            model=curated[0],
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+        )
+        return curated
 
     # ------------------------------------------------------------------
     # internals

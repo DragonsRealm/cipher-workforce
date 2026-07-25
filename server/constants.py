@@ -21,6 +21,7 @@ AI_CHAT_MODEL_TYPES: FrozenSet[str] = frozenset(
         "deepseekChatModel",
         "kimiChatModel",
         "mistralChatModel",
+        "sarvamChatModel",
         # Local-server providers (Phase 1 of the LiteLLM adoption — see
         # plans/i-plan-to-implement-nested-orbit.md).
         "ollamaChatModel",
@@ -433,6 +434,8 @@ def detect_ai_provider(node_type: str, parameters: dict = None) -> str:
         return "kimi"
     if "mistral" in nt:
         return "mistral"
+    if "sarvam" in nt:
+        return "sarvam"
     if "cerebras" in nt:
         return "cerebras"
     if "groq" in nt:

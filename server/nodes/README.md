@@ -132,6 +132,9 @@ vercel/      — Vercel (CLI deploy / inspect / list / custom passthrough)
 github/      — GitHub (gh CLI: clone / PRs / issues / custom; palette group "vcs")
 cloudflare/  — Cloudflare (cf CLI: zones / DNS / GraphQL analytics / custom; palette group "deployment")
 gcloud/      — Google Cloud (gcloud CLI: projects / Compute Engine / Cloud Run / Cloud Storage / custom; palette group "deployment")
+sarvam/      — Sarvam AI text + speech REST APIs (translate / transliterate / detect_language /
+               speech_to_text / text_to_speech; palette group "language"). Its chat models are a
+               separate plugin at model/sarvam_chat_model/ and share one SarvamCredential.
 ```
 
 ---
@@ -146,7 +149,8 @@ these first before writing new code:
 |---|---|---|
 | `agent/` | `_inline.prepare_agent_call` | One-shot pre-dispatch for every agent (memory + skill + tool + teammate collection) |
 | `agent/` | `_specialized.SpecializedAgentBase` | Base for 13 specialized agents |
-| `model/` | `_base.ChatModelBase` | 11 chat models inherit → same `@Operation("chat")` body that calls `ai_service.execute_chat` |
+| `model/` | `_base.ChatModelBase` | 12 chat models inherit → same `@Operation("chat")` body that calls `ai_service.execute_chat` |
+| `sarvam/` | `_base.post_json` / `_base.post_multipart` / `_base.track_sarvam_usage` | 5 stateless REST nodes share one `api-subscription-key` connection, `None`-stripping request builder, and manual usage tracking (no `_service.py` — nothing long-lived to own) |
 | `android/` | `_base.AndroidServiceBase` | 16 Android services inherit; payload translation + `SERVICE_ID_MAP` lives on this base |
 | `android/` | `_base.execute_android_service_tool` | AI-tool dispatcher — called from `services/handlers/tools.py` for direct service tools (the `androidTool` aggregator + `execute_android_toolkit` were retired) |
 | `code/` | `_base.CodeExecutorBase` + `_nodejs.NodeJSClient` | Python/JS/TS executors; `monty_executor/` is sandboxed Python via `pydantic-monty` (enforced limits + opt-in capabilities) |
@@ -187,7 +191,7 @@ from ._credentials import TwitterCredential              # shared with 3 sibling
 | `nodes/twitter/` | `TwitterCredential` (OAuth2 + PKCE) | twitter_send / _search / _user / _receive |
 | `nodes/telegram/` | `TelegramCredential` (bot token + owner chat id) | telegram_send / _receive |
 | `nodes/scraper/` | `ApifyCredential` (Bearer) | apify_actor |
-| `nodes/model/` | 12 LLM credential classes: 10 cloud (`OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / xAI`) plus Ollama / LM Studio | 11 chat models (xAI has no standalone chat-model node) |
+| `nodes/model/` | 13 LLM credential classes: 11 cloud (`OpenAI / Anthropic / Gemini / OpenRouter / Groq / Cerebras / DeepSeek / Kimi / Mistral / xAI / Sarvam`) plus Ollama / LM Studio | 12 chat models (xAI has no standalone chat-model node) **plus the 5 `nodes/sarvam/` service nodes**, which import `SarvamCredential` from here — one stored key serves Sarvam's OpenAI-compatible chat endpoint *and* its `api-subscription-key` REST APIs |
 | `nodes/search/` | `BraveSearch / Serper / Perplexity` inlined in each plugin file | single-use per plugin |
 
 Declare inline only when genuinely single-use (see

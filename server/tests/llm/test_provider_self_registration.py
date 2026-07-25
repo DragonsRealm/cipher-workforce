@@ -33,6 +33,9 @@ EXPECTED_REGISTERED_PROVIDERS = {
     # OpenAI-compatible /v1 endpoints so they share OpenAIProvider.
     "groq",
     "cerebras",
+    # Indic-first; OpenAI-compatible chat endpoint but no model-list route,
+    # which it declares via `supports_model_listing: false`.
+    "sarvam",
 }
 COMPAT_PROVIDERS = (
     "xai",
@@ -43,6 +46,7 @@ COMPAT_PROVIDERS = (
     "lmstudio",
     "groq",
     "cerebras",
+    "sarvam",
 )
 
 
@@ -51,7 +55,7 @@ def test_all_expected_providers_registered():
     assert set(all_providers()) >= EXPECTED_REGISTERED_PROVIDERS
 
 
-def test_all_twelve_providers_route_to_the_expected_native_class():
+def test_all_thirteen_providers_route_to_the_expected_native_class():
     from services.llm.providers.anthropic import AnthropicProvider
     from services.llm.providers.gemini import GeminiProvider
     from services.llm.providers.openai import OpenAIProvider
@@ -90,6 +94,7 @@ def test_compat_providers_carry_base_url_in_client_kwargs():
         "lmstudio": "http://localhost:1234/v1",
         "groq": "https://api.groq.com/openai/v1",
         "cerebras": "https://api.cerebras.ai/v1",
+        "sarvam": "https://api.sarvam.ai/v1",
     }
     for name, url in expected_base_urls.items():
         spec = get_provider(name)
@@ -102,7 +107,7 @@ def test_compat_providers_carry_base_url_in_client_kwargs():
 def test_every_compat_provider_inherits_shared_response_and_tool_contract(
     provider_name,
 ):
-    """One matrix gate covers normalization/schema behavior for all 8."""
+    """One matrix gate covers normalization/schema behavior for all 9."""
 
     from services.llm.providers.openai import OpenAIProvider
 

@@ -16,6 +16,7 @@ import Mistral from '@lobehub/icons/es/Mistral';
 import Ollama from '@lobehub/icons/es/Ollama';
 import LmStudio from '@lobehub/icons/es/LmStudio';
 import { dracula, solarized } from '../../styles/theme';
+import { API_CONFIG } from '../../config/api';
 
 // Icon size constant for consistency
 const ICON_SIZE = 28;
@@ -71,6 +72,17 @@ export const LmStudioIcon: React.FC<{ size?: number }> = ({ size = ICON_SIZE }) 
   <LmStudio.Avatar size={size} />
 );
 
+// Sarvam AI has no @lobehub/icons brand entry, so its mark is served by the
+// backend credential-icon endpoint (server/credentials/icons/sarvam.svg).
+// That `/api/...` form is the same wire format `resolveIcon` already handles
+// for asset-backed credentials like apify / stripe / telegram, so no new
+// mechanism is needed — only an <img> wrapper for the direct-FC consumers.
+const SARVAM_ICON_URL = `${API_CONFIG.PYTHON_BASE_URL}/api/schemas/credentials/sarvam/icon`;
+
+export const SarvamIcon: React.FC<{ size?: number }> = ({ size = ICON_SIZE }) => (
+  <img src={SARVAM_ICON_URL} alt="Sarvam AI" width={size} height={size} />
+);
+
 // Map provider IDs to their icon components
 export const AI_PROVIDER_ICONS: Record<string, React.FC<{ size?: number }>> = {
   openai: OpenAIIcon,
@@ -82,6 +94,7 @@ export const AI_PROVIDER_ICONS: Record<string, React.FC<{ size?: number }>> = {
   deepseek: DeepSeekIcon,
   kimi: KimiIcon,
   mistral: MistralIcon,
+  sarvam: SarvamIcon,
   ollama: OllamaIcon,
   lmstudio: LmStudioIcon,
 };
@@ -101,6 +114,8 @@ export const AI_PROVIDER_META: Record<string, { iconRef: string; Icon: React.FC<
   deepseek:   { iconRef: 'lobehub:DeepSeek',   Icon: DeepSeekIcon,   color: dracula.cyan,     label: 'DeepSeek' },
   kimi:       { iconRef: 'lobehub:Kimi',       Icon: KimiIcon,       color: dracula.purple,   label: 'Kimi' },
   mistral:    { iconRef: 'lobehub:Mistral',    Icon: MistralIcon,    color: dracula.pink,     label: 'Mistral' },
+  // No lobehub brand — iconRef points at the backend-served SVG instead.
+  sarvam:     { iconRef: '/api/schemas/credentials/sarvam/icon', Icon: SarvamIcon, color: '#F97316', label: 'Sarvam AI' },
   ollama:     { iconRef: 'lobehub:Ollama',     Icon: OllamaIcon,     color: dracula.foreground, label: 'Ollama' },
   lmstudio:   { iconRef: 'lobehub:LmStudio',   Icon: LmStudioIcon,   color: solarized.cyan,   label: 'LM Studio' },
 };

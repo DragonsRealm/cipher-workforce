@@ -18,6 +18,7 @@ const AI_MODEL_PROVIDERS = [
   'deepseek',
   'kimi',
   'mistral',
+  'sarvam',
   // Local-server providers — the chat-model plugins exist
   // (`ollamaChatModel`, `lmstudioChatModel`), so they MUST live in this
   // map for `ParameterRenderer` to derive the provider id from the node

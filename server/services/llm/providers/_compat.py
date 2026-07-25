@@ -1,15 +1,18 @@
 """OpenAI-compatible provider registrations.
 
-Eight providers (``xai`` / ``deepseek`` / ``kimi`` / ``mistral`` / ``ollama`` /
-``lmstudio`` / ``groq`` / ``cerebras``) all ride the OpenAI Python SDK with a custom ``base_url``,
-so they share one factory (``OpenAIProvider``) and one typed-exception
-tuple (``openai.OpenAIError``). The per-provider differences live in
-``llm_defaults.json`` (``base_url``, plus the provider quirks block
-added in Phase C) — there is no per-provider Python here.
+Nine providers (``xai`` / ``deepseek`` / ``kimi`` / ``mistral`` / ``ollama`` /
+``lmstudio`` / ``groq`` / ``cerebras`` / ``sarvam``) all ride the OpenAI Python SDK
+with a custom ``base_url``, so they share one factory (``OpenAIProvider``)
+and one typed-exception tuple (``openai.OpenAIError``). The per-provider
+differences live in ``llm_defaults.json`` (``base_url``, plus the provider
+quirks block added in Phase C) — there is no per-provider Python here.
 
 Adding a new OpenAI-compat provider is a JSON edit + one entry in
 ``_COMPAT_PROVIDERS`` below. Groq + Cerebras registered here in
-Phase D (see the ``_COMPAT_PROVIDERS`` comment below).
+Phase D (see the ``_COMPAT_PROVIDERS`` comment below); Sarvam followed and
+brought the ``supports_model_listing`` flag with it — a provider can be
+wire-compatible yet ship no model-list route, which ``OpenAIProvider``
+handles generically off that JSON key.
 """
 
 from __future__ import annotations
@@ -42,6 +45,12 @@ _COMPAT_PROVIDERS: Tuple[str, ...] = (
     "lmstudio",
     "groq",
     "cerebras",
+    # Sarvam serves OpenAI-compatible chat completions and accepts
+    # ``Authorization: Bearer`` alongside its native ``api-subscription-key``,
+    # so it needs no provider subclass. It is the first provider with no
+    # model-list route, which it declares via ``supports_model_listing: false``
+    # in llm_defaults.json — handled generically in ``OpenAIProvider``.
+    "sarvam",
 )
 
 

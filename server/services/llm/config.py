@@ -150,6 +150,45 @@ async def get_default_model_async(provider: str, database) -> str:
     return get_default_model(provider)
 
 
+def curated_models(provider: str) -> list:
+    """JSON-curated model ids for ``provider``.
+
+    Prefers the explicit ``popular_models`` list, preserving its order.
+    Older provider blocks (and every block that carries an empty
+    ``popular_models`` under the >=1M-context policy) fall back to the
+    ``max_output_tokens`` keys, minus the ``_default`` sentinel. Returns
+    an empty list when neither source has anything.
+
+    Shared by ``AIService._get_curated_models`` (the API-failure
+    fallback) and ``OpenAIProvider.fetch_models`` (the curated list
+    served when a provider declares no model-list route).
+
+    ``GeminiProvider._curated_models`` deliberately does NOT use this:
+    it reads the ``max_output_tokens`` keys *specifically* because those
+    are real model names while gemini's ``popular_models`` carries
+    ``-latest`` aliases the Vertex backend rejects.
+    """
+    provider_cfg = LLM_DEFAULTS.get("providers", {}).get(provider, {})
+    explicit = provider_cfg.get("popular_models") or []
+    if explicit:
+        return list(explicit)
+    max_tokens_map = provider_cfg.get("max_output_tokens", {})
+    return [m for m in max_tokens_map if m != "_default"]
+
+
+def supports_model_listing(provider: str) -> bool:
+    """Whether ``provider`` exposes an OpenAI-style model-list endpoint.
+
+    Defaults to ``True`` — only a provider that explicitly declares
+    ``"supports_model_listing": false`` in llm_defaults.json opts out.
+    Sarvam is the first: it serves OpenAI-compatible chat completions but
+    ships no model-list route at all (verified against its published
+    OpenAPI spec), so calling ``client.models.list()`` there 404s.
+    """
+    provider_cfg = LLM_DEFAULTS.get("providers", {}).get(provider, {})
+    return bool(provider_cfg.get("supports_model_listing", True))
+
+
 # ---------------------------------------------------------------------------
 # Max-tokens / temperature resolution
 # ---------------------------------------------------------------------------
