@@ -328,45 +328,46 @@ come back null here.
 
 ---
 
-## 8. What this pattern should absorb next
+## 8. The pattern generalised: `nodes/translate/`
 
-Speech was the first capability to get a provider abstraction, not the only one
-that needs it. The same vendor-locked shape it replaced is still present
-elsewhere, and the argument against it is identical: a second vendor means a
-second node, a third means a third, and the user has to rewire the canvas to
-switch.
+Written as "what this should absorb next"; done in the following change, which
+retired `nodes/sarvam/` entirely. Recorded here because the differences are the
+interesting part — they are what a third application should expect to vary.
 
-**Outstanding, in the same palette group:**
+**Three registries, not two.** Speech splits by *direction* because a vendor may
+do only synthesis or only transcription. Translate splits by *capability*, and
+the asymmetry is sharper: DeepL translates and offers neither transliteration
+nor language identification, while Sarvam and any LLM do all three. The rule
+held: membership is the capability, and a test asserts DeepL is absent from the
+other two registries rather than merely undocumented there.
 
-| Node | Capability | Other vendors that serve it |
-|---|---|---|
-| `sarvamTranslate` | text translation | Google Translate, DeepL, Azure Translator, any LLM |
-| `sarvamTransliterate` | script transliteration | Google, Azure, ICU/`uroman` locally |
-| `sarvamDetectLanguage` | language identification | Google, Azure, `lingua`/`fasttext` locally, any LLM |
+**No media transport at all.** Text results are small, so every constraint in
+§2 — the reason `AudioRef` exists, the workspace routes, the containment work —
+simply does not apply. The whole `services/media` half of this RFC is speech's
+alone.
 
-A `nodes/translate/` plugin would be a near-mechanical port of `nodes/speech/`:
-`_protocol.py` (one `TranslateProvider` Protocol — this capability is
-unidirectional, so **one** registry, not two), `_config.py` over a
-`translate_defaults.json`, `_unifier.py`, `_providers/`, and a
-`credentials = (...)` tuple. No new framework, and none of the media transport
-applies — translation returns text, so `AudioRef` and the workspace routes are
-not involved.
+**A provider that is not an HTTP client.** `_providers/llm.py` prompts a chat
+model through `ChatUnifier` and satisfies the same three Protocols as Sarvam's
+REST client. Structural typing meant this needed no accommodation. Its billing
+is deliberately *not* recorded: that path bills tokens, already costed by the
+LLM layer, and recording characters here too would double-count the same call.
 
-Two things make it *easier* than speech was:
+**Two more things became shared rather than copied**, both under
+`services/plugin/` where the framework owns them:
 
-- **No binary transport.** The whole `services/media` half of this RFC is moot.
-- **Language-detection and transliteration are the same provider surface** as
-  translation for most vendors, so one `_providers/<vendor>.py` typically serves
-  all three nodes.
+- `capabilities.CapabilityConfig` — the JSON-backed per-provider/per-model
+  resolution ladder. `nodes/speech/_config.py` became a thin instance over it
+  and its tests passed untouched.
+- `params.coerce_blank_params` — the panel-blank coercion. Written for speech,
+  needed verbatim by translate, which is the point at which it stopped being
+  plugin code.
 
-One thing makes it *harder*: several plausible providers are LLMs rather than
-dedicated translation APIs, so the provider module would call `ChatUnifier`
-rather than raw httpx. That is a supported shape — the Protocol does not care
-what a provider does internally — but it means the `credential_id` for those
-entries points at an existing LLM credential and the billing unit is tokens,
-not characters.
+That is the same D6 argument applied twice more: the second consumer is when a
+mechanism gets extracted, not the first.
 
-**Not started, and deliberately not scoped here.** Recorded so the
-inconsistency is visible rather than discovered later: `nodes/sarvam/` is now
-the only folder in the repo where a vendor name appears in a node `type` for a
-capability several vendors serve.
+### Still vendor-named
+
+`sarvamChatModel`, under `nodes/model/`. That one is correct as-is — chat models
+are *selected by name* by users and agents, and the LLM layer already abstracts
+them; a "chat model" node with a provider dropdown is what `nodes/model/`
+collectively already is.

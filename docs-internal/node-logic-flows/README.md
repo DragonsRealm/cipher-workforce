@@ -136,11 +136,11 @@ match its doc here, and each doc must still describe what the code does.
 Sarvam AI's non-chat REST APIs. The chat models live under `ai_chat_models`
 and share the same credential.
 
-- [Sarvam Detect Language (`sarvamDetectLanguage`)](./language/sarvamDetectLanguage.md)
+- [Detect Language (`detectLanguage`)](./language/detectLanguage.md)
 - [Speech to Text (`speechToText`)](./language/speechToText.md)
 - [Text to Speech (`textToSpeech`)](./language/textToSpeech.md)
-- [Sarvam Translate (`sarvamTranslate`)](./language/sarvamTranslate.md)
-- [Sarvam Transliterate (`sarvamTransliterate`)](./language/sarvamTransliterate.md)
+- [Translate (`translateText`)](./language/translateText.md)
+- [Transliterate (`transliterateText`)](./language/transliterateText.md)
 
 ### search
 

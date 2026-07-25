@@ -1,5 +1,28 @@
 # Sarvam AI Service
 
+> **`server/nodes/sarvam/` no longer exists.** Every capability it served is now
+> a *provider* inside an abstracted node, so a workflow picks Sarvam from a
+> dropdown rather than picking a Sarvam-specific node:
+>
+> | Was | Now |
+> |---|---|
+> | `sarvamTranslate` | `translateText` with `provider: "sarvam"` |
+> | `sarvamTransliterate` | `transliterateText` with `provider: "sarvam"` |
+> | `sarvamDetectLanguage` | `detectLanguage` with `provider: "sarvam"` |
+> | `sarvamTextToSpeech` | `textToSpeech` with `provider: "sarvam"` |
+> | `sarvamSpeechToText` | `speechToText` with `provider: "sarvam"` |
+>
+> The wire logic was ported verbatim into
+> [`nodes/translate/_providers/sarvam.py`](../server/nodes/translate/_providers/sarvam.py)
+> and [`nodes/speech/_providers/sarvam.py`](../server/nodes/speech/_providers/sarvam.py).
+> `sarvamChatModel` under `nodes/model/` is untouched and remains vendor-named,
+> which is correct — chat models are selected by name.
+>
+> This page is retained for the Sarvam-specific API detail (auth, language
+> vocabulary, per-model caps, the INR pricing conversion), which is still
+> accurate and still lives in those provider modules. For the pattern, see the
+> [Speech Provider RFC](./speech_provider_rfc.md).
+
 Indic-first AI: two chat models plus five REST APIs for translation,
 transliteration, language identification, speech-to-text and text-to-speech.
 
@@ -15,7 +38,7 @@ different auth styles**. Its chat endpoint is OpenAI-compatible and accepts
 | **Auth** | `api-subscription-key: <key>`; the chat route also accepts `Authorization: Bearer <key>` |
 | **Credential class** | [`SarvamCredential`](../server/nodes/model/_credentials.py) (`_LLMApiKey` → `ApiKeyCredential`) |
 | **Chat plugin** | [`server/nodes/model/sarvam_chat_model/`](../server/nodes/model/sarvam_chat_model/) |
-| **Service plugins** | [`server/nodes/sarvam/`](../server/nodes/sarvam/) |
+| **Service plugins** | Retired — now providers in [`nodes/translate/_providers/sarvam.py`](../server/nodes/translate/_providers/sarvam.py) and [`nodes/speech/_providers/sarvam.py`](../server/nodes/speech/_providers/sarvam.py) |
 | **Palette groups** | `model` (chat), `language` (services) |
 | **Official docs** | <https://docs.sarvam.ai> |
 
@@ -133,7 +156,7 @@ models.
 
 ---
 
-## Service nodes — `server/nodes/sarvam/`
+## Service capabilities (historical layout: `server/nodes/sarvam/`)
 
 Five stateless REST nodes, palette group `language`, all
 `usable_as_tool = True` and `TaskQueue.REST_API`. There is no `_service.py`:
@@ -259,7 +282,7 @@ Everything Sarvam touches, for reference when adding the next provider:
 | File | Locks |
 |---|---|
 | [`tests/llm/test_model_listing_fallback.py`](../server/tests/llm/test_model_listing_fallback.py) | The `supports_model_listing` contract both ways, incl. that Sarvam is the only opt-out and every other provider still calls `models.list()` |
-| [`tests/nodes/test_sarvam.py`](../server/tests/nodes/test_sarvam.py) | All five nodes: happy paths, `None`-stripping, per-model caps, v2/v3 param gating, TTS file-vs-base64 and multi-chunk, STT dual-shaped input |
+| [`tests/nodes/test_translate.py`](../server/tests/nodes/test_translate.py) + [`test_speech.py`](../server/tests/nodes/test_speech.py) | Sarvam is covered as a *provider* now: native auth header, single-input body shape, per-model caps, v2/v3 param gating, and the base64-array TTS response |
 | [`tests/services/test_connection_multipart.py`](../server/tests/services/test_connection_multipart.py) | `Connection.request(files=)` incl. the auth-retry replay |
 | `tests/llm/test_provider_self_registration.py` | Sarvam in the compat matrix + its pinned `base_url` |
 | `tests/llm/test_live_providers.py` | Opt-in live smoke, gated on `SARVAM_API_KEY` |

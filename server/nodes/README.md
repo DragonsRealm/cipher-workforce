@@ -132,12 +132,14 @@ vercel/      — Vercel (CLI deploy / inspect / list / custom passthrough)
 github/      — GitHub (gh CLI: clone / PRs / issues / custom; palette group "vcs")
 cloudflare/  — Cloudflare (cf CLI: zones / DNS / GraphQL analytics / custom; palette group "deployment")
 gcloud/      — Google Cloud (gcloud CLI: projects / Compute Engine / Cloud Run / Cloud Storage / custom; palette group "deployment")
-sarvam/      — Sarvam AI text REST APIs (translate / transliterate / detect_language; palette
-               group "language"). Its chat models are a separate plugin at model/sarvam_chat_model/
-               and share one SarvamCredential; its SPEECH endpoints are a provider inside speech/.
 speech/      — Provider-abstracted text_to_speech / speech_to_text (palette group "language").
                One node per direction with a `provider` dropdown, not one node per vendor. Owns
                its own protocol / registries / dispatch / per-vendor modules — see below.
+translate/   — Provider-abstracted translate / transliterate / detect_language (palette group
+               "language"). Same shape as speech/ but THREE registries, one per capability:
+               DeepL translates only, Sarvam and LLM-backed providers do all three.
+               (Sarvam's chat model remains a separate plugin at model/sarvam_chat_model/;
+               nodes/sarvam/ itself was retired — every capability it served is now a provider.)
 ```
 
 ---
@@ -153,7 +155,7 @@ these first before writing new code:
 | `agent/` | `_inline.prepare_agent_call` | One-shot pre-dispatch for every agent (memory + skill + tool + teammate collection) |
 | `agent/` | `_specialized.SpecializedAgentBase` | Base for 13 specialized agents |
 | `model/` | `_base.ChatModelBase` | 12 chat models inherit → same `@Operation("chat")` body that calls `ai_service.execute_chat` |
-| `sarvam/` | `_base.post_json` / `_base.post_multipart` / `_base.track_sarvam_usage` | 5 stateless REST nodes share one `api-subscription-key` connection, `None`-stripping request builder, and manual usage tracking (no `_service.py` — nothing long-lived to own) |
+| `speech/` + `translate/` | `_config` / `_registry` / `_unifier` / `_providers/` | The multi-vendor shape. Capability data is JSON (`services/plugin/capabilities.CapabilityConfig`), registration is `services/provider_registry`, and each `_providers/<vendor>.py` owns that vendor's auth scheme, request transport and response shape |
 | `android/` | `_base.AndroidServiceBase` | 16 Android services inherit; payload translation + `SERVICE_ID_MAP` lives on this base |
 | `android/` | `_base.execute_android_service_tool` | AI-tool dispatcher — called from `services/handlers/tools.py` for direct service tools (the `androidTool` aggregator + `execute_android_toolkit` were retired) |
 | `code/` | `_base.CodeExecutorBase` + `_nodejs.NodeJSClient` | Python/JS/TS executors; `monty_executor/` is sandboxed Python via `pydantic-monty` (enforced limits + opt-in capabilities) |

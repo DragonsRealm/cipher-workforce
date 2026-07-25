@@ -398,7 +398,15 @@ TEMPORAL_TASK_QUEUE=machina-tasks
 
 **Goal**: Comprehensive workflow automation coverage.
 
-**Status**: COMPLETED - 58 total nodes across 14 categories.
+**Status**: COMPLETED.
+
+> **The node table below is frozen at its 2025 snapshot and is NOT maintained.**
+> It read "58 total nodes across 14 categories" against a live count that has
+> since passed 130. Do not add to it. The authoritative count is
+> `len(services.node_registry.NODE_METADATA)`, and the authoritative list is the
+> plugin registry itself — see [node-logic-flows/](./node-logic-flows/) for
+> per-node cards and `server/nodes/README.md` for the folder map. Kept only as a
+> record of what Phase 9 delivered at the time.
 
 **Implementation**:
 
