@@ -2533,13 +2533,32 @@ class Database:
             return result.scalar_one_or_none()
 
     async def has_active_workflow_controls(self) -> bool:
+        from models.database import WORKFLOW_CONTROL_ACTIVE_STATES
+
         async with self.get_session() as session:
             result = await session.execute(
                 select(func.count()).select_from(WorkflowControlExecution).where(
-                    WorkflowControlExecution.status.in_({"starting", "running", "pausing", "paused", "resuming"})
+                    WorkflowControlExecution.status.in_(WORKFLOW_CONTROL_ACTIVE_STATES)
                 )
             )
             return bool(result.scalar_one())
+
+    async def list_active_workflow_controls(self) -> List[WorkflowControlExecution]:
+        """Every control row in a non-terminal status (boot-time reconcile).
+
+        At most one generation per workflow can be active (``begin_generation``
+        requires the previous one to be ``reset``), so this is effectively
+        latest-generation-per-workflow filtered to the active set.
+        """
+        from models.database import WORKFLOW_CONTROL_ACTIVE_STATES
+
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(WorkflowControlExecution)
+                .where(WorkflowControlExecution.status.in_(WORKFLOW_CONTROL_ACTIVE_STATES))
+                .order_by(WorkflowControlExecution.workflow_id, WorkflowControlExecution.generation.desc())
+            )
+            return list(result.scalars().all())
 
     async def get_workflow_control_by_idempotency_key(
         self, workflow_id: str, idempotency_key: str

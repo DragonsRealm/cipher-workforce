@@ -184,12 +184,13 @@ class Settings(BaseSettings):
     # (``Settings._resolve_under_data``) unless absolute. Sourced
     # from ``.env.template`` (canonical default lives there).
     temporal_sqlite_path: str = Field(env="TEMPORAL_SQLITE_PATH")
-    # Terminate every workflow in ``Running`` state on server boot.
-    # Preserves history (workflows show as ``Terminated`` in the
-    # Temporal UI, not deleted) but prevents auto-resumption, since
-    # OpenCompany's ``DeploymentManager`` has no boot-time reconcile
-    # against Temporal Visibility yet — resumed workflows would
-    # otherwise be invisible to the UI.
+    # Debug-only escape hatch: terminate every workflow in ``Running``
+    # state on server boot. MUST stay false in normal operation — the
+    # durability guarantee is that running and paused deployments
+    # survive backend restarts and keep executing for months. The
+    # durable workflow-control plane reconciles active generations on
+    # boot; a live control row in any active state also skips the sweep
+    # entirely (``has_active_workflow_controls``).
     temporal_terminate_running_on_startup: bool = Field(
         env="TEMPORAL_TERMINATE_RUNNING_ON_STARTUP",
     )
@@ -237,6 +238,15 @@ class Settings(BaseSettings):
     temporal_worker_restart_backoff_max_seconds: float = Field(
         default=30.0,
         env="TEMPORAL_WORKER_RESTART_BACKOFF_MAX_SECONDS",
+        gt=0,
+    )
+    # Backend-owned dev-server health monitor: after startup the lifespan
+    # keeps probing the Temporal dev server at this interval and respawns
+    # it if the child process dies while the backend stays up. Loopback
+    # (backend-owned) servers only; remote clusters are never touched.
+    temporal_health_monitor_interval_seconds: float = Field(
+        default=15.0,
+        env="TEMPORAL_HEALTH_MONITOR_INTERVAL_SECONDS",
         gt=0,
     )
 

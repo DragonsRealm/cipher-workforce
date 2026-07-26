@@ -7,11 +7,13 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from models.database import WorkflowControlExecution
+from models.database import WORKFLOW_CONTROL_ACTIVE_STATES, WorkflowControlExecution
 from sqlalchemy.exc import IntegrityError
 
 
-ACTIVE_STATES = {"starting", "running", "pausing", "paused", "resuming", "resetting"}
+# Re-exported name kept for existing importers; the canonical definition
+# lives beside the model so the terminate-sweep guard shares it.
+ACTIVE_STATES = WORKFLOW_CONTROL_ACTIVE_STATES
 
 
 def _graph_hash(nodes: list[dict], edges: list[dict]) -> str:

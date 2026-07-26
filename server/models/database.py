@@ -460,6 +460,16 @@ class AgentTeam(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None)
 
 
+# Canonical set of non-terminal WorkflowControlExecution statuses. Single
+# source of truth shared by the control plane (services/deployment/control.py)
+# and the startup terminate-sweep guard (core/database.py) — the two used to
+# carry independently maintained copies that drifted ("resetting" was missing
+# from the sweep guard, so a boot mid-reset could sweep the whole namespace).
+WORKFLOW_CONTROL_ACTIVE_STATES = frozenset(
+    {"starting", "running", "pausing", "paused", "resuming", "resetting"}
+)
+
+
 class WorkflowControlExecution(SQLModel, table=True):
     """Durable control generation for one saved workflow deployment."""
 
