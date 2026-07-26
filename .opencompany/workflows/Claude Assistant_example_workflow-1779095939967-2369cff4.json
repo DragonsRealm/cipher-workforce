@@ -505,7 +505,7 @@
       "memory_content": "# Conversation History\n\n*No messages yet.*\n",
       "long_term_enabled": false,
       "retrieval_count": 3,
-      "last_session_id": "45dbf1ac-1221-495d-9207-61b3559713ee",
+      "last_session_id": null,
       "sessionId": "",
       "windowSize": 100,
       "longTermEnabled": false,

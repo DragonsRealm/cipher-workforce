@@ -1,69 +1,126 @@
 /**
  * Parameter Sanitizer
- * Strips sensitive credentials from node parameters before export.
- * Prevents API keys, tokens, and passwords from leaking into exported workflow JSON.
+ * Strips sensitive credentials and runtime state from node parameters before export.
+ * Prevents API keys, tokens, passwords and conversation history from leaking into
+ * exported workflow JSON.
+ *
+ * ## Every comparison here is normalization-insensitive, deliberately
+ *
+ * Parameter keys are defined by backend Pydantic models and cross the wire as
+ * `snake_case` (see the naming table in CLAUDE.md). This file is TypeScript, so
+ * it is very easy to write the `camelCase` spelling and produce a filter that
+ * silently matches nothing.
+ *
+ * That is not hypothetical: `memoryContent` sat in the runtime list below while
+ * the real field was `memory_content`, so `Set.has()` never matched and every
+ * export carried the Simple Memory node's full conversation history. It reached
+ * the shipped example workflows, and from there a public repository.
+ *
+ * So keys are compared after `normalizeKey`, which folds case and drops
+ * separators. `memoryContent`, `memory_content` and `MEMORY-CONTENT` are all one
+ * key. Listing a name in either spelling now works, and getting the spelling
+ * wrong can no longer disable a filter.
  */
 
-// Parameter names that should never appear in exported JSON
-const SENSITIVE_EXACT_KEYS = new Set([
-  'apiKey', 'api_key', 'apikey',
-  'accessToken', 'access_token',
-  'refreshToken', 'refresh_token',
+/** Fold case and drop separators so snake_case and camelCase collapse together. */
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[_\-\s]/g, '');
+}
+
+const normalizedSet = (keys: string[]): Set<string> =>
+  new Set(keys.map(normalizeKey));
+
+// Parameter names that should never appear in exported JSON.
+const SENSITIVE_EXACT_KEYS = normalizedSet([
+  'api_key',
+  'access_token',
+  'refresh_token',
   'secret', 'password', 'passwd',
-  'client_id', 'client_secret', 'clientId', 'clientSecret',
-  'token', 'bearerToken', 'bearer_token',
-  'privateKey', 'private_key',
-  'encryptionKey', 'encryption_key',
-  'oauthToken', 'oauth_token',
+  'client_id', 'client_secret',
+  'token', 'bearer_token',
+  'private_key',
+  'encryption_key',
+  'oauth_token',
 ]);
 
-// Legitimate parameter names that contain sensitive substrings but are NOT credentials.
-// These are checked first and always allowed through.
-const SAFE_KEYS = new Set([
-  'maxTokens', 'max_tokens',
-  'budgetTokens', 'budget_tokens',
-  'page_token', 'pageToken', 'nextPageToken', 'next_page_token',
-  'tokenCount', 'token_count',
-  'totalTokens', 'total_tokens',
-  'inputTokens', 'input_tokens',
-  'outputTokens', 'output_tokens',
+// Legitimate parameter names that contain sensitive substrings but are NOT
+// credentials. Checked first and always allowed through.
+const SAFE_KEYS = normalizedSet([
+  'max_tokens',
+  'budget_tokens',
+  'page_token', 'next_page_token',
+  'token_count',
+  'total_tokens',
+  'input_tokens',
+  'output_tokens',
 ]);
 
-// Substring patterns - if a key contains any of these (case-insensitive),
-// the value is stripped. Uses specific credential patterns to avoid
-// false positives on parameter names like "maxTokens" or "page_token".
+// Substring patterns - if a key contains any of these once normalized, the
+// value is stripped. Specific enough to avoid firing on `maxTokens`/`pageToken`,
+// which are additionally protected by SAFE_KEYS above.
 const SENSITIVE_SUBSTRINGS = [
-  'api_key', 'apikey',
+  'api_key',
   'secret',
   'password',
-  'private_key', 'privatekey',
-  'accesstoken', 'access_token',
-  'refreshtoken', 'refresh_token',
-  'bearertoken', 'bearer_token',
-  'oauthtoken', 'oauth_token',
-  'authtoken', 'auth_token',
-];
+  'private_key',
+  'access_token',
+  'refresh_token',
+  'bearer_token',
+  'oauth_token',
+  'auth_token',
+].map(normalizeKey);
+
+// Suffix rules, to catch vendor-prefixed credentials nobody has added yet
+// (`bot_token`, `vercel_token`, ...) without enumerating every vendor.
+//
+// `token` singular only. Plural `tokens` is always a *count* in this codebase
+// (`max_tokens`, `total_tokens`, `input_tokens`), so the singular suffix
+// separates the two with no overlap.
+//
+// There is deliberately no `key` suffix rule. It reads plausible and it is
+// wrong: `vertexCloudTool.cloud_tool_key` is the stable identifier of a
+// cloud-side tool (`type:...` / `fn:...`), so stripping it would silently
+// destroy that node on export. Credential-shaped `*_key` names are already
+// covered by the `api_key` / `private_key` substrings above. Verified against
+// every Params field on all registered plugins -- do not add `key` here
+// without re-running that check.
+const SENSITIVE_SUFFIXES = ['token'];
 
 /**
  * Check if a parameter key holds sensitive credential data.
  * Returns true if the key should be stripped from exports.
  */
 function isSensitiveKey(key: string): boolean {
-  if (SAFE_KEYS.has(key)) return false;
-  if (SENSITIVE_EXACT_KEYS.has(key)) return true;
-  const lower = key.toLowerCase();
-  return SENSITIVE_SUBSTRINGS.some(sub => lower.includes(sub));
+  const normalized = normalizeKey(key);
+  if (SAFE_KEYS.has(normalized)) return false;
+  if (SENSITIVE_EXACT_KEYS.has(normalized)) return true;
+  if (SENSITIVE_SUBSTRINGS.some(sub => normalized.includes(sub))) return true;
+  return SENSITIVE_SUFFIXES.some(suffix => normalized.endsWith(suffix));
 }
 
-// Runtime/state keys that should not appear in exported workflows.
-// These are transient execution state, not user configuration.
-const RUNTIME_KEYS = new Set([
-  'memoryContent',         // Conversation history (personal data)
+// Runtime/state keys that should not appear in exported workflows. These are
+// transient execution state that happens to be persisted as a parameter, not
+// user configuration, and several of them carry personal data.
+//
+// Names below are the backend field names. Do NOT add a key here on the basis
+// of a `hidden: true` UI flag -- that marks merely-advanced configuration
+// (`model`, `max_parallel`, `effort`), which an export legitimately needs.
+const RUNTIME_KEYS = normalizedSet([
+  // simpleMemory: the whole conversation, verbatim, including anything the
+  // user or the model said.
+  'memory_content',
+  // simpleMemory: the Claude Code session UUID from the last successful run.
+  'last_session_id',
   'token_usage',           // Execution token metrics
   'execution_time',        // Runtime timing
   'last_execution',        // Last execution result
   'last_result',           // Cached result
 ]);
+
+/** True if the key is runtime state rather than user configuration. */
+function isRuntimeKey(key: string): boolean {
+  return RUNTIME_KEYS.has(normalizeKey(key));
+}
 
 /**
  * Deep-strip sensitive and runtime keys from a parameter object.
@@ -78,7 +135,7 @@ export function sanitizeParameters(params: Record<string, any>): Record<string, 
     if (isSensitiveKey(key)) continue;
 
     // Skip runtime/state keys
-    if (RUNTIME_KEYS.has(key)) continue;
+    if (isRuntimeKey(key)) continue;
 
     // Recurse into nested objects (but not arrays or null)
     if (value && typeof value === 'object' && !Array.isArray(value)) {
