@@ -1140,3 +1140,134 @@ async def test_generation_fanout_expands_tagged_standalone_root_trees():
         "('cron-firing-root', 'workflow-control-wf-g1') "
         "AND ExecutionStatus='Running'"
     )
+
+
+# ============================================================================
+# A controller execution that no longer exists
+#
+# Temporal deletes closed executions once the namespace retention window
+# passes (24h on the dev server). A generation's controller closes when that
+# generation is reset, so every control row eventually names an execution
+# Temporal has forgotten. Two things must hold: terminal generations must not
+# be probed at all, and a *live* generation whose controller vanished must
+# converge instead of waiting for something that will never answer.
+# ============================================================================
+
+
+class _Gone(Exception):
+    """Shaped like the Temporal error, matched by _temporal_target_already_gone."""
+
+    def __str__(self) -> str:
+        return (
+            'workflow execution not found for workflow ID '
+            '"workflow-control-wf-g1" and run ID "run-1"'
+        )
+
+
+def _reconcile_service(**overrides):
+    database = SimpleNamespace(**overrides.pop("database", {}))
+    return SimpleNamespace(database=database, **overrides)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["reset", "failed"])
+async def test_terminal_generation_is_never_probed(monkeypatch, terminal_status):
+    """The reported symptom: a doomed RPC on every status read, forever."""
+    probe = AsyncMock(return_value={"state": "running"})
+    monkeypatch.setattr(handlers, "_query_controller_state", probe)
+
+    control = _control(terminal_status, 6)
+    result, controller_status = await handlers._reconcile_control(
+        _reconcile_service(), control
+    )
+
+    probe.assert_not_awaited()
+    assert result is control
+    assert controller_status is None
+
+
+@pytest.mark.asyncio
+async def test_live_generation_with_missing_controller_is_failed(monkeypatch):
+    """Otherwise it stays non-'reset' forever and blocks every future Start."""
+    failed = _control("failed", 7, terminal_reason="controller_execution_missing")
+    fail = AsyncMock(return_value=failed)
+    broadcast = AsyncMock(return_value={})
+
+    monkeypatch.setattr(
+        handlers,
+        "_query_controller_state",
+        AsyncMock(side_effect=handlers.ControllerExecutionMissing("gone")),
+    )
+    monkeypatch.setattr(handlers, "_broadcast_control", broadcast)
+
+    control = _control("pausing", 6)
+    result, controller_status = await handlers._reconcile_control(
+        _reconcile_service(fail=fail), control
+    )
+
+    assert result is failed
+    assert controller_status is None
+    assert fail.await_args.args[1] == "controller_execution_missing"
+    broadcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resetting_is_not_auto_failed(monkeypatch):
+    """Reset owns its own retry; auto-failing here could race a live reset."""
+    fail = AsyncMock()
+    monkeypatch.setattr(
+        handlers,
+        "_query_controller_state",
+        AsyncMock(side_effect=handlers.ControllerExecutionMissing("gone")),
+    )
+
+    control = _control("resetting", 5)
+    result, _ = await handlers._reconcile_control(
+        _reconcile_service(fail=fail), control
+    )
+
+    fail.assert_not_awaited()
+    assert result is control
+
+
+@pytest.mark.asyncio
+async def test_a_transient_query_failure_does_not_fail_the_generation(monkeypatch):
+    """'Unreachable' must stay recoverable -- only 'gone' is terminal."""
+    fail = AsyncMock()
+    monkeypatch.setattr(
+        handlers, "_query_controller_state", AsyncMock(return_value=None)
+    )
+
+    control = _control("running", 4)
+    result, controller_status = await handlers._reconcile_control(
+        _reconcile_service(fail=fail), control
+    )
+
+    fail.assert_not_awaited()
+    assert result is control
+    assert controller_status is None
+
+
+@pytest.mark.asyncio
+async def test_missing_execution_is_classified_as_gone_not_as_an_outage():
+    """Locks the string match against the real Temporal error text."""
+    assert handlers._temporal_target_already_gone(_Gone()) is True
+    assert handlers._temporal_target_already_gone(RuntimeError("deadline")) is False
+
+
+@pytest.mark.asyncio
+async def test_query_raises_missing_rather_than_returning_none(monkeypatch):
+    """The distinction the whole fix rests on."""
+    handle = SimpleNamespace(query=AsyncMock(side_effect=_Gone()))
+    monkeypatch.setattr(handlers, "_controller_handle", lambda _c: handle)
+
+    with pytest.raises(handlers.ControllerExecutionMissing):
+        await handlers._query_controller_state(_control("running", 1))
+
+
+@pytest.mark.asyncio
+async def test_query_still_returns_none_for_a_real_outage(monkeypatch):
+    handle = SimpleNamespace(query=AsyncMock(side_effect=RuntimeError("deadline")))
+    monkeypatch.setattr(handlers, "_controller_handle", lambda _c: handle)
+
+    assert await handlers._query_controller_state(_control("running", 1)) is None

@@ -30,7 +30,11 @@ from fastapi import WebSocket
 
 from core.logging import get_logger
 from services.ws_handler_registry import ws_handler
-from services.deployment.control import WorkflowControlService, serialize_control
+from services.deployment.control import (
+    ACTIVE_STATES,
+    WorkflowControlService,
+    serialize_control,
+)
 
 # ``core.container`` and ``services.status_broadcaster`` are lazy-imported
 # inside each handler body. This module is imported transitively via
@@ -48,6 +52,17 @@ class TemporalControlUnavailable(RuntimeError):
 
 class TemporalControlAckMismatch(RuntimeError):
     """Temporal completed an Update without returning the requested state."""
+
+
+class ControllerExecutionMissing(RuntimeError):
+    """The controller execution this generation names no longer exists.
+
+    Distinct from :class:`TemporalControlUnavailable`, and the distinction is
+    the whole point: "unavailable" is transient and worth waiting out, whereas
+    a deleted execution never comes back. Treating the second as the first is
+    what let a generation sit in ``pausing`` forever, which in turn blocked
+    every future Start on that workflow.
+    """
 
 
 # Per-workflow deployment tasks for proper cancellation (Temporal/n8n pattern).
@@ -487,7 +502,13 @@ async def _update_controller_state(
 
 
 async def _query_controller_state(control) -> Optional[Dict[str, Any]]:
-    """Return controller state when reachable; status reads remain resilient."""
+    """Return controller state when reachable; status reads remain resilient.
+
+    Raises :class:`ControllerExecutionMissing` when Temporal reports the
+    execution does not exist, rather than folding that into the ``None``
+    that means "could not reach it". Callers need to tell the two apart:
+    one resolves itself, the other never will.
+    """
     handle = _controller_handle(control)
     if handle is None:
         return None
@@ -495,6 +516,19 @@ async def _query_controller_state(control) -> Optional[Dict[str, Any]]:
         result = await handle.query("status")
         return result if isinstance(result, dict) else None
     except Exception as exc:
+        if _temporal_target_already_gone(exc):
+            # Expected and unremarkable: a controller closes when its
+            # generation ends, and Temporal deletes closed executions once
+            # the namespace retention window passes. Not a warning.
+            logger.debug(
+                "Workflow controller execution no longer exists",
+                workflow_id=control.workflow_id,
+                controller_workflow_id=control.controller_workflow_id,
+                status=control.status,
+            )
+            raise ControllerExecutionMissing(
+                str(control.controller_workflow_id)
+            ) from exc
         logger.warning(
             "Workflow controller status query failed",
             workflow_id=control.workflow_id,
@@ -502,6 +536,44 @@ async def _query_controller_state(control) -> Optional[Dict[str, Any]]:
             error=str(exc),
         )
         return None
+
+
+# A missing controller is only actionable for a generation the database still
+# believes is alive. ``resetting`` is excluded deliberately: it already has an
+# explicit retry path through Reset, and auto-failing it here could race a
+# reset running concurrently in another request.
+_MISSING_CONTROLLER_FAILS = frozenset(
+    {"starting", "running", "pausing", "paused", "resuming"}
+)
+
+
+async def _fail_missing_controller(service: WorkflowControlService, control):
+    """Converge a generation whose controller has vanished to ``failed``.
+
+    Without this the row keeps whatever live status it had, and because
+    ``begin_generation`` refuses to open a new generation unless the latest
+    one is ``reset``, the workflow could never be started again. ``failed`` is
+    both honest and recoverable -- Reset accepts it, and Reset is what returns
+    the workflow to ``ready``.
+    """
+    if control.status not in _MISSING_CONTROLLER_FAILS:
+        return control
+    logger.warning(
+        "Workflow controller execution is gone; failing the generation so it "
+        "can be reset",
+        workflow_id=control.workflow_id,
+        controller_workflow_id=control.controller_workflow_id,
+        status=control.status,
+        generation=control.generation,
+    )
+    try:
+        failed = await service.fail(control, "controller_execution_missing")
+    except ValueError:
+        # Lost the CAS to a concurrent writer, which means someone else has
+        # already moved this row. Their transition wins; report what we have.
+        return control
+    await _broadcast_control(failed)
+    return failed
 
 
 def _generation_visibility_query(control) -> str:
@@ -796,7 +868,19 @@ async def _reconcile_control(service: WorkflowControlService, control):
     """Finish an interrupted DB transition from acknowledged Temporal state."""
     from core.container import container
 
-    controller_status = await _query_controller_state(control)
+    # A generation that has been reset (or failed) closed its controller on
+    # purpose, and Temporal deletes closed executions once the namespace
+    # retention window passes. Probing one is therefore a guaranteed-failing
+    # RPC on every single status read, forever. Terminal generations are
+    # answered from the database, which is authoritative for them anyway.
+    if control.status not in ACTIVE_STATES:
+        return control, None
+
+    try:
+        controller_status = await _query_controller_state(control)
+    except ControllerExecutionMissing:
+        return await _fail_missing_controller(service, control), None
+
     transition_target = {
         "pausing": ("paused", "paused"),
         "resuming": ("running", "running"),
@@ -1058,7 +1142,13 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
     # Reaching ``running`` commits successful deployment setup. Projection
     # failures after that point must not tear down a live durable generation;
     # the client can recover the committed state through its status resync.
-    controller_status = await _query_controller_state(control)
+    try:
+        controller_status = await _query_controller_state(control)
+    except ControllerExecutionMissing:
+        # Same rule as the comment above: this is a projection read taken
+        # after the generation committed. Reporting no controller state is
+        # acceptable; propagating and unwinding a live generation is not.
+        controller_status = None
     payload = await _broadcast_control(
         control,
         controller_status=controller_status,
