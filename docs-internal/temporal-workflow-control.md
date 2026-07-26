@@ -128,7 +128,44 @@ their external stores. Deployment control never switches on node type.
 On server restart, active controlled deployments are excluded from the legacy
 startup termination sweep. `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP` defaults to
 `false`; enabling it is intended only for legacy installations that explicitly
-prefer termination over durable resumption.
+prefer termination over durable resumption. The active-state guard reads the
+shared `WORKFLOW_CONTROL_ACTIVE_STATES` set (which includes `resetting`), so a
+boot mid-reset can never sweep the namespace.
+
+## Months-long generations
+
+A controlled generation is expected to run — or stay paused — for months, so
+the control plane is hardened against Temporal's per-run event-history ceiling
+(~51,200 events) and against backend restarts:
+
+- **Controller continue-as-new.** `WorkflowControlWorkflow` rolls its run over
+  under history pressure (`is_continue_as_new_suggested()` or a 10K-event soft
+  cap), carrying trigger specs, per-trigger provider `seen_ids` (written back
+  into the carried spec after every poll cycle), queued push events, the
+  bounded dedup baseline, and the control state + revision. Rollover works
+  mid-pause; the paused state carries. Because run ids change on rollover,
+  every control surface addresses the controller **by workflow id only** —
+  `controller_run_id` is stored for provenance but never pinned on a handle.
+- **Signal narrowing.** The controller upserts the `ControlEventTypes`
+  keyword-list Search Attribute as push triggers register; `dispatch.emit`
+  skips controllers whose deployment has no matching trigger so other
+  deployments' traffic cannot burn a controller's rollover budget.
+- **Boot-time reconcile** (`reconcile_active_controls_on_boot`, invoked by the
+  Temporal lifecycle task after workers start): runs the lazy reconcile over
+  every active row, converges crash-stranded `starting` rows (controller alive
+  with registered triggers, or a triggerless graph → `running`; alive-but-empty
+  while the graph declares triggers → `failed` with the orphan controller
+  closed), and re-arms the process-local half of running/paused generations
+  from the persisted graph snapshot — DeploymentManager runtime state,
+  in-process collectors for non-canary trigger types, and the paused posture
+  (admission, trigger pause flags, cron schedule pause). Re-arm is idempotent:
+  controller `register_trigger` is keyed by listener id, legacy listener
+  starts use `USE_EXISTING`, and cron schedule creation preserves server-owned
+  pause state.
+- **No lifetime caps.** Spawned graph runs, agent children, and delegated-task
+  runners no longer carry 1-2h execution/run timeouts (Temporal's timers keep
+  ticking through a pause, so the caps silently terminated paused work).
+  Replay-patched; see TEMPORAL_ARCHITECTURE.md for the patch inventory.
 
 ## Delegated-task traces
 

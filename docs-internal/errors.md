@@ -137,6 +137,44 @@ construction paths.
 
 ---
 
+### 2b. `GetTaskQueue operation failed ... context canceled` After Launch
+
+**Symptom**: some time after launch the aggregated log shows:
+```
+level=ERROR msg="Operation failed with internal error."
+error="GetTaskQueue operation failed. Failed to check if task queue /_sys/code-exec/2 of type Activity existed. Error: context canceled"
+error-type=serviceerror.Unavailable operation=GetTaskQueue
+```
+
+`/_sys/<queue>/<n>` is Temporal's internal partition naming — `code-exec` here
+is one of the worker pool's per-plugin task queues; any low-traffic queue and
+partition can appear.
+
+**Root cause**: the dev server logs ERROR when a poller's long-poll context is
+canceled mid-persistence-read — routine events with this topology (~10 workers
+long-polling a single-writer SQLite dev server): poller autoscaling settling
+after boot, a worker restart, backend shutdown, laptop sleep/wake breaking gRPC
+channels, or the server's own idle background jobs. Staff-confirmed benign
+upstream ([community.temporal.io/t/18635](https://community.temporal.io/t/temporal-server-errors-with-no-app-running/18635),
+[temporalio/cli#633](https://github.com/temporalio/cli/issues/633)): a canceled
+poll never loses a task — tasks are persisted, the SDK re-polls immediately,
+and the server redelivers.
+
+**Status**: benign noise. `TemporalServerRuntime.stderr_log`
+([`services/temporal/_runtime.py`](../server/services/temporal/_runtime.py))
+downgrades lines matching both `context canceled` and the internal-error /
+`GetTaskQueue` markers to DEBUG; genuine dev-server errors keep surfacing at
+ERROR through the supervisor pipe.
+
+**When it is NOT benign**: if activities on that queue actually hang, check
+whether the queue's pool worker died (Temporal Web UI → task queue pollers).
+Pool workers self-restart with a fresh Worker instance per attempt
+(`TemporalWorkerPool._run_queue_worker`); a queue with zero pollers after
+repeated restarts indicates a real crash loop — read the
+`[Pool] Worker for queue ... crashed` log lines for the underlying error.
+
+---
+
 ## 3. Temporal Activity `CancelledError` on Long-Running Nodes
 
 **Symptom**: Nodes that run for more than ~2 minutes (Coding Agent, browser automation, AI multi-tool loops) fail with:
