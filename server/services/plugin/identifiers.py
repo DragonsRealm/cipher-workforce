@@ -14,9 +14,14 @@ Why this lives here (not inline at each callsite):
   pre-compiled validator via :func:`is_valid_node_type`. Keeping the
   pattern in one module guarantees the route-level and function-level
   checks stay in lockstep.
-- Recognised by CodeQL's ``py/path-injection`` taint analysis as a
-  sanitizer — the canonical "regex fullmatch on user input" pattern
-  (see https://codeql.github.com/codeql-query-help/python/py-path-injection/).
+- States the constraint explicitly for readers and for static analysis.
+  Note it does **not** silence CodeQL's ``py/path-injection``: the
+  icon-resolution alerts this was introduced for are still reported on
+  every scan and were closed by manual dismissal. The sink CodeQL flags
+  is the path construction itself, so a ``fullmatch`` in a helper does
+  not act as a barrier for it. Keep the check -- it is correct and cheap
+  -- but do not expect an alert to disappear because of it.
+  (Rule: https://codeql.github.com/codeql-query-help/python/py-path-injection/)
 """
 
 from __future__ import annotations

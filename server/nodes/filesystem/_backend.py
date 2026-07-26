@@ -540,13 +540,13 @@ def atomic_write_bytes(
 # escapes embedded in a filename corrupt every log line and console that
 # later prints it.
 #
-# It is also the shape CodeQL's ``py/path-injection`` recognises as a
-# sanitizer -- a ``re.fullmatch`` guarding the value on its way to the path
-# expression. The blocklist checks below (``..``, ``~``, drive prefixes) are
-# the real containment work, but a static analyser cannot confirm a blocklist
-# is exhaustive, so it keeps reporting the ``resolve()`` call underneath.
-# Same reasoning, and same fix, as ``services/plugin/identifiers.py``.
-# https://codeql.github.com/codeql-query-help/python/py-path-injection/
+# It does NOT satisfy CodeQL's ``py/path-injection``, and that was checked
+# rather than assumed: the sink it flags is the ``candidate.resolve()`` call
+# below, so nothing placed after it can clear the taint, and a ``fullmatch``
+# in this helper is not treated as a barrier for it either. That rule is
+# dismissed on this function -- see CLAUDE.md, which used to claim the
+# opposite. Keep this check on its own merits, not to move an alert.
+# (Rule: https://codeql.github.com/codeql-query-help/python/py-path-injection/)
 _SAFE_VIRTUAL_PATH_PATTERN: Final[str] = r"[^\x00-\x1f\x7f]{1,4096}"
 _SAFE_VIRTUAL_PATH_RE: Final[re.Pattern[str]] = re.compile(_SAFE_VIRTUAL_PATH_PATTERN)
 
