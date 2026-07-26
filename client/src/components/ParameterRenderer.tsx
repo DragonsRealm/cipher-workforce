@@ -35,6 +35,8 @@ import { AI_MODEL_PROVIDER_MAP } from '../lib/aiModelProviders';
 import { resolveNodeDescription } from '../lib/nodeSpec';
 import { uploadToWorkspace } from '../lib/workspaceUpload';
 import { WORKSPACE_FILE_DRAG_TYPE, isWorkspaceFileRef } from '../types/workspaceFiles';
+import { assignWorkspaceFile, buildWorkspaceFilePayload } from '../lib/workspaceFileAssign';
+import WorkspaceFilePickerDialog from './parameterPanel/gallery/WorkspaceFilePickerDialog';
 
 /**
  * Radix reserves the empty string to clear a Select, so raw node option
@@ -809,10 +811,18 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
   // This prevents showing template code briefly before saved code appears
   const currentValue = isLoadingParameters ? (value ?? '') : (value !== undefined ? value : parameter.default);
   const [isDragOver, setIsDragOver] = useState(false);
+  // The pointer-operable alternative to dragging a file out of the gallery
+  // (WCAG 2.2 SC 2.5.7) — and, since the gallery panel and this input can
+  // never be on screen together, the only in-app assignment path there is.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dynamicOptions, setDynamicOptions] = useState<INodePropertyOption[]>([]);
   const [nodeParameters, setNodeParameters] = useState<Record<string, any>>({});
 
   const selectedNode = useAppStore((s) => s.selectedNode);
+  // Slice selector, not a whole-store destructure (see the perf rules in
+  // CLAUDE.md). Needed at render time to decide whether the workspace picker
+  // can be offered at all; the file-upload callback reads it via getState().
+  const workflowId = useAppStore((s) => s.currentWorkflow?.id);
   const { getNodeParameters, sendRequest } = useWebSocket();
   const { getStoredApiKey, hasStoredKey, getStoredModels, getProviderDefaults } = useApiKeys();
   const activeNodeIdRef = React.useRef<string | null>(selectedNode?.id ?? null);
@@ -1231,18 +1241,14 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
           return;
         }
         if (parsedData.type === WORKSPACE_FILE_DRAG_TYPE) {
-          // A `file` parameter holds exactly one reference, so it replaces.
-          // Everything else is text and must APPEND: dropping a file into a
-          // half-written prompt has to leave the prompt intact.
-          if (parameter.type === 'file' && parsedData.ref) {
-            onChange(parsedData.ref);
-            return;
-          }
-          // Guard the type — a `file` param's currentValue is an object, and
-          // the branches above would throw on `.endsWith` if one lands here.
-          const existingValue = typeof currentValue === 'string' ? currentValue : '';
-          const needsSpace = existingValue.length > 0 && !existingValue.endsWith(' ');
-          onChange(existingValue + (needsSpace ? ' ' : '') + parsedData.path);
+          // Same function the "Choose from workspace" picker calls. WCAG 2.2
+          // SC 2.5.7 requires the non-drag alternative to operate *the same*
+          // function, so append-vs-replace has exactly one definition.
+          assignWorkspaceFile(parsedData, {
+            parameterType: parameter.type,
+            currentValue,
+            onChange,
+          });
           return;
         }
       } catch (err) {
@@ -1749,6 +1755,15 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
                 style={{ display: 'none' }}
                 accept={getFileAcceptType()}
               />
+              {workflowId && (
+                <ActionButton
+                  intent="config"
+                  onClick={() => setPickerOpen(true)}
+                  title="Pick a file already in this workflow's workspace"
+                >
+                  Choose from workspace
+                </ActionButton>
+              )}
               <ActionButton
                 intent="config"
                 onClick={() => fileInputRef.current?.click()}
@@ -1772,6 +1787,7 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
               )}
             </div>
             <div
+              aria-live="polite"
               className={`mt-1 text-[11px] italic ${uploadError ? 'text-destructive' : 'text-muted-foreground'}`}
             >
               {uploadError
@@ -1782,6 +1798,21 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
                     ? `Size: ${(currentValue.data.length * 0.75 / 1024).toFixed(1)} KB | Type: ${currentValue.mimeType}`
                     : 'Enter server path or click Upload to select a file'}
             </div>
+            <WorkspaceFilePickerDialog
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              workflowId={workflowId}
+              onChoose={(entry) => {
+                const payload = buildWorkspaceFilePayload(entry);
+                if (payload) {
+                  assignWorkspaceFile(payload, {
+                    parameterType: parameter.type,
+                    currentValue,
+                    onChange,
+                  });
+                }
+              }}
+            />
           </div>
         );
 

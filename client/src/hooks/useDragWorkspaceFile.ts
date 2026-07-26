@@ -1,10 +1,7 @@
 import { useCallback } from 'react';
 
-import {
-  WORKSPACE_FILE_DRAG_TYPE,
-  type WorkspaceEntry,
-  type WorkspaceFileDragPayload,
-} from '@/types/workspaceFiles';
+import { buildWorkspaceFilePayload } from '@/lib/workspaceFileAssign';
+import type { WorkspaceEntry } from '@/types/workspaceFiles';
 
 interface DragWorkspaceFileHookReturn {
   handleFileDragStart: (event: React.DragEvent, entry: WorkspaceEntry) => void;
@@ -25,16 +22,11 @@ interface DragWorkspaceFileHookReturn {
  */
 export function useDragWorkspaceFile(): DragWorkspaceFileHookReturn {
   const handleFileDragStart = useCallback((event: React.DragEvent, entry: WorkspaceEntry) => {
-    if (entry.is_dir || !entry.ref) {
+    const payload = buildWorkspaceFilePayload(entry);
+    if (!payload) {
       event.preventDefault();
       return;
     }
-
-    const payload: WorkspaceFileDragPayload = {
-      type: WORKSPACE_FILE_DRAG_TYPE,
-      path: entry.path,
-      ref: entry.ref,
-    };
 
     event.dataTransfer.setData('application/json', JSON.stringify(payload));
     event.dataTransfer.setData('text/plain', entry.path);
