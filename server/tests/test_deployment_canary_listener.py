@@ -305,8 +305,11 @@ class TestStartCanaryListener:
 
         assert listener_id == "wf-controlled-webhookTrigger"
         client.start_workflow.assert_not_awaited()
+        # Addressed by workflow id only — the controller continue-as-news
+        # to bound its history, so a run_id-pinned handle would target a
+        # closed run after the first rollover.
         client.get_workflow_handle.assert_called_once_with(
-            "workflow-control-wf-controlled-g1", run_id="controller-run-1",
+            "workflow-control-wf-controlled-g1",
         )
         signal_name, spec = controller_handle.signal.await_args.args
         assert signal_name == "register_trigger"

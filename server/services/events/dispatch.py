@@ -138,9 +138,29 @@ async def _signal_running_consumers(event: WorkflowEvent) -> None:
         logger.warning(f"emit: Visibility query failed (query={query!r}): {exc}")
         return
 
-    if not consumers:
+    # Every signal is immutable history in the receiving workflow —
+    # controllers used to receive EVERY platform event (matching or not)
+    # and filter in-workflow, so one busy deployment burned down every
+    # other controller's continue-as-new budget. Controllers advertise
+    # their push event types via the ControlEventTypes Search Attribute
+    # (upserted as triggers register); skip the ones with no match.
+    # Controllers without the attribute (pre-upgrade histories) keep the
+    # legacy match-all behaviour.
+    matched_types = {str(t) for t in event_types}
+    targets = []
+    skipped = 0
+    for wf in consumers:
+        if _is_controller(wf):
+            declared = _controller_event_types(wf)
+            if declared is not None and not (declared & matched_types):
+                skipped += 1
+                continue
+        targets.append(wf)
+
+    if not targets:
         logger.debug(
-            f"emit: 0 consumers for event.type={event.type!r} " f"(event.id={event.id})",
+            f"emit: 0 consumers for event.type={event.type!r} "
+            f"(event.id={event.id}, controllers_skipped={skipped})",
         )
         return
 
@@ -148,15 +168,58 @@ async def _signal_running_consumers(event: WorkflowEvent) -> None:
     # block other consumers (return_exceptions=True surfaces failures
     # as exceptions in the result list).
     signal_results = await asyncio.gather(
-        *[_signal_one(client, wf.id, event) for wf in consumers],
+        *[_signal_one(client, wf.id, event) for wf in targets],
         return_exceptions=True,
     )
 
     delivered = sum(1 for r in signal_results if not isinstance(r, Exception))
     failed = len(signal_results) - delivered
     logger.info(
-        f"emit: signalled {delivered}/{len(consumers)} consumers for " f"event.type={event.type!r} (failed={failed}, event.id={event.id})",
+        f"emit: signalled {delivered}/{len(targets)} consumers for "
+        f"event.type={event.type!r} (failed={failed}, "
+        f"controllers_skipped={skipped}, event.id={event.id})",
     )
+
+
+def _is_controller(wf: object) -> bool:
+    """True when a Visibility-listed execution is a WorkflowControlWorkflow."""
+    wf_type = getattr(wf, "workflow_type", None)
+    wf_type = getattr(wf_type, "name", None) or wf_type
+    return str(wf_type) == "WorkflowControlWorkflow"
+
+
+def _controller_event_types(wf: object) -> Optional[set]:
+    """Read the ControlEventTypes keyword-list Search Attribute off a
+    Visibility-listed execution.
+
+    ``None`` means the attribute is absent (pre-upgrade controller or a
+    controller whose upsert failed) — callers treat that as match-all so
+    narrowing can never silently disconnect a live deployment. The SDK's
+    listed-execution shape varies across versions (typed pairs vs plain
+    dict), so both forms are read defensively.
+    """
+    try:
+        typed = getattr(wf, "typed_search_attributes", None)
+        if typed is not None:
+            for pair in typed:
+                key = getattr(getattr(pair, "key", None), "name", None)
+                if key != "ControlEventTypes":
+                    continue
+                value = getattr(pair, "value", None)
+                if value is None:
+                    return None
+                values = value if isinstance(value, (list, tuple)) else [value]
+                return {str(v) for v in values}
+        raw = getattr(wf, "search_attributes", None)
+        if isinstance(raw, dict) and "ControlEventTypes" in raw:
+            value = raw.get("ControlEventTypes")
+            if value is None:
+                return None
+            values = value if isinstance(value, (list, tuple)) else [value]
+            return {str(v) for v in values}
+    except Exception:  # noqa: BLE001 — unreadable attribute == match-all
+        return None
+    return None
 
 
 async def _signal_one(client, workflow_id: str, event: WorkflowEvent) -> None:

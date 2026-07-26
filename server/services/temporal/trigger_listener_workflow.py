@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from temporalio import workflow
 from temporalio.common import (
+    RetryPolicy,
     SearchAttributeKey,
     SearchAttributePair,
     TypedSearchAttributes,
@@ -54,6 +55,53 @@ CHILD_SEARCH_ATTRIBUTES_PATCH = "trigger-child-search-attributes-v1"
 COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
     "trigger-cooperative-pause-scheduling-v1"
 )
+# Child MachinaWorkflow runs used to carry 1h execution/run timeouts.
+# A run may legitimately execute — or stay cooperatively paused — for
+# months, and Temporal's timeout timer keeps ticking through a pause,
+# so any pause longer than the cap silently terminated the run.
+# Liveness is enforced at the activity layer (heartbeats), not by
+# workflow lifetime caps; new executions start children unbounded
+# (Temporal's default). The patch keeps replay compatibility for
+# histories whose recorded child starts carried the old caps.
+UNBOUNDED_CHILD_RUNS_PATCH = "trigger-unbounded-child-runs-v1"
+# The _processed_count threshold above was calibrated assuming ~2-3
+# history events per firing, but the real spawn path costs ~15-25
+# (signal + two broadcast activities + optional graph-load + child
+# start/close + workflow tasks) — the server's ~51,200-event hard
+# termination fires around 2,000-3,500 firings, long before the
+# 16,000-processed checkpoint could. The patched path rolls over on
+# the server's own is_continue_as_new_suggested signal (with the soft
+# cap below as a deterministic backstop), carries still-queued events
+# instead of dropping them, and carries the pause flag instead of
+# blocking the rollover behind a resume that may be months away.
+HISTORY_BOUNDED_CAN_PATCH = "trigger-history-bounded-can-v1"
+_HISTORY_SOFT_CAP = 10_000
+# Continue-as-new argument blobs are capped at 2MiB; carry at most this
+# many still-queued events across a rollover (oldest dropped, logged).
+_MAX_CARRIED_EVENTS = 256
+# Status broadcasts are cosmetic UI signalling. Without an explicit
+# policy Temporal retries a failing activity forever, wedging the
+# serialized spawn loop behind a dead broadcaster. Bounded + swallowed
+# on the patched path (BOUNDED_STATUS_BROADCASTS_PATCH gates the
+# command-visible retry-policy change; the try/except is command-free).
+# Policy: the shared QUICK_ACTIVITY_RETRY constant (cheap side-effect
+# activities fail fast) — never an inline RetryPolicy construction.
+BOUNDED_STATUS_BROADCASTS_PATCH = "trigger-bounded-status-broadcasts-v1"
+
+
+def _history_pressure(soft_cap: int) -> bool:
+    """True when the server suggests continue-as-new or the current
+    history length crossed ``soft_cap``. False outside a real workflow
+    runtime (direct unit invocation), where history cannot grow. Shared
+    by the listener, polling, and controller rollover checks."""
+    try:
+        info = workflow.info()
+    except Exception:  # direct unit invocation outside Temporal runtime
+        return False
+    return bool(
+        info.is_continue_as_new_suggested()
+        or info.get_current_history_length() > soft_cap
+    )
 
 
 def event_workflow_search_attributes(
@@ -151,6 +199,16 @@ class TriggerListenerWorkflow:
         use_cooperative_pause_schedule_gate = workflow.patched(
             COOPERATIVE_PAUSE_SCHEDULING_PATCH
         )
+        use_history_bounded_can = workflow.patched(HISTORY_BOUNDED_CAN_PATCH)
+
+        # Rehydrate rollover-carried state. Command-free, so pre-patch
+        # histories (whose payloads lack the keys) replay identically.
+        self._control_paused = bool(listener_data.get("control_paused"))
+        for carried_event in listener_data.get("pending_events") or []:
+            carried_id = carried_event.get("id")
+            if carried_id and carried_id not in self._seen_event_ids:
+                self._seen_event_ids.add(carried_id)
+                self._matched_events.append(carried_event)
 
         while True:
             await workflow.wait_condition(
@@ -186,9 +244,25 @@ class TriggerListenerWorkflow:
                 workflow.logger.error(f"TriggerListener spawn failed for event.id={event.get('id')}: {exc}")
 
             self._processed_count += 1
-            if self._processed_count >= _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW:
+            should_rollover = self._processed_count >= _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW
+            if use_history_bounded_can and not should_rollover:
+                should_rollover = _history_pressure(_HISTORY_SOFT_CAP)
+            if should_rollover:
                 workflow.logger.info(f"TriggerListener continue_as_new: processed={self._processed_count}")
-                if use_cooperative_pause_schedule_gate:
+                if use_history_bounded_can:
+                    # Carry queued events (previously dropped at rollover)
+                    # and the pause flag (previously the rollover blocked
+                    # behind a resume that could be months away, letting
+                    # signal traffic overflow the history mid-pause).
+                    dropped = max(0, len(self._matched_events) - _MAX_CARRIED_EVENTS)
+                    if dropped:
+                        workflow.logger.warning(
+                            f"TriggerListener rollover dropping {dropped} oldest queued "
+                            f"event(s) beyond the {_MAX_CARRIED_EVENTS} carry cap"
+                        )
+                    listener_data["pending_events"] = self._matched_events[-_MAX_CARRIED_EVENTS:]
+                    listener_data["control_paused"] = self._control_paused
+                elif use_cooperative_pause_schedule_gate:
                     # Do not let continue-as-new reset a pause that landed
                     # during the final spawn/status broadcast.
                     await self._wait_until_resumed()
@@ -275,12 +349,26 @@ class TriggerListenerWorkflow:
         event_id = event.get("id") or workflow.uuid4().hex
         child_id = f"{workflow_slug}-{trigger_label}-{event_id}"
 
-        await _broadcast_trigger_idle(
-            node_id=trigger_node_id,
-            workflow_id=workflow_id,
-            event_id=event_id,
-            event_type=event.get("type", ""),
-        )
+        from services.temporal._retry_policies import QUICK_ACTIVITY_RETRY
+
+        try:
+            unbounded_child_runs = workflow.patched(UNBOUNDED_CHILD_RUNS_PATCH)
+            bounded_broadcasts = workflow.patched(BOUNDED_STATUS_BROADCASTS_PATCH)
+        except RuntimeError:  # direct unit invocation outside Temporal runtime
+            unbounded_child_runs = True
+            bounded_broadcasts = True
+        broadcast_retry = QUICK_ACTIVITY_RETRY if bounded_broadcasts else None
+
+        try:
+            await _broadcast_trigger_idle(
+                node_id=trigger_node_id,
+                workflow_id=workflow_id,
+                event_id=event_id,
+                event_type=event.get("type", ""),
+                retry_policy=broadcast_retry,
+            )
+        except Exception as exc:  # noqa: BLE001 — cosmetic UI signalling
+            workflow.logger.warning(f"Trigger status broadcast failed (non-fatal): {exc}")
 
         if admission_check is not None:
             await admission_check()
@@ -291,9 +379,12 @@ class TriggerListenerWorkflow:
             "id_reuse_policy": (
                 WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
             ),
-            "execution_timeout": timedelta(hours=1),
-            "run_timeout": timedelta(hours=1),
         }
+        if not unbounded_child_runs:
+            # Replay-only: pre-patch histories recorded 1h caps on the
+            # child-start command. See UNBOUNDED_CHILD_RUNS_PATCH.
+            child_options["execution_timeout"] = timedelta(hours=1)
+            child_options["run_timeout"] = timedelta(hours=1)
         if search_attributes is not None:
             child_options["search_attributes"] = search_attributes
 
@@ -319,12 +410,16 @@ class TriggerListenerWorkflow:
             f"TriggerListener spawned child run: child_id={child_id} " f"event.id={event.get('id')} event.type={event.get('type')}"
         )
 
-        await _broadcast_trigger_waiting(
-            node_id=trigger_node_id,
-            workflow_id=workflow_id,
-            event_type=listener_data.get("event_type", ""),
-            processed_count=self._processed_count + 1,
-        )
+        try:
+            await _broadcast_trigger_waiting(
+                node_id=trigger_node_id,
+                workflow_id=workflow_id,
+                event_type=listener_data.get("event_type", ""),
+                processed_count=self._processed_count + 1,
+                retry_policy=broadcast_retry,
+            )
+        except Exception as exc:  # noqa: BLE001 — cosmetic UI signalling
+            workflow.logger.warning(f"Trigger status broadcast failed (non-fatal): {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -344,10 +439,20 @@ async def _broadcast_trigger_idle(
     workflow_id: Optional[str],
     event_id: str,
     event_type: str,
+    retry_policy: Optional[RetryPolicy] = None,
 ) -> None:
     """Broadcast trigger node ``"idle"`` status with a "Graph executing..."
     message — matches the legacy collector/processor transition so FE
-    shows a firing pulse instead of a stuck "waiting" indicator."""
+    shows a firing pulse instead of a stuck "waiting" indicator.
+
+    ``retry_policy=None`` (Temporal default = unlimited retries) is the
+    replay-compatibility shape for pre-patch histories; new executions
+    pass the bounded policy so a dead broadcaster cannot wedge the
+    serialized spawn loop.
+    """
+    kwargs: Dict[str, Any] = {"start_to_close_timeout": _STATUS_ACTIVITY_TIMEOUT}
+    if retry_policy is not None:
+        kwargs["retry_policy"] = retry_policy
     await workflow.execute_activity(
         _STATUS_ACTIVITY_NAME,
         {
@@ -361,7 +466,7 @@ async def _broadcast_trigger_idle(
             },
             "workflow_id": workflow_id,
         },
-        start_to_close_timeout=_STATUS_ACTIVITY_TIMEOUT,
+        **kwargs,
     )
 
 
@@ -371,10 +476,15 @@ async def _broadcast_trigger_waiting(
     workflow_id: Optional[str],
     event_type: str,
     processed_count: int,
+    retry_policy: Optional[RetryPolicy] = None,
 ) -> None:
     """Broadcast trigger node back to ``"waiting"`` after the child run
     has been spawned (child completes independently per
-    ``parent_close_policy=ABANDON``)."""
+    ``parent_close_policy=ABANDON``). Retry-policy contract matches
+    :func:`_broadcast_trigger_idle`."""
+    kwargs: Dict[str, Any] = {"start_to_close_timeout": _STATUS_ACTIVITY_TIMEOUT}
+    if retry_policy is not None:
+        kwargs["retry_policy"] = retry_policy
     await workflow.execute_activity(
         _STATUS_ACTIVITY_NAME,
         {
@@ -388,7 +498,7 @@ async def _broadcast_trigger_waiting(
             },
             "workflow_id": workflow_id,
         },
-        start_to_close_timeout=_STATUS_ACTIVITY_TIMEOUT,
+        **kwargs,
     )
 
 

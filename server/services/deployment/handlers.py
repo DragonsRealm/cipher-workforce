@@ -452,15 +452,22 @@ async def _start_controller(control) -> Optional[str]:
 
 
 def _controller_handle(control):
+    """Handle addressed by workflow id only — never pinned to a run id.
+
+    The controller keeps its event history bounded via continue-as-new,
+    which mints a new run id under the same workflow id. A handle pinned
+    to ``control.controller_run_id`` (the FIRST run) would target a
+    closed run after the first rollover and every pause/resume/update/
+    query would fail. The workflow id already carries the generation
+    (``workflow-control-<wf>-g<N>``), so unpinned addressing cannot
+    reach a different generation's controller.
+    """
     from core.container import container
 
     wrapper = container.temporal_client()
     if wrapper is None or wrapper.client is None or not control.controller_workflow_id:
         return None
-    return wrapper.client.get_workflow_handle(
-        control.controller_workflow_id,
-        run_id=control.controller_run_id,
-    )
+    return wrapper.client.get_workflow_handle(control.controller_workflow_id)
 
 
 async def _signal_controller(control, signal_name: str) -> None:
@@ -966,6 +973,179 @@ async def _reconcile_control(service: WorkflowControlService, control):
         if latest is not None and latest.generation == control.generation:
             control = latest
     return control, controller_status
+
+
+# ---------------------------------------------------------------------------
+# Boot-time reconcile — called once from services.temporal.lifecycle after
+# the workers start. Request-time reconciliation stays lazy; this pass closes
+# the unattended-server window where durable intent (running/paused rows) and
+# runtime behaviour could diverge indefinitely after a backend restart.
+# ---------------------------------------------------------------------------
+
+
+async def reconcile_active_controls_on_boot() -> int:
+    """Converge every active durable control after a backend restart.
+
+    Three responsibilities per active row:
+
+    1. Run the same lazy :func:`_reconcile_control` used by status reads
+       (finishes interrupted pause/resume transitions, fails rows whose
+       controller vanished).
+    2. Converge ``starting`` rows — the one state the lazy path never
+       touches while its controller exists, so a crash mid-start used to
+       wedge the workflow behind a permanent ``workflow_start_pending``.
+       Boot is the only moment guaranteed free of a concurrent in-process
+       start, which is why this lives here and not in the lazy path.
+    3. Re-arm the process-local half of running/paused generations from
+       the persisted graph snapshot: the controller and its Temporal
+       children survive a restart on their own, but DeploymentManager
+       state (runtime counts, admission, pause fan-in) and in-process
+       collectors for non-canary trigger types die with the process and
+       previously stayed dead while the row reported ``running`` forever.
+
+    Returns the number of rows processed; per-row failures are logged and
+    skipped so one broken generation cannot block the rest.
+    """
+    from core.container import container
+
+    database = container.database()
+    service = WorkflowControlService(database)
+    controls = await database.list_active_workflow_controls()
+    processed = 0
+    for control in controls:
+        try:
+            control, controller_status = await _reconcile_control(service, control)
+            if control.status == "starting":
+                control = await _converge_interrupted_start(
+                    service, control, controller_status
+                )
+            if control.status in {"running", "paused"}:
+                await _rearm_generation(control)
+            processed += 1
+        except Exception as exc:  # noqa: BLE001 — per-row isolation
+            logger.warning(
+                "Boot reconcile failed for workflow control",
+                workflow_id=control.workflow_id,
+                status=control.status,
+                error=str(exc),
+            )
+    return processed
+
+
+async def _converge_interrupted_start(
+    service: WorkflowControlService,
+    control,
+    controller_status: Optional[Dict[str, Any]],
+):
+    """Decide what a crash left behind for a row stuck in ``starting``.
+
+    A vanished controller was already failed by ``_reconcile_control``.
+    With the controller alive: triggers registered (or a triggerless
+    graph) means the deploy effectively completed — commit ``running``.
+    A live-but-empty controller for a graph that declares triggers means
+    the crash landed before registration — fail the generation (Reset +
+    Start rebuilds cleanly) and close the orphan controller so dispatch
+    stops signalling it.
+    """
+    if controller_status is None:
+        # Controller unreachable (not missing) — leave transitional; the
+        # lazy path retries when Temporal comes back.
+        return control
+
+    from constants import WORKFLOW_TRIGGER_TYPES
+
+    triggers_registered = len(controller_status.get("triggers") or {})
+    graph_nodes = (control.graph_snapshot or {}).get("nodes") or []
+    graph_has_triggers = any(
+        node.get("type") in WORKFLOW_TRIGGER_TYPES for node in graph_nodes
+    )
+    if triggers_registered or not graph_has_triggers:
+        try:
+            control = await service.transition(
+                control,
+                expected_revision=control.revision,
+                from_statuses={"starting"},
+                status="running",
+            )
+            await _broadcast_control(control)
+        except ValueError:
+            # Concurrent writer won the CAS; report what the DB has.
+            latest = await service.database.get_latest_workflow_control(control.workflow_id)
+            if latest is not None and latest.generation == control.generation:
+                control = latest
+        return control
+
+    try:
+        await _signal_controller(control, "reset")
+    except Exception as exc:  # noqa: BLE001 — best-effort close
+        logger.warning(
+            "Failed to close orphan controller for interrupted start",
+            workflow_id=control.workflow_id,
+            error=str(exc),
+        )
+    try:
+        failed = await service.fail(control, "interrupted_start")
+    except ValueError:
+        return control
+    await _broadcast_control(failed)
+    return failed
+
+
+async def _rearm_generation(control) -> None:
+    """Re-establish process-local deployment state for a durable generation.
+
+    Idempotent by construction: canary triggers re-register with the
+    controller keyed by listener id (no-op when already known), legacy
+    listener starts use ``id_conflict_policy=USE_EXISTING``, and cron
+    schedule creation preserves server-owned paused state on redeploy.
+    In-process collectors for non-canary trigger types are re-armed
+    fresh (they died with the previous process).
+    """
+    from core.container import container
+
+    workflow_service = container.workflow_service()
+    if workflow_service.is_workflow_deployed(control.workflow_id):
+        return
+    snapshot = control.graph_snapshot or {}
+    nodes = snapshot.get("nodes") or []
+    edges = snapshot.get("edges") or []
+    if not nodes:
+        logger.warning(
+            "Cannot re-arm generation without a graph snapshot",
+            workflow_id=control.workflow_id,
+            generation=control.generation,
+        )
+        return
+    deploy_data = {
+        "workflow_id": control.workflow_id,
+        "nodes": nodes,
+        "edges": edges,
+        # Runtime persistence is generation-scoped (same contract as
+        # handle_start_workflow's deploy call).
+        "session_id": control.data_scope_id or control.execution_id,
+        "execution_id": control.execution_id,
+        "root_execution_id": control.root_execution_id,
+    }
+    deployed = await handle_deploy_workflow(deploy_data, None)
+    if not deployed.get("success"):
+        raise RuntimeError(str(deployed.get("error", "deployment_failed")))
+    setup = await _await_deployment_setup(control.workflow_id)
+    if not setup.get("success"):
+        raise RuntimeError(str(setup.get("error", "deployment_setup_failed")))
+    if control.status == "paused":
+        # Restore the paused posture on the freshly re-armed local half.
+        workflow_service.pause_deployment(control.workflow_id)
+        await workflow_service.update_trigger_pause_status(
+            control.workflow_id,
+            paused=True,
+        )
+        await _set_cron_pause(control.workflow_id, paused=True, strict=False)
+    logger.info(
+        "Re-armed durable generation after restart",
+        workflow_id=control.workflow_id,
+        generation=control.generation,
+        status=control.status,
+    )
 
 
 async def _await_deployment_setup(workflow_id: str) -> Dict[str, Any]:

@@ -823,8 +823,11 @@ class DeploymentManager:
             # The controller owns listeners as child workflows. This keeps
             # trigger activity in the deployment's Temporal execution tree
             # instead of presenting each listener as an unrelated root trace.
+            # Addressed by workflow id only (never run_id-pinned): the
+            # controller continue-as-news to bound its history, and a
+            # pinned handle would target a closed run after rollover.
             await wrapper.client.get_workflow_handle(
-                control.controller_workflow_id, run_id=control.controller_run_id,
+                control.controller_workflow_id,
             ).signal("register_trigger", {
                 "listener_id": listener_id,
                 "workflow_type": workflow_type_name,

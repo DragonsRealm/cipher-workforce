@@ -1,6 +1,6 @@
 """Wave 12 A4: Temporal custom Search Attributes registration.
 
-Defines the 6 Search Attributes the event framework needs for the
+Defines the Search Attributes the event framework needs for the
 Visibility API to route inbound events to running consumer workflows
 (see ``services/events/dispatch.py:emit``). Registration is idempotent —
 Temporal Server's ``add_search_attributes`` rejects duplicates with an
@@ -42,7 +42,7 @@ class SearchAttributeSpec:
     description: str
 
 
-# Single source of truth for the 6 event-framework Search Attributes.
+# Single source of truth for the event-framework Search Attributes.
 # Anything that names or filters by these attributes (the dispatch
 # helper, the Visibility queries in admin handlers, the test suite)
 # imports from this list rather than restating the strings.
@@ -101,6 +101,20 @@ EVENT_SEARCH_ATTRIBUTES: Sequence[SearchAttributeSpec] = (
             "When the event entered the framework. Supports time-range "
             "visibility queries (e.g. 'all events received in the last "
             "hour')."
+        ),
+    ),
+    SearchAttributeSpec(
+        name="ControlEventTypes",
+        indexed_type=IndexedValueType.INDEXED_VALUE_TYPE_KEYWORD_LIST,
+        description=(
+            "CloudEvents types a WorkflowControlWorkflow's registered push "
+            "triggers listen for (upserted by the controller as triggers "
+            "register). dispatch.emit reads it to skip signalling "
+            "controllers whose deployment has no matching trigger — "
+            "otherwise every platform event writes ~4 history events into "
+            "EVERY running controller and burns its continue-as-new budget "
+            "on other deployments' traffic. Controllers without the "
+            "attribute (pre-upgrade histories) are treated as match-all."
         ),
     ),
 )
