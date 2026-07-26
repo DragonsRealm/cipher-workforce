@@ -149,6 +149,24 @@ class TemporalClientWrapper:
             self._client = None
             logger.info("Disconnected from Temporal server")
 
+    async def check_health(self) -> bool:
+        """One gRPC WorkflowService health probe against the connected client.
+
+        False when disconnected or the frontend is not SERVING. Used by
+        the lifecycle watchdog (``services.temporal.lifecycle``); the
+        bounded readiness gate inside :meth:`connect` is separate.
+        """
+        if self._client is None:
+            return False
+        try:
+            return bool(
+                await self._client.service_client.check_health(
+                    timeout=timedelta(seconds=self._health_check_timeout_seconds),
+                )
+            )
+        except Exception:  # noqa: BLE001 — unreachable == not serving
+            return False
+
     async def terminate_running_workflows(
         self,
         *,

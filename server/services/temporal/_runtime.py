@@ -109,12 +109,12 @@ class TemporalServerRuntime(BaseProcessSupervisor):
         # https://docs.temporal.io/cli/server (subset we use):
         #   --port           frontend gRPC port (gates ready-probe)
         #   --ui-port        Web UI port (default ``--port + 1000``)
-        #   --db-filename    SQLite file — preserves history across
-        #                    restarts. Running workflows are not
-        #                    auto-resumed; see ``TemporalClientWrapper.
-        #                    terminate_running_workflows`` (run from
-        #                    ``main.py`` lifespan) for the boot-time
-        #                    terminate-but-preserve-history behaviour.
+        #   --db-filename    SQLite file — preserves history AND running
+        #                    workflow state across restarts. Running and
+        #                    paused deployments resume when the server
+        #                    and workers come back; the debug-only
+        #                    ``TEMPORAL_TERMINATE_RUNNING_ON_STARTUP``
+        #                    sweep (default false) is the one exception.
         #   --metrics-port   0 disables the Prometheus endpoint
         #   --log-level      warn keeps the supervisor log readable
         #   --namespace      default namespace bootstrapped at start
@@ -168,6 +168,24 @@ class TemporalServerRuntime(BaseProcessSupervisor):
         # ``temporal server start-dev`` reads everything from argv flags;
         # inherit parent env only.
         return {**os.environ}
+
+    # Known-benign dev-server noise: the matching/persistence layer logs
+    # ERROR when a poller's long-poll context is canceled mid-read (worker
+    # restart, poller autoscaling settling, idle partition unload, or the
+    # server's own idle background jobs). Staff-confirmed benign upstream
+    # (community.temporal.io/t/18635; temporalio/cli#633): tasks are
+    # persisted and redelivered, nothing is lost. Both markers must match
+    # so genuine dev-server errors keep surfacing at ERROR.
+    _BENIGN_STDERR_MARKERS = (
+        "Operation failed with internal error.",
+        "GetTaskQueue operation failed",
+    )
+
+    def stderr_log(self, line: str) -> None:
+        if "context canceled" in line and any(marker in line for marker in self._BENIGN_STDERR_MARKERS):
+            self._logger.debug(line)
+            return
+        super().stderr_log(line)
 
     async def health_check(self) -> bool:
         if not self.is_running():

@@ -295,19 +295,23 @@ async def lifespan(app: FastAPI):
     set_startup_time()
 
     # Initialize Temporal in the background - do NOT block lifespan startup.
-    # scripts/start.js launches the Python backend and temporal-server concurrently,
-    # so on fresh startup temporal-server may take several seconds to become reachable.
-    # Blocking the lifespan here would delay FastAPI HTTP serving and cascade into
-    # frontend ERR_CONNECTION_REFUSED on /api/auth/status. Instead, yield fast and
-    # let Temporal init happen in a background task. WorkflowService falls back to
-    # parallel/sequential execution until Temporal is ready.
+    # This lifespan owns the Temporal dev server (spawned below via
+    # TemporalServerRuntime.ensure_started), and on fresh startup it may take
+    # several seconds to become reachable. Blocking the lifespan here would
+    # delay FastAPI HTTP serving and cascade into frontend
+    # ERR_CONNECTION_REFUSED on /api/auth/status. Instead, yield fast and
+    # let Temporal init happen in a background task. WorkflowService falls back
+    # to parallel/sequential execution until Temporal is ready.
     app.state.temporal_worker_manager = None
     app.state.temporal_pool = None
     temporal_init_task: asyncio.Task | None = None
 
     if settings.temporal_enabled:
-        from services.temporal import TemporalExecutor
-        from services.temporal.worker import TemporalWorkerManager
+        # The whole Temporal runtime story (dev-server supervision,
+        # connect loop, executor/worker wiring, boot-time control
+        # reconcile, resident dev-server watchdog) lives in
+        # services.temporal.lifecycle — main.py only schedules it.
+        from services.temporal.lifecycle import run_temporal_lifecycle
 
         logger.info(
             "Scheduling Temporal initialization in background",
@@ -316,111 +320,10 @@ async def lifespan(app: FastAPI):
             task_queue=settings.temporal_task_queue,
         )
         _startup_log(f"[Temporal] Init scheduled for {settings.temporal_server_address}")
-
-        async def _init_temporal_background() -> None:
-            """Connect, wire executor, start worker. Retries every 3s until connected.
-
-            This task is the single source of truth for Temporal lifecycle during
-            startup. It replaces the previous blocking-connect + background-reconnect
-            split, which blocked the lifespan for up to 30s and left the executor
-            unwired after an initial failed connect.
-            """
-            temporal_client_wrapper = container.temporal_client()
-            # Loopback address => this process owns the SQLite dev server,
-            # via the same BaseSupervisor singleton pattern as the WhatsApp
-            # runtime (teardown is covered by shutdown_all_supervisors()).
-            # Remote/production clusters are never spawned at.
-            _tp_host = settings.temporal_server_address.rsplit(":", 1)[0].strip("[]")
-            _owns_dev_server = _tp_host in ("localhost", "127.0.0.1", "::1")
-            attempt = 0
-            while True:
-                attempt += 1
-                if _owns_dev_server:
-                    from services.temporal._runtime import get_temporal_server_runtime
-
-                    try:
-                        await get_temporal_server_runtime().ensure_started()
-                    except Exception as dev_exc:  # noqa: BLE001 — connect loop retries
-                        _startup_log(f"[Temporal] Dev server start failed (attempt {attempt}): {dev_exc}")
-                client = await temporal_client_wrapper.connect(retries=1, delay=0)
-                if client is None:
-                    # Surface every failed attempt to stdout so users can see
-                    # the retry loop is still alive when "Temporal is up" but
-                    # the Python client can't connect (server-up != client-up).
-                    _startup_log(
-                        f"[Temporal] Connect attempt {attempt} failed for "
-                        f"{settings.temporal_server_address} (ns={settings.temporal_namespace}); "
-                        "retrying in 3s"
-                    )
-                else:
-                    try:
-                        # Disable workflow auto-resumption while
-                        # DeploymentManager has no boot-time reconcile
-                        # against Temporal Visibility. History stays in
-                        # the SQLite db; UI shows workflows as
-                        # ``Terminated`` rather than continuing to run
-                        # invisibly to OpenCompany. Toggle off via
-                        # TEMPORAL_TERMINATE_RUNNING_ON_STARTUP=false.
-                        if settings.temporal_terminate_running_on_startup:
-                            try:
-                                has_controls = await container.database().has_active_workflow_controls()
-                                terminated = 0
-                                if has_controls:
-                                    logger.info("Skipping startup Temporal termination sweep; durable workflow controls are active")
-                                else:
-                                    terminated = await temporal_client_wrapper.terminate_running_workflows()
-                                if terminated:
-                                    _startup_log(
-                                        f"[Temporal] Terminated {terminated} running workflow(s) " "at startup (history preserved)"
-                                    )
-                            except Exception as term_exc:  # noqa: BLE001 — non-fatal
-                                logger.warning(
-                                    f"Startup terminate-running sweep failed: {term_exc}",
-                                )
-
-                        temporal_executor = TemporalExecutor(
-                            client=client,
-                            task_queue=settings.temporal_task_queue,
-                        )
-                        container.workflow_service().set_temporal_executor(temporal_executor)
-
-                        worker_manager = TemporalWorkerManager(
-                            client=client,
-                            task_queue=settings.temporal_task_queue,
-                        )
-                        await worker_manager.start()
-                        app.state.temporal_worker_manager = worker_manager
-
-                        # Wave 16: per-queue activity worker pool (default-on
-                        # since 16.4; TEMPORAL_WORKER_POOL_ENABLED=false is
-                        # the rollback channel). Starts AFTER the manager so
-                        # workflow registration is in place before
-                        # specialised activity workers poll.
-                        if settings.temporal_worker_pool_enabled:
-                            from services.temporal.worker import TemporalWorkerPool
-
-                            pool = TemporalWorkerPool(client=client)
-                            await pool.start()
-                            app.state.temporal_pool = pool
-                            _startup_log(f"[Temporal] Worker pool started ({len(pool.queues)} queues)")
-
-                        _startup_log(f"[Temporal] Worker started, execution engine ready (attempt {attempt})")
-                        logger.info(
-                            "Temporal integration initialized successfully",
-                            attempts=attempt,
-                        )
-                        return
-                    except Exception as exc:
-                        _startup_log(f"[Temporal] Executor/worker setup failed (attempt {attempt}): {exc}; will retry")
-                        logger.error(
-                            "Temporal executor/worker setup failed; will retry",
-                            error=str(exc),
-                        )
-                        # Drop the client so the next iteration reconnects cleanly.
-                        await temporal_client_wrapper.disconnect()
-                await asyncio.sleep(3.0)
-
-        temporal_init_task = asyncio.create_task(_init_temporal_background(), name="temporal-init")
+        temporal_init_task = asyncio.create_task(
+            run_temporal_lifecycle(app.state, settings, startup_log=_startup_log),
+            name="temporal-init",
+        )
     else:
         _startup_log("[Temporal] Disabled")
 
@@ -462,7 +365,8 @@ async def lifespan(app: FastAPI):
     # Stop WebSocket logging handler
     shutdown_websocket_logging()
 
-    # Cancel Temporal init task if it's still trying to connect.
+    # Cancel the Temporal lifecycle task (connect loop while starting;
+    # resident dev-server watchdog once the engine is up).
     if temporal_init_task is not None and not temporal_init_task.done():
         temporal_init_task.cancel()
         try:
@@ -520,9 +424,9 @@ async def lifespan(app: FastAPI):
 
     await shutdown_process_service()
 
-    # Stop every plugin supervisor that registered itself via
-    # services._supervisor.register_supervisor() (currently: WhatsApp;
-    # other plugins migrate in PR 2).
+    # Stop every supervisor that registered itself via
+    # services._supervisor.register_supervisor() (WhatsApp runtime,
+    # Node.js executor runtime, Temporal dev server).
     from services._supervisor import shutdown_all_supervisors
 
     await shutdown_all_supervisors()

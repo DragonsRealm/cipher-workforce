@@ -64,6 +64,19 @@ class BaseProcessSupervisor(BaseSupervisor):
     async def _pre_spawn(self) -> None:
         """Hook before ``anyio.open_process`` (e.g., write a config file)."""
 
+    def stdout_log(self, line: str) -> None:
+        """Sink for one child-stdout line (INFO). Override to reclassify."""
+        self._logger.info(line)
+
+    def stderr_log(self, line: str) -> None:
+        """Sink for one child-stderr line (ERROR by default).
+
+        Override to downgrade known-benign child noise — e.g. the
+        Temporal dev server logs ERROR for routinely-canceled long-polls
+        (see :class:`services.temporal._runtime.TemporalServerRuntime`).
+        """
+        self._logger.error(line)
+
     # ---- lifecycle implementation ---------------------------------------
 
     def is_running(self) -> bool:
@@ -104,10 +117,10 @@ class BaseProcessSupervisor(BaseSupervisor):
         if self.pipe_streams:
             self._drain_tasks = [
                 asyncio.create_task(
-                    drain_stream(self._proc.stdout, self._logger.info, prefix=f"[{self.label}] "),
+                    drain_stream(self._proc.stdout, self.stdout_log, prefix=f"[{self.label}] "),
                 ),
                 asyncio.create_task(
-                    drain_stream(self._proc.stderr, self._logger.error, prefix=f"[{self.label}] "),
+                    drain_stream(self._proc.stderr, self.stderr_log, prefix=f"[{self.label}] "),
                 ),
             ]
 

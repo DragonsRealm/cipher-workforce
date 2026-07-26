@@ -148,119 +148,7 @@ class TemporalWorkerManager:
             # Create activity instance with shared session
             self._activities = NodeExecutionActivities(self._session)
 
-            # F4.A: register per-type activities alongside the legacy
-            # `execute_node_activity` dispatcher. The orchestrator at
-            # workflow.py:_resolve_activity picks one of the two paths per node
-            # based on the temporal_per_type_dispatch flag; both must be served
-            # by the worker. Per-type activities register WITHOUT a task_queue
-            # filter here (cls.task_queue is the *declared* preference; this
-            # framework worker polls self.task_queue regardless). Per-queue
-            # filtering lives in TemporalWorkerPool (below in this file),
-            # which is default-on (Wave 16.4) and runs one activity-only
-            # worker per declared queue. Registration cost: ~1.6s startup;
-            # zero runtime cost when the flag is off (orchestrator routes to
-            # execute_node_activity, per-type entries sit idle).
-            #
-            # F4.B: register AgentWorkflow + its three activities
-            # (execute_llm_step / persist_turn / compact_memory). The
-            # orchestrator schedules AgentWorkflow as a child workflow
-            # for the 15 migrating agent types when
-            # ``temporal_agent_workflow_enabled`` is on.
-            from services.temporal.plugin_activities import (
-                collect_plugin_activities,
-                collect_polling_activities,
-            )
-            from services.temporal.agent_activities import collect_agent_activities
-            from services.temporal.agent_workflow import AgentWorkflow, DelegatedTaskWorkflow
-            from services.temporal.activities import (
-                broadcast_trigger_status_activity,
-                load_persisted_workflow_graph_activity,
-                store_node_output_activity,
-            )
-
-            per_type = collect_plugin_activities()  # no queue filter; all plugins
-            agent_activities = collect_agent_activities()
-            polling_activities = collect_polling_activities()
-            # Plugin-owned workflow classes (e.g. cron's
-            # CronTriggerWorkflow) self-register a SimplePlugin via
-            # services.temporal.plugin_registry.register_temporal_plugin
-            # from their plugin __init__.py. The Temporal SDK's plugin
-            # chain merges each registered plugin's workflows / activities
-            # / interceptors into the effective worker configuration —
-            # the framework worker stays plugin-agnostic.
-            plugin_list = temporal_plugins()
-
-            # The Worker() constructor derives its default build id by
-            # MD5-hashing the bytecode of every module in sys.modules
-            # (disk reads included) — a synchronous ~3s stall at our
-            # module count (152 plugins + LLM SDK stack) that freezes
-            # the event loop and starves concurrent boot work (e.g.
-            # broadcaster refreshes). The result is memoized in an SDK
-            # module global, so one off-loop call here makes this
-            # Worker AND every TemporalWorkerPool worker construct
-            # cheaply. load_default_build_id is not re-exported from
-            # temporalio.worker (private module in 1.30); if an SDK
-            # upgrade moves it, skip the pre-warm and pay the
-            # synchronous cost again rather than fail startup.
-            try:
-                from temporalio.worker._worker import load_default_build_id
-            except ImportError:
-                logger.warning(
-                    "temporalio private API moved: load_default_build_id "
-                    "unavailable, skipping off-loop build-id pre-warm"
-                )
-            else:
-                await asyncio.to_thread(load_default_build_id)
-
-            self._worker = Worker(
-                self.client,
-                task_queue=self.task_queue,
-                plugins=plugin_list,
-                workflows=[
-                    MachinaWorkflow,
-                    AgentWorkflow,
-                    DelegatedTaskWorkflow,
-                    TriggerListenerWorkflow,
-                    PollingTriggerWorkflow,
-                    WorkflowControlWorkflow,
-                ],
-                activities=[
-                    self._activities.execute_node_activity,
-                    broadcast_trigger_status_activity,
-                    load_persisted_workflow_graph_activity,
-                    store_node_output_activity,
-                    *per_type,
-                    *agent_activities,
-                    *polling_activities,
-                ],
-                # Allow concurrent activity execution for parallel branches
-                max_concurrent_activities=self.pool_size,
-                max_concurrent_workflow_tasks=10,
-                graceful_shutdown_timeout=_graceful_shutdown_timeout(),
-                identity=_worker_identity(self.task_queue),
-                # ``TracingInterceptor`` is registered once on the shared client;
-                # the SDK prepends client interceptors to every worker, so
-                # repeating it here double-instruments each Signal / Query /
-                # Update / Activity and doubles the emitted spans.
-                interceptors=[ObservabilityWorkerInterceptor()],
-                # Wave 18.2: sticky cache sized by deployment mode so
-                # cached workflows skip Event-History replay without
-                # blowing laptop RAM.
-                max_cached_workflows=_sticky_cache_size(),
-                # Wave 18.3: autoscaling pollers replace fixed counts —
-                # scale between min/max on demand (SDK-recommended over
-                # manual poller tuning). Pollers stay well below the
-                # executor slot counts per the worker-performance docs.
-                activity_task_poller_behavior=PollerBehaviorAutoscaling(initial=2, minimum=1, maximum=10),
-                workflow_task_poller_behavior=PollerBehaviorAutoscaling(initial=2, minimum=1, maximum=20),
-            )
-            logger.info(
-                "Registered Temporal activities",
-                legacy=1,
-                per_type=len(per_type),
-                agent=len(agent_activities),
-                task_queue=self.task_queue,
-            )
+            self._worker = await self._build_worker()
             span.set_attribute("task_queue", self.task_queue)
             span.set_attribute("pool_size", self.pool_size)
 
@@ -276,6 +164,129 @@ class TemporalWorkerManager:
                 name="temporal-worker",
             )
 
+    async def _build_worker(self) -> Worker:
+        """Construct a fresh, ready-to-run Worker instance.
+
+        Called from :meth:`start` AND from every crash-restart attempt in
+        :meth:`_run_worker` — the SDK ``Worker`` is single-use (a second
+        ``run()`` on the same instance raises ``RuntimeError("Already
+        started")``), so restarting must always rebuild.
+        """
+        # F4.A: register per-type activities alongside the legacy
+        # `execute_node_activity` dispatcher. The orchestrator at
+        # workflow.py:_resolve_activity picks one of the two paths per node
+        # based on the temporal_per_type_dispatch flag; both must be served
+        # by the worker. Per-type activities register WITHOUT a task_queue
+        # filter here (cls.task_queue is the *declared* preference; this
+        # framework worker polls self.task_queue regardless). Per-queue
+        # filtering lives in TemporalWorkerPool (below in this file),
+        # which is default-on (Wave 16.4) and runs one activity-only
+        # worker per declared queue. Registration cost: ~1.6s startup;
+        # zero runtime cost when the flag is off (orchestrator routes to
+        # execute_node_activity, per-type entries sit idle).
+        #
+        # F4.B: register AgentWorkflow + its three activities
+        # (execute_llm_step / persist_turn / compact_memory). The
+        # orchestrator schedules AgentWorkflow as a child workflow
+        # for the 15 migrating agent types when
+        # ``temporal_agent_workflow_enabled`` is on.
+        from services.temporal.plugin_activities import (
+            collect_plugin_activities,
+            collect_polling_activities,
+        )
+        from services.temporal.agent_activities import collect_agent_activities
+        from services.temporal.agent_workflow import AgentWorkflow, DelegatedTaskWorkflow
+        from services.temporal.activities import (
+            broadcast_trigger_status_activity,
+            load_persisted_workflow_graph_activity,
+            store_node_output_activity,
+        )
+
+        per_type = collect_plugin_activities()  # no queue filter; all plugins
+        agent_activities = collect_agent_activities()
+        polling_activities = collect_polling_activities()
+        # Plugin-owned workflow classes (e.g. cron's
+        # CronTriggerWorkflow) self-register a SimplePlugin via
+        # services.temporal.plugin_registry.register_temporal_plugin
+        # from their plugin __init__.py. The Temporal SDK's plugin
+        # chain merges each registered plugin's workflows / activities
+        # / interceptors into the effective worker configuration —
+        # the framework worker stays plugin-agnostic.
+        plugin_list = temporal_plugins()
+
+        # The Worker() constructor derives its default build id by
+        # MD5-hashing the bytecode of every module in sys.modules
+        # (disk reads included) — a synchronous ~3s stall at our
+        # module count (152 plugins + LLM SDK stack) that freezes
+        # the event loop and starves concurrent boot work (e.g.
+        # broadcaster refreshes). The result is memoized in an SDK
+        # module global, so one off-loop call here makes this
+        # Worker AND every TemporalWorkerPool worker construct
+        # cheaply. load_default_build_id is not re-exported from
+        # temporalio.worker (private module in 1.30); if an SDK
+        # upgrade moves it, skip the pre-warm and pay the
+        # synchronous cost again rather than fail startup.
+        try:
+            from temporalio.worker._worker import load_default_build_id
+        except ImportError:
+            logger.warning(
+                "temporalio private API moved: load_default_build_id "
+                "unavailable, skipping off-loop build-id pre-warm"
+            )
+        else:
+            await asyncio.to_thread(load_default_build_id)
+
+        worker = Worker(
+            self.client,
+            task_queue=self.task_queue,
+            plugins=plugin_list,
+            workflows=[
+                MachinaWorkflow,
+                AgentWorkflow,
+                DelegatedTaskWorkflow,
+                TriggerListenerWorkflow,
+                PollingTriggerWorkflow,
+                WorkflowControlWorkflow,
+            ],
+            activities=[
+                self._activities.execute_node_activity,
+                broadcast_trigger_status_activity,
+                load_persisted_workflow_graph_activity,
+                store_node_output_activity,
+                *per_type,
+                *agent_activities,
+                *polling_activities,
+            ],
+            # Allow concurrent activity execution for parallel branches
+            max_concurrent_activities=self.pool_size,
+            max_concurrent_workflow_tasks=10,
+            graceful_shutdown_timeout=_graceful_shutdown_timeout(),
+            identity=_worker_identity(self.task_queue),
+            # ``TracingInterceptor`` is registered once on the shared client;
+            # the SDK prepends client interceptors to every worker, so
+            # repeating it here double-instruments each Signal / Query /
+            # Update / Activity and doubles the emitted spans.
+            interceptors=[ObservabilityWorkerInterceptor()],
+            # Wave 18.2: sticky cache sized by deployment mode so
+            # cached workflows skip Event-History replay without
+            # blowing laptop RAM.
+            max_cached_workflows=_sticky_cache_size(),
+            # Wave 18.3: autoscaling pollers replace fixed counts —
+            # scale between min/max on demand (SDK-recommended over
+            # manual poller tuning). Pollers stay well below the
+            # executor slot counts per the worker-performance docs.
+            activity_task_poller_behavior=PollerBehaviorAutoscaling(initial=2, minimum=1, maximum=10),
+            workflow_task_poller_behavior=PollerBehaviorAutoscaling(initial=2, minimum=1, maximum=20),
+        )
+        logger.info(
+            "Registered Temporal activities",
+            legacy=1,
+            per_type=len(per_type),
+            agent=len(agent_activities),
+            task_queue=self.task_queue,
+        )
+        return worker
+
     async def _run_worker(self) -> None:
         """Run the worker (background task), self-restarting on crash.
 
@@ -284,8 +295,13 @@ class TemporalWorkerManager:
         detached — the startup retry loop in ``main.py`` has already
         returned by the time it runs. So a transient crash (e.g. the
         server briefly unavailable mid-poll) would otherwise leave the
-        worker permanently dead until a process restart. Re-run the SAME
-        worker instance with doubling backoff; cancellation (from
+        worker permanently dead until a process restart.
+
+        Every restart attempt REBUILDS the worker via
+        :meth:`_build_worker`: the SDK ``Worker`` is single-use, so
+        re-running the same instance raises ``RuntimeError("Already
+        started")`` on the first retry and every one after it — the old
+        loop spun forever without ever polling again. Cancellation (from
         ``stop()``) always wins so shutdown is never delayed by a restart.
         Backoff knobs are env-driven (canonical defaults in .env.template).
         """
@@ -303,11 +319,18 @@ class TemporalWorkerManager:
                 raise
             except Exception as e:
                 logger.error(f"Temporal worker crashed; restarting in {backoff:.1f}s: {e}")
-                try:
-                    await asyncio.sleep(backoff)
-                except asyncio.CancelledError:
-                    raise  # cancellation during backoff still wins
-                backoff = min(backoff * 2, backoff_max)
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                raise  # cancellation during backoff still wins
+            backoff = min(backoff * 2, backoff_max)
+            try:
+                self._worker = await self._build_worker()
+            except Exception as build_exc:  # noqa: BLE001 — retried next loop
+                # Next iteration's run() on the stale single-use instance
+                # fails fast and re-enters this backoff, so rebuild
+                # failures are retried rather than fatal.
+                logger.error(f"Temporal worker rebuild failed; will retry: {build_exc}")
 
     async def stop(self) -> None:
         """Stop the Temporal worker and cleanup resources."""
@@ -484,60 +507,113 @@ class TemporalWorkerPool:
     def is_running(self) -> bool:
         return any(t is not None and not t.done() for t in self._tasks)
 
-    async def start(self) -> None:
+    def _build_queue_worker(self, queue: str) -> Optional[Worker]:
+        """Construct a fresh Worker for one queue.
+
+        Returns ``None`` when the queue has no registered activities.
+        Called from :meth:`start` AND from every crash-restart attempt in
+        :meth:`_run_queue_worker` — the SDK ``Worker`` is single-use, so
+        restarting must always rebuild.
+        """
         from services.temporal.plugin_activities import (
             collect_plugin_activities,
         )
 
+        activities = collect_plugin_activities(task_queue=queue)
+        if not activities:
+            return None
+        concurrency = self._concurrency_for(queue)
+        rate_limit = self._rate_limit_for(queue)
+        tuner = self._tuner_for(queue, concurrency)
+        worker_kwargs: dict = dict(
+            task_queue=queue,
+            activities=activities,
+            graceful_shutdown_timeout=_graceful_shutdown_timeout(),
+            identity=_worker_identity(queue),
+            # ``TracingInterceptor`` is registered once on the shared client;
+            # the SDK prepends client interceptors to every worker, so
+            # repeating it here double-instruments each Signal / Query /
+            # Update / Activity and doubles the emitted spans.
+            interceptors=[ObservabilityWorkerInterceptor()],
+            # Wave 18.1: per-queue activities/second ceiling.
+            max_activities_per_second=rate_limit,
+            # Wave 18.3: activity-only workers need a small
+            # autoscaling poller budget — specialised queues see
+            # lower task volume than the manager's default queue.
+            activity_task_poller_behavior=PollerBehaviorAutoscaling(initial=1, minimum=1, maximum=5),
+        )
+        # Wave 18.4: the Worker rejects `tuner` alongside ANY of
+        # `max_concurrent_workflow_tasks` / `max_concurrent_activities` /
+        # `max_concurrent_local_activities` / `max_concurrent_nexus_tasks`
+        # — the SDK enforces "size via tuner OR via max_concurrent_*,
+        # never both" (temporalio.worker.Worker.__init__). Resource-tuned
+        # queues get the tuner (which already carries a
+        # FixedSizeSlotSupplier(10) for workflow slots via
+        # `_tuner_for`); the rest keep fixed sizing.
+        if tuner is not None:
+            worker_kwargs["tuner"] = tuner
+        else:
+            worker_kwargs["max_concurrent_activities"] = concurrency
+            worker_kwargs["max_concurrent_workflow_tasks"] = 10
+
+        worker = Worker(self.client, **worker_kwargs)
+        logger.info(
+            f"[Pool] Built worker queue={queue!r} "
+            f"activities={len(activities)} "
+            f"slots={'resource-tuned<=' + str(max(concurrency, 2)) if tuner else concurrency} "
+            f"rate_limit={rate_limit if rate_limit is not None else 'unthrottled'}"
+        )
+        return worker
+
+    async def _run_queue_worker(self, queue: str, worker: Worker) -> None:
+        """Run one queue's worker, rebuilding + restarting on crash.
+
+        Previously each queue worker ran as a bare ``worker.run()`` task:
+        a crash silently killed the ONLY worker for that queue and every
+        activity routed there pended forever (its workflows stalled)
+        until a backend restart. Same backoff + rebuild contract as
+        :meth:`TemporalWorkerManager._run_worker`; cancellation (from
+        :meth:`stop`) always wins.
+        """
+        from core.config import Settings
+
+        _s = Settings()
+        backoff = _s.temporal_worker_restart_backoff_seconds
+        backoff_max = _s.temporal_worker_restart_backoff_max_seconds
+        current = worker
+        while True:
+            try:
+                await current.run()
+                return  # clean shutdown only
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — supervised restart
+                logger.error(f"[Pool] Worker for queue {queue!r} crashed; restarting in {backoff:.1f}s: {exc}")
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                raise  # cancellation during backoff still wins
+            backoff = min(backoff * 2, backoff_max)
+            rebuilt = self._build_queue_worker(queue)
+            if rebuilt is None:
+                logger.error(f"[Pool] Queue {queue!r} has no activities on rebuild; worker not restarted")
+                return
+            current = rebuilt
+
+    async def start(self) -> None:
         for queue in self.queues:
-            activities = collect_plugin_activities(task_queue=queue)
-            if not activities:
+            worker = self._build_queue_worker(queue)
+            if worker is None:
                 logger.info(f"[Pool] Skipping empty queue {queue!r}")
                 continue
-            concurrency = self._concurrency_for(queue)
-            rate_limit = self._rate_limit_for(queue)
-            tuner = self._tuner_for(queue, concurrency)
-            worker_kwargs: dict = dict(
-                task_queue=queue,
-                activities=activities,
-                graceful_shutdown_timeout=_graceful_shutdown_timeout(),
-                identity=_worker_identity(queue),
-                # ``TracingInterceptor`` is registered once on the shared client;
-                # the SDK prepends client interceptors to every worker, so
-                # repeating it here double-instruments each Signal / Query /
-                # Update / Activity and doubles the emitted spans.
-                interceptors=[ObservabilityWorkerInterceptor()],
-                # Wave 18.1: per-queue activities/second ceiling.
-                max_activities_per_second=rate_limit,
-                # Wave 18.3: activity-only workers need a small
-                # autoscaling poller budget — specialised queues see
-                # lower task volume than the manager's default queue.
-                activity_task_poller_behavior=PollerBehaviorAutoscaling(initial=1, minimum=1, maximum=5),
+            task = asyncio.create_task(
+                self._run_queue_worker(queue, worker),
+                name=f"worker-{queue}",
             )
-            # Wave 18.4: the Worker rejects `tuner` alongside ANY of
-            # `max_concurrent_workflow_tasks` / `max_concurrent_activities` /
-            # `max_concurrent_local_activities` / `max_concurrent_nexus_tasks`
-            # — the SDK enforces "size via tuner OR via max_concurrent_*,
-            # never both" (temporalio.worker.Worker.__init__). Resource-tuned
-            # queues get the tuner (which already carries a
-            # FixedSizeSlotSupplier(10) for workflow slots via
-            # `_tuner_for`); the rest keep fixed sizing.
-            if tuner is not None:
-                worker_kwargs["tuner"] = tuner
-            else:
-                worker_kwargs["max_concurrent_activities"] = concurrency
-                worker_kwargs["max_concurrent_workflow_tasks"] = 10
-
-            worker = Worker(self.client, **worker_kwargs)
-            task = asyncio.create_task(worker.run(), name=f"worker-{queue}")
+            # Initial instances only — after a crash-restart the live
+            # instance is owned by the supervising task.
             self._workers.append(worker)
             self._tasks.append(task)
-            logger.info(
-                f"[Pool] Started worker queue={queue!r} "
-                f"activities={len(activities)} "
-                f"slots={'resource-tuned<=' + str(max(concurrency, 2)) if tuner else concurrency} "
-                f"rate_limit={rate_limit if rate_limit is not None else 'unthrottled'}"
-            )
 
     async def stop(self) -> None:
         for task in self._tasks:
