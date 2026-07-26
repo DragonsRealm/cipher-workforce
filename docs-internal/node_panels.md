@@ -76,6 +76,28 @@ The drag payload is set on both MIME types:
 
 `effectAllowed` is `'copy'`.
 
+### Drop discriminators
+
+`ParameterRenderer.handleDrop` branches on `application/json`'s `type`. The three
+have **different write semantics**, which is the whole reason they are separate —
+reusing one for another's payload silently destroys user input.
+
+| `type` | Produced by | Payload | Write semantics |
+|---|---|---|---|
+| `nodeVariable` | [`useDragVariable`](../client/src/hooks/useDragVariable.ts) (InputSection) | `{nodeId, nodeName, key, variableTemplate, dataType}` | **Appends** `variableTemplate` with smart spacing |
+| `nodeOutput` | *nothing currently* — the branch exists but has no producer | `{value}` | **Replaces** unconditionally |
+| `workspaceFile` | [`useDragWorkspaceFile`](../client/src/hooks/useDragWorkspaceFile.ts) (GalleryPanel) | `{path, ref}` — `ref` is a finished serialized `FileRef` from the server | **Conditional**: a `file` param takes `ref` whole; every other param **appends** `path` with smart spacing |
+
+Two details that look incidental and are not:
+
+- `workspaceFile` is deliberately **not** `nodeOutput`. That branch replaces the
+  target value with no type check, so dropping a file into a half-written prompt
+  would erase the prompt.
+- Its `text/plain` fallback is the bare workspace-relative path, so a drop onto a
+  plain `<textarea>` (or an editor outside the app) still lands something useful.
+  Directories are non-draggable — the server sends them `ref: null`, and appending
+  a bare folder path into a prompt was never the intent.
+
 ## 4. Parameter Visibility (`displayOptions.show`)
 
 Each `INodeProperties` entry can include a `displayOptions.show` map. Values can be arrays

@@ -1,7 +1,10 @@
 # Media Transport — how files move through the engine
 
 **Status:** shipped.
-**Scope:** `server/services/media/`, `server/routers/workspace.py`, `nodes/filesystem/_backend.py`.
+**Scope:** `server/services/media/`, `server/services/workspace_locator.py`,
+`server/routers/workspace.py`, `nodes/filesystem/_backend.py`,
+`nodes/filesystem/gallery/` (the second consumer of `preview.py`, and the
+producer of `FileRef` listing rows).
 **Companion:** [Speech Provider RFC](./speech_provider_rfc.md) — the first consumer.
 
 One rule underneath everything here:
@@ -38,25 +41,40 @@ because it makes the tool path *sometimes* catastrophic — which passes review.
 
 ---
 
-## 2. `AudioRef` — a reference, structurally
+## 2. `FileRef` / `AudioRef` — a reference, structurally
 
 [`services/media/refs.py`](../server/services/media/refs.py). ~400 bytes
 serialized, so thousands fit inside Temporal's *warning* threshold.
 
+Two classes, not one. `FileRef` is the base and the honest default —
+`kind="file"` asserts only that the thing exists in the workspace. A
+kind-specific subclass is added only when a probe actually produces extra
+metadata, which so far means audio alone.
+
 ```python
-class AudioRef(BaseModel):
-    kind: Literal["audio"] = "audio"
+FileKind = Literal["file", "audio", "image", "video", "document"]
+
+class FileRef(BaseModel):
+    kind: FileKind = "file"
     path: str                      # workspace-RELATIVE POSIX, no leading slash
     workflow_id: Optional[str]     # immutable id — survives rename
     filename: str                  # display only, never used for resolution
     mime_type: str
-    format: str
     size_bytes: int
+    modified_at: Optional[str]     # ISO 8601, advisory — not a cache key
+    sha256: Optional[str]
+    url: Optional[str]             # path-only, no scheme or host
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AudioRef(FileRef):
+    """A FileRef whose container has actually been probed."""
+    kind: Literal["audio"] = "audio"
+    format: str                         # wav, mp3, opus, ...
     duration_seconds: Optional[float]   # None when unmeasurable; never guessed
     sample_rate: Optional[int]
     channels: Optional[int]
-    sha256: Optional[str]
-    url: Optional[str]             # path-only, no scheme or host
 
     model_config = ConfigDict(extra="forbid")
 ```
@@ -166,20 +184,36 @@ because uploaded bytes land on disk and only a reference enters a payload.
 
 ## 5. HTTP surface
 
-[`routers/workspace.py`](../server/routers/workspace.py). A thin shell over the
-above — it owns no containment logic of its own.
+[`routers/workspace.py`](../server/routers/workspace.py). A thin shell — it owns
+no containment logic, no id → slug resolution
+([`services/workspace_locator.py`](../server/services/workspace_locator.py)) and
+no inline/attachment rule ([`services/media/preview.py`](../server/services/media/preview.py))
+of its own.
+
+**Listing is not here.** `list_workspace_files` (a WebSocket command owned by the
+`gallery` plugin) is the listing channel; these HTTP routes are the *content*
+channel. The consumer is the parameter panel, which already holds an
+authenticated socket with request correlation — a second HTTP listing surface
+would mean a second auth path and a second error envelope for no gain.
 
 ### `GET /api/workspace/{workflow_id}/files/{path:path}`
 
-- id → slug lookup, then `resolve_within`.
+- id → slug via `workspace_locator.resolve_workspace_root` (reads keep the
+  `"default"` fallback), then `resolve_within`.
 - **404, never 403** — a distinct status would confirm the existence of files
   outside the workspace.
 - **Range/seeking is free.** Starlette's `FileResponse` already implements
   `Accept-Ranges`, `206`, `Content-Range`, `If-Range` and `416`. Do not wrap it
   in a `StreamingResponse`; that loses all of it and breaks `<audio>` seeking.
-- **Inline allowlist.** Only `audio/ image/ video/` render inline; everything
-  else — emphatically including `text/html` and `image/svg+xml` — gets
-  `Content-Disposition: attachment`, plus `X-Content-Type-Options: nosniff`.
+- **Inline allowlist — owned by [`services/media/preview.py`](../server/services/media/preview.py),
+  not by this route.** `serves_inline(mime)` decides the `Content-Disposition`;
+  `preview_kind(mime)` (gated on `serves_inline` first) gives the gallery
+  listing each row's `preview` verdict. **Two consumers, one function** — if
+  they ever disagreed, the panel would open a player for a file the route forces
+  to download, and the user would see a dead frame with no explanation. Only
+  `audio/ image/ video/` render inline; `NEVER_INLINE` is the full set
+  `{image/svg+xml, text/html, text/xml, application/xhtml+xml}`. Everything else
+  gets `Content-Disposition: attachment`, plus `X-Content-Type-Options: nosniff`.
 
   This is load-bearing. `shell`, `fileDownloader` and `fileModify` can all
   write arbitrary files into a workspace, so serving attacker-authored markup
@@ -241,15 +275,28 @@ a workflow that has never been saved and therefore has no workspace yet.
 
 ## 7. Extending to other media
 
-`AudioRef` is deliberately named for what it is rather than being a generic
-`MediaRef`, because the metadata that matters differs per kind (`duration` and
-`sample_rate` for audio; `width` / `height` for images). The transport layer
-underneath — containment, atomic write, the workspace routes, the limits — is
-already kind-agnostic.
+This already resolved, and not the way the original sketch guessed. What was
+rejected is a single fat `MediaRef` carrying every kind's optional metadata,
+because the metadata that matters differs per kind (`duration` and `sample_rate`
+for audio; `width` / `height` for images). What was *adopted* is a shared base
+carrying only kind-agnostic fields — `FileRef` — with `FileKind` already
+enumerating `image`, `video` and `document`, and `AudioRef(FileRef)` as the one
+narrowing subclass so far.
 
-An `ImageRef` should be a sibling model in `refs.py` reusing the same
-`workspace.py` helpers, with `write_image` differing from `write_audio` only in
-subdirectory and probe.
+So the rule for the next kind:
+
+- **`FileRef` is the honest default.** `kind="file"` asserts only that the file
+  exists in the workspace. The `gallery` node emits this for everything,
+  including a `.wav`.
+- **Subclass only when a probe produces real extra metadata.** `AudioRef` earns
+  its subclass because `inspect_audio` measures duration / sample rate /
+  channels. An `ImageRef` earns one the moment something actually reads
+  width / height — and not before, because `kind` is an assertion about what was
+  measured. A fabricated `duration_seconds` mis-bills a per-second provider
+  downstream; the same trap exists for any guessed field.
+- The transport layer underneath — containment, atomic write, the workspace
+  routes, the limits, `preview.py` — is already kind-agnostic, so `write_image`
+  would differ from `write_audio` only in subdirectory and probe.
 
 ---
 
@@ -264,4 +311,10 @@ subdirectory and probe.
 | Route serves `text/html` and `image/svg+xml` as `attachment` | `tests/routers/test_workspace.py` |
 | Range request returns `206` with correct `Content-Range` | `tests/routers/test_workspace.py` |
 | Oversize upload is 413; traversal filename cannot escape `uploads/` | `tests/routers/test_workspace.py` |
+| The route delegates its disposition to `preview.serves_inline` rather than re-deriving it | `tests/routers/test_workspace.py::TestInlineDispositionHasOneDefinition` |
+| Listing paths are relative, POSIX, and round-trip through `resolve_media` | `tests/nodes/test_gallery.py::TestPathShape` |
+| Every listing row carries a finished `ref`, and `preview` matches `serves_inline` | `tests/nodes/test_gallery.py::TestRowsAreSelfSufficient` |
+| Traversal (`..`, `~`) refused; `/etc` and `C:/Windows` resolve *inside* the workspace | `tests/nodes/test_gallery.py::TestTraversal` |
+| An escaping symlink is not listed | `tests/nodes/test_gallery.py::TestWorkspaceContainmentOfSymlinks` |
+| A mutating caller with an unresolvable workflow id is refused, not defaulted | `tests/services/test_workspace_locator.py` |
 | A returned ref round-trips through the GET route | `tests/routers/test_workspace.py` |

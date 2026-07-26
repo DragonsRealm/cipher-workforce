@@ -115,7 +115,10 @@ search/      — Web search APIs (brave / serper / perplexity / duckduckgo)
 scraper/     — Apify / Crawlee
 document/    — RAG pipeline (scrape / download / parse / chunk / embed / store)
 code/        — Python / Monty (sandboxed Python) / JS / TS executors
-filesystem/  — file_read / file_modify / shell / fs_search
+filesystem/  — file_read / file_modify / shell / fs_search / gallery
+               (gallery is the workspace file explorer; deliberately NOT
+                usable_as_tool — it carries destructive operations, and
+                fs_search + file_modify already cover what an agent needs)
 proxy/       — Residential proxy (request / config / status)
 location/    — Google Maps (create / locations / nearby places)
 chat/        — chatSend / chatHistory

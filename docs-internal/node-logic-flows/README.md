@@ -92,6 +92,7 @@ match its doc here, and each doc must still describe what the code does.
 - [File Modify (`fileModify`)](./code_fs_process/fileModify.md)
 - [File Read (`fileRead`)](./code_fs_process/fileRead.md)
 - [FS Search (`fsSearch`)](./code_fs_process/fsSearch.md)
+- [Gallery (`gallery`)](./code_fs_process/gallery.md)
 - [JavaScript Executor (`javascriptExecutor`)](./code_fs_process/javascriptExecutor.md)
 - [Monty Executor (`montyExecutor`)](./code_fs_process/montyExecutor.md)
 - [Process Manager (`processManager`)](./code_fs_process/processManager.md)
