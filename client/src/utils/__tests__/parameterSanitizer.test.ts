@@ -28,6 +28,24 @@ describe('sanitizeParameters', () => {
       expect(out).not.toHaveProperty('last_session_id');
     });
 
+    it('strips the structured JSONL transcript behind the markdown view', () => {
+      const out = sanitizeParameters({
+        memory_jsonl: '{"role":"user","content":"my card is 4111 1111 1111 1111"}',
+      });
+      expect(out).toEqual({});
+    });
+
+    it('strips vertex cloud-conversation handles', () => {
+      // These point into the *author's* Vertex session; an exported workflow
+      // must not carry them to whoever imports it.
+      const out = sanitizeParameters({
+        vertex_interaction_id: 'interactions/abc123',
+        vertex_environment_id: 'environments/xyz789',
+        provider: 'vertex',
+      });
+      expect(out).toEqual({ provider: 'vertex' });
+    });
+
     it('keeps genuine configuration on the same node', () => {
       const out = sanitizeParameters({
         memory_content: 'secrets in here',

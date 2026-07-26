@@ -105,12 +105,26 @@ function isSensitiveKey(key: string): boolean {
 // Names below are the backend field names. Do NOT add a key here on the basis
 // of a `hidden: true` UI flag -- that marks merely-advanced configuration
 // (`model`, `max_parallel`, `effort`), which an export legitimately needs.
+// The first four mirror, exactly, what the backend's own "clear memory"
+// routine resets or removes -- `clear_agent_session_state` in
+// `server/services/memory/state.py`. That function is the authoritative
+// definition of "everything an agent reuses across a conversation", so it is
+// the right list to track, and a backend test asserts this file stays in sync
+// with it.
 const RUNTIME_KEYS = normalizedSet([
   // simpleMemory: the whole conversation, verbatim, including anything the
   // user or the model said.
   'memory_content',
+  // simpleMemory: the structured JSONL transcript behind the markdown view.
+  // No current writer, but older databases still carry it.
+  'memory_jsonl',
   // simpleMemory: the Claude Code session UUID from the last successful run.
   'last_session_id',
+  // vertexManagedAgent: handles into a cloud-side conversation and its
+  // environment. Exporting them hands the recipient a pointer into the
+  // author's own Vertex session.
+  'vertex_interaction_id',
+  'vertex_environment_id',
   'token_usage',           // Execution token metrics
   'execution_time',        // Runtime timing
   'last_execution',        // Last execution result
