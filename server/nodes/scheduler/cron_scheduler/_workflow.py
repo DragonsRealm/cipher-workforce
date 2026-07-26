@@ -41,6 +41,11 @@ CHILD_SEARCH_ATTRIBUTES_PATCH = "cron-child-search-attributes-v1"
 COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
     "cron-cooperative-pause-scheduling-v1"
 )
+# Same contract as trigger_listener_workflow.UNBOUNDED_CHILD_RUNS_PATCH:
+# a spawned run may execute or stay paused for months, so new firings
+# start children without lifetime caps; the patch keeps replay
+# compatibility for histories recorded with the old 1h caps.
+UNBOUNDED_CHILD_RUNS_PATCH = "cron-unbounded-child-runs-v1"
 
 
 @workflow.defn(name="CronTriggerWorkflow", sandboxed=False)
@@ -136,9 +141,11 @@ class CronTriggerWorkflow:
             use_cooperative_pause_schedule_gate = workflow.patched(
                 COOPERATIVE_PAUSE_SCHEDULING_PATCH
             )
+            unbounded_child_runs = workflow.patched(UNBOUNDED_CHILD_RUNS_PATCH)
         except RuntimeError:  # direct unit invocation outside Temporal runtime
             use_child_search_attributes = False
             use_cooperative_pause_schedule_gate = False
+            unbounded_child_runs = True
         from services.temporal.trigger_listener_workflow import (
             event_workflow_search_attributes,
         )
@@ -149,9 +156,12 @@ class CronTriggerWorkflow:
             "id_reuse_policy": (
                 WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
             ),
-            "execution_timeout": timedelta(hours=1),
-            "run_timeout": timedelta(hours=1),
         }
+        if not unbounded_child_runs:
+            # Replay-only: pre-patch histories recorded 1h caps on the
+            # child-start command. See UNBOUNDED_CHILD_RUNS_PATCH.
+            child_options["execution_timeout"] = timedelta(hours=1)
+            child_options["run_timeout"] = timedelta(hours=1)
         if use_child_search_attributes:
             child_options["search_attributes"] = (
                 event_workflow_search_attributes(deployment_workflow_id)

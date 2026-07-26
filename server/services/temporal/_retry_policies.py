@@ -108,10 +108,27 @@ DELEGATION_CLEANUP_RETRY: RetryPolicy = RetryPolicy(
 )
 
 
+# Indefinite wait for a subagent-admission permit. The acquire activity
+# is a heartbeating poll-until-admitted loop whose single attempt is
+# bounded by its start_to_close timeout; with the previous 3-attempt
+# default a delegation queued behind long-running siblings (or a paused
+# deployment) for more than ~3h failed permanently instead of waiting.
+# ``maximum_attempts=0`` is Temporal's "unlimited" — liveness stays
+# guaranteed by the activity's heartbeat, and cancellation still
+# propagates normally when the parent is cancelled.
+PERMIT_WAIT_RETRY: RetryPolicy = RetryPolicy(
+    initial_interval=timedelta(seconds=1),
+    maximum_interval=timedelta(seconds=30),
+    maximum_attempts=0,
+    non_retryable_error_types=list(NON_RETRYABLE_ERROR_TYPES),
+)
+
+
 __all__ = [
     "NON_RETRYABLE_ERROR_TYPES",
     "DEFAULT_ACTIVITY_RETRY",
     "QUICK_ACTIVITY_RETRY",
     "LLM_STEP_RETRY",
     "DELEGATION_CLEANUP_RETRY",
+    "PERMIT_WAIT_RETRY",
 ]

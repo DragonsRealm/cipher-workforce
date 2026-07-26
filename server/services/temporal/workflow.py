@@ -95,6 +95,21 @@ AGENT_CHILD_ID_V2_PATCH = "machina-agent-child-id-v2"
 COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
     "machina-cooperative-pause-scheduling-v1"
 )
+# Agent child workflows used to carry 1h execution/run timeouts, and node
+# activities a 10-minute start_to_close. A run may legitimately execute —
+# or stay cooperatively paused — for months, and Temporal's timeout
+# timers keep ticking through a pause, so the caps silently terminated
+# long/paused runs. New executions start agent children unbounded and
+# give node activities a generous start_to_close; liveness is enforced
+# by the 2-minute heartbeat timeout (activities self-heartbeat every
+# 30s), not by lifetime caps. Patch keeps replay compatibility for
+# histories recorded with the old caps.
+UNBOUNDED_LIFETIMES_PATCH = "machina-unbounded-lifetimes-v1"
+# start_to_close for node activities on the patched path. Generous by
+# design: a single node step (agent turn batch, browser op, long shell
+# command) may run for hours; worker-death detection is the heartbeat
+# timeout's job, so a long ceiling costs nothing in liveness.
+_NODE_ACTIVITY_START_TO_CLOSE = timedelta(hours=24)
 
 
 def _agent_child_workflow_id_v2(root_workflow_id: str, agent_node_id: str) -> str:
@@ -259,6 +274,7 @@ class MachinaWorkflow:
         use_cooperative_pause_schedule_gate = workflow.patched(
             COOPERATIVE_PAUSE_SCHEDULING_PATCH
         )
+        use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
 
         workflow.logger.info(f"Starting workflow orchestration: {len(nodes)} nodes, {len(edges)} edges")
 
@@ -423,14 +439,19 @@ class MachinaWorkflow:
                         )
                     else:
                         child_workflow_id = f"{workflow_slug}-{node_label_slug(node)}"
-                    handle = await workflow.start_child_workflow(
-                        dispatch["name"],
+                    child_start_kwargs: Dict[str, Any] = dict(
                         args=[context],
                         id=child_workflow_id,
-                        # Child workflow execution timeout: agent loops can run
-                        # 10+ minutes with multiple LLM turns. Set generously.
-                        execution_timeout=timedelta(hours=1),
-                        run_timeout=timedelta(hours=1),
+                    )
+                    if not use_unbounded_lifetimes:
+                        # Replay-only: pre-patch histories recorded 1h caps
+                        # on the child-start command. New runs are unbounded
+                        # (see UNBOUNDED_LIFETIMES_PATCH).
+                        child_start_kwargs["execution_timeout"] = timedelta(hours=1)
+                        child_start_kwargs["run_timeout"] = timedelta(hours=1)
+                    handle = await workflow.start_child_workflow(
+                        dispatch["name"],
+                        **child_start_kwargs,
                     )
                     running[node_id] = handle
                     workflow.logger.info(f"Scheduled child workflow for node: {node_id} " f"(workflow={dispatch['name']})")
@@ -443,7 +464,15 @@ class MachinaWorkflow:
                     start_kwargs: Dict[str, Any] = dict(
                         args=[context],
                         activity_id=node_id,
-                        start_to_close_timeout=timedelta(minutes=10),
+                        # Heartbeat is the liveness mechanism (activities
+                        # self-heartbeat every 30s); start_to_close only
+                        # bounds a single legitimate step. Pre-patch
+                        # histories replay against the old 10min cap.
+                        start_to_close_timeout=(
+                            _NODE_ACTIVITY_START_TO_CLOSE
+                            if use_unbounded_lifetimes
+                            else timedelta(minutes=10)
+                        ),
                         heartbeat_timeout=timedelta(minutes=2),
                         retry_policy=retry_policy,
                     )

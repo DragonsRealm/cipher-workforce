@@ -60,6 +60,7 @@ from ._retry_policies import (
     DEFAULT_ACTIVITY_RETRY,
     DELEGATION_CLEANUP_RETRY,
     LLM_STEP_RETRY,
+    PERMIT_WAIT_RETRY,
 )
 from .workflow import AGENT_WORKFLOW_TYPES
 
@@ -131,6 +132,15 @@ DELEGATED_TASK_CANCELLATION_TERMINAL_PATCH = (
 DELEGATED_TASK_SEARCH_ATTRIBUTES_PATCH = (
     "agent-delegated-task-search-attributes-v1"
 )
+# Agent/delegated children used to carry 1-2h execution/run timeouts and
+# the permit wait a ~3h total retry budget. Runs may execute — or stay
+# cooperatively paused — for months, and Temporal's timeout timers keep
+# ticking through a pause, so the caps silently terminated long/paused
+# work (skipping the compensation blocks: leaked permits, stuck task
+# rows). New executions start children unbounded and wait for permits
+# indefinitely; the patch keeps replay compatibility for histories
+# recorded with the old caps.
+UNBOUNDED_LIFETIMES_PATCH = "agent-unbounded-lifetimes-v1"
 DUPLICATE_TOOL_NAME_ERROR_TYPE = "DuplicateToolNameError"
 
 
@@ -327,6 +337,7 @@ class DelegatedTaskWorkflow:
         use_cancellation_terminal = workflow.patched(
             DELEGATED_TASK_CANCELLATION_TERMINAL_PATCH
         )
+        use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
         acquire_cancellation_options = (
             {
                 "cancellation_type": (
@@ -367,7 +378,11 @@ class DelegatedTaskWorkflow:
                 args=[acquire_payload],
                 start_to_close_timeout=timedelta(hours=1),
                 heartbeat_timeout=timedelta(seconds=10),
-                retry_policy=AGENT_ACTIVITY_RETRY,
+                # Unlimited attempts on the patched path — a queued
+                # delegation waits as long as admission takes.
+                retry_policy=(
+                    PERMIT_WAIT_RETRY if use_unbounded_lifetimes else AGENT_ACTIVITY_RETRY
+                ),
                 **acquire_cancellation_options,
             )
             acquired_permit_id = str(
@@ -388,10 +403,14 @@ class DelegatedTaskWorkflow:
                 request["child_context"]["team_permit_id"] = (
                     acquired_permit_id
                 )
+            runner_child_kwargs: Dict[str, Any] = {"id": request["child_workflow_id"]}
+            if not use_unbounded_lifetimes:
+                # Replay-only: pre-patch histories recorded 1h caps.
+                runner_child_kwargs["execution_timeout"] = timedelta(hours=1)
+                runner_child_kwargs["run_timeout"] = timedelta(hours=1)
             child_handle = await workflow.start_child_workflow(
                 "AgentWorkflow", args=[request["child_context"]],
-                id=request["child_workflow_id"],
-                execution_timeout=timedelta(hours=1), run_timeout=timedelta(hours=1),
+                **runner_child_kwargs,
             )
             await workflow.execute_activity(
                 "agent.register_task_execution.v1",
@@ -629,6 +648,7 @@ class AgentWorkflow:
         use_delegation_permit_cleanup = workflow.patched(
             DELEGATION_PERMIT_CLEANUP_PATCH
         )
+        use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
         use_acquire_cancellation_completion = workflow.patched(
             DELEGATION_ACQUIRE_CANCELLATION_PATCH
         )
@@ -1294,7 +1314,11 @@ class AgentWorkflow:
                         ),
                         start_to_close_timeout=timedelta(hours=1),
                         heartbeat_timeout=timedelta(seconds=10),
-                        retry_policy=AGENT_ACTIVITY_RETRY,
+                        # Unlimited attempts on the patched path — a queued
+                        # delegation waits as long as admission takes.
+                        retry_policy=(
+                            PERMIT_WAIT_RETRY if use_unbounded_lifetimes else AGENT_ACTIVITY_RETRY
+                        ),
                         **acquire_cancellation_options,
                     )
                     delegation_permits[call_index] = str(
@@ -1341,12 +1365,15 @@ class AgentWorkflow:
                 try:
                     if use_cooperative_pause_schedule_gate:
                         await self._wait_until_resumed()
+                    delegation_child_kwargs: Dict[str, Any] = {"id": child_id}
+                    if not use_unbounded_lifetimes:
+                        # Replay-only: pre-patch histories recorded 1h caps.
+                        delegation_child_kwargs["execution_timeout"] = timedelta(hours=1)
+                        delegation_child_kwargs["run_timeout"] = timedelta(hours=1)
                     delegation_handles[call_index] = await workflow.start_child_workflow(
                         "AgentWorkflow",
                         args=[child_context],
-                        id=child_id,
-                        execution_timeout=timedelta(hours=1),
-                        run_timeout=timedelta(hours=1),
+                        **delegation_child_kwargs,
                     )
                     if team_id:
                         child_handle = delegation_handles[call_index]
@@ -1479,9 +1506,13 @@ class AgentWorkflow:
                 delegated_task_options: Dict[str, Any] = {
                     "id": runner_id,
                     "parent_close_policy": ParentClosePolicy.ABANDON,
-                    "execution_timeout": timedelta(hours=2),
-                    "run_timeout": timedelta(hours=2),
                 }
+                if not use_unbounded_lifetimes:
+                    # Replay-only: pre-patch histories recorded 2h caps.
+                    # A capped runner that timed out skipped its finally
+                    # compensation (leaked permit + stuck task row).
+                    delegated_task_options["execution_timeout"] = timedelta(hours=2)
+                    delegated_task_options["run_timeout"] = timedelta(hours=2)
                 use_delegated_task_search_attributes = workflow.patched(
                     DELEGATED_TASK_SEARCH_ATTRIBUTES_PATCH
                 )
