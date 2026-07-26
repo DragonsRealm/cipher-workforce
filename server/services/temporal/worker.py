@@ -199,6 +199,7 @@ class TemporalWorkerManager:
         from services.temporal.activities import (
             broadcast_trigger_status_activity,
             load_persisted_workflow_graph_activity,
+            pause_workflow_on_failure_activity,
             store_node_output_activity,
         )
 
@@ -252,6 +253,7 @@ class TemporalWorkerManager:
                 self._activities.execute_node_activity,
                 broadcast_trigger_status_activity,
                 load_persisted_workflow_graph_activity,
+                pause_workflow_on_failure_activity,
                 store_node_output_activity,
                 *per_type,
                 *agent_activities,
@@ -704,6 +706,7 @@ async def run_standalone_worker(
     from services.temporal.activities import (
         broadcast_trigger_status_activity,
         load_persisted_workflow_graph_activity,
+        pause_workflow_on_failure_activity,
         store_node_output_activity,
     )
 
@@ -769,6 +772,7 @@ async def create_worker(
     from services.temporal.activities import (
         broadcast_trigger_status_activity,
         load_persisted_workflow_graph_activity,
+        pause_workflow_on_failure_activity,
         store_node_output_activity,
     )
 
@@ -785,6 +789,7 @@ async def create_worker(
             activities.execute_node_activity,
             broadcast_trigger_status_activity,
             load_persisted_workflow_graph_activity,
+            pause_workflow_on_failure_activity,
             store_node_output_activity,
         ],
         max_concurrent_activities=100,

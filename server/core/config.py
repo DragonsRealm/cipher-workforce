@@ -250,6 +250,32 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    # Workflow-control recovery policies (canonical defaults + full
+    # semantics in .env.template; Python defaults keep pre-feature .env
+    # files booting). All three are consumed by
+    # services/deployment/handlers.py — see the normalizers there.
+    # "pause" | "resume": posture for generations still running after an
+    # UNCLEAN shutdown (kill / crash). Clean restarts always restore as-is.
+    workflow_control_crash_recovery: str = Field(
+        default="pause",
+        env="WORKFLOW_CONTROL_CRASH_RECOVERY",
+    )
+    # "pause" | "fail": convergence for a live generation whose controller
+    # execution vanished (terminated in the Temporal UI, killed, deleted).
+    # "pause" keeps it user-resumable — Resume rebuilds the controller from
+    # the durable row; "fail" preserves the legacy Reset-only behaviour.
+    workflow_control_missing_controller: str = Field(
+        default="pause",
+        env="WORKFLOW_CONTROL_MISSING_CONTROLLER",
+    )
+    # Circuit breaker: a controlled run failing with an error pauses the
+    # deployment (user fixes + resumes) instead of the trigger firing into
+    # the same error indefinitely.
+    workflow_control_pause_on_failure: bool = Field(
+        default=True,
+        env="WORKFLOW_CONTROL_PAUSE_ON_FAILURE",
+    )
+
     # API Keys (all optional, injected at runtime)
     google_maps_api_key: Optional[str] = Field(default=None, env="GOOGLE_MAPS_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")

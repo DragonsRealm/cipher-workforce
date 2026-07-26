@@ -420,16 +420,32 @@ def _control_service():
     return WorkflowControlService(container.database())
 
 
-async def _start_controller(control) -> Optional[str]:
-    """Start the durable controller, or use local mode when Temporal is disabled."""
+async def _start_controller(control, *, use_existing: bool = False) -> Optional[str]:
+    """Start the durable controller, or use local mode when Temporal is disabled.
+
+    ``use_existing=True`` is the rebuild path (Resume after the controller
+    was killed): per the documented WorkflowIdConflictPolicy semantics,
+    ``USE_EXISTING`` adopts a still-running controller (returning its run
+    id) instead of erroring, while the default reuse policy permits a
+    fresh run when the previous execution was Terminated/Failed — so the
+    rebuild is race-safe against mis-detection.
+    """
     from core.container import container
-    from temporalio.common import SearchAttributeKey, SearchAttributePair, TypedSearchAttributes
+    from temporalio.common import (
+        SearchAttributeKey,
+        SearchAttributePair,
+        TypedSearchAttributes,
+        WorkflowIDConflictPolicy,
+    )
 
     wrapper = container.temporal_client()
     if wrapper is None or wrapper.client is None:
         if container.settings().temporal_enabled:
             raise RuntimeError("temporal_control_unavailable")
         return None
+    start_kwargs: Dict[str, Any] = {}
+    if use_existing:
+        start_kwargs["id_conflict_policy"] = WorkflowIDConflictPolicy.USE_EXISTING
     handle = await wrapper.client.start_workflow(
         "WorkflowControlWorkflow",
         args=[{
@@ -447,6 +463,7 @@ async def _start_controller(control) -> Optional[str]:
                 SearchAttributeKey.for_keyword("EventWorkflowId"), control.workflow_id,
             )
         ]),
+        **start_kwargs,
     )
     return getattr(handle, "result_run_id", None) or getattr(handle, "first_execution_run_id", None)
 
@@ -552,19 +569,58 @@ async def _query_controller_state(control) -> Optional[Dict[str, Any]]:
 _MISSING_CONTROLLER_FAILS = frozenset(
     {"starting", "running", "pausing", "paused", "resuming"}
 )
+# The subset of live states that converge to ``paused`` (user-resumable)
+# under WORKFLOW_CONTROL_MISSING_CONTROLLER=pause. ``starting`` always
+# fails instead — nothing durable is running yet, and Reset + Start
+# rebuilds a fresh generation cleanly.
+_MISSING_CONTROLLER_PAUSES = frozenset({"running", "pausing", "paused", "resuming"})
 
 
 async def _fail_missing_controller(service: WorkflowControlService, control):
-    """Converge a generation whose controller has vanished to ``failed``.
+    """Converge a generation whose controller execution has vanished.
 
     Without this the row keeps whatever live status it had, and because
     ``begin_generation`` refuses to open a new generation unless the latest
-    one is ``reset``, the workflow could never be started again. ``failed`` is
-    both honest and recoverable -- Reset accepts it, and Reset is what returns
-    the workflow to ``ready``.
+    one is ``reset``, the workflow could never be started again.
+
+    Under the default ``WORKFLOW_CONTROL_MISSING_CONTROLLER=pause``, live
+    states converge to ``paused``: a killed workflow (terminated in the
+    Temporal UI, crashed server, retention-deleted execution) stays
+    user-recoverable — Resume rebuilds the controller from the durable
+    row + graph snapshot — whereas ``failed`` forces a Reset that
+    archives conversation state. ``fail`` preserves the legacy
+    Reset-only behaviour; ``starting`` rows always fail (nothing durable
+    is running yet).
     """
     if control.status not in _MISSING_CONTROLLER_FAILS:
         return control
+    if (
+        control.status in _MISSING_CONTROLLER_PAUSES
+        and _missing_controller_policy() == "pause"
+    ):
+        if control.status == "paused":
+            # Already user-resumable; Resume performs the rebuild.
+            return control
+        logger.warning(
+            "Workflow controller execution is gone; pausing the generation so "
+            "the user can resume it (Resume rebuilds the controller)",
+            workflow_id=control.workflow_id,
+            controller_workflow_id=control.controller_workflow_id,
+            status=control.status,
+            generation=control.generation,
+        )
+        try:
+            recovered = await service.transition(
+                control,
+                expected_revision=control.revision,
+                from_statuses={control.status},
+                status="paused",
+            )
+        except ValueError:
+            # Lost the CAS to a concurrent writer; their transition wins.
+            return control
+        await _broadcast_control(recovered, extra={"recovery": "controller_missing"})
+        return recovered
     logger.warning(
         "Workflow controller execution is gone; failing the generation so it "
         "can be reset",
@@ -983,14 +1039,117 @@ async def _reconcile_control(service: WorkflowControlService, control):
 # ---------------------------------------------------------------------------
 
 
+# Dirty-bit marker for crash detection. Boot stamps "running"; the graceful
+# lifespan teardown stamps "clean" (registered as a shutdown hook at the
+# bottom of this module). A boot that finds "running" already stamped knows
+# the previous process was killed or crashed mid-flight.
+_SHUTDOWN_STATE_CACHE_KEY = "workflow_control:shutdown_state"
+
+
+def _crash_recovery_policy() -> str:
+    """Normalized WORKFLOW_CONTROL_CRASH_RECOVERY: ``pause`` | ``resume``."""
+    from core.container import container
+
+    value = str(
+        getattr(container.settings(), "workflow_control_crash_recovery", "pause") or "pause"
+    ).strip().lower()
+    if value not in {"pause", "resume"}:
+        logger.warning(f"Unknown WORKFLOW_CONTROL_CRASH_RECOVERY={value!r}; using 'pause'")
+        return "pause"
+    return value
+
+
+def _missing_controller_policy() -> str:
+    """Normalized WORKFLOW_CONTROL_MISSING_CONTROLLER: ``pause`` | ``fail``."""
+    from core.container import container
+
+    value = str(
+        getattr(container.settings(), "workflow_control_missing_controller", "pause") or "pause"
+    ).strip().lower()
+    if value not in {"pause", "fail"}:
+        logger.warning(f"Unknown WORKFLOW_CONTROL_MISSING_CONTROLLER={value!r}; using 'pause'")
+        return "pause"
+    return value
+
+
+async def _consume_shutdown_state() -> bool:
+    """True when the previous backend process exited cleanly.
+
+    A missing marker (first boot / pre-feature database) counts as clean
+    so a fresh install never boots into a recovery pause.
+    """
+    from core.container import container
+
+    database = container.database()
+    entry = await database.get_cache_entry(_SHUTDOWN_STATE_CACHE_KEY)
+    previous = getattr(entry, "value", None) if entry is not None else None
+    await database.set_cache_entry(_SHUTDOWN_STATE_CACHE_KEY, "running")
+    return previous is None or previous == "clean"
+
+
+async def mark_clean_shutdown() -> None:
+    """Stamp the clean-shutdown marker (lifespan teardown hook)."""
+    from core.container import container
+
+    try:
+        await container.database().set_cache_entry(_SHUTDOWN_STATE_CACHE_KEY, "clean")
+    except Exception as exc:  # noqa: BLE001 — best-effort during teardown
+        logger.warning(f"Failed to record clean shutdown marker: {exc}")
+
+
+async def _pause_for_recovery(service: WorkflowControlService, control, *, reason: str):
+    """Durably pause a recovered generation so the user resumes it.
+
+    After a kill or crash the deployment must come back ``paused`` rather
+    than silently continuing — the user decides when it is safe to
+    resume. Reuses the full pause ceremony (controller update, cron
+    schedule pause, trigger flags, local admission) via
+    :func:`handle_pause_workflow` so recovery lands in exactly the same
+    posture a user-initiated pause produces. Temporal's native
+    Pause/Unpause (server 1.28+) is deliberately NOT used here: it is an
+    operational control without Python SDK client methods, and it halts
+    workflow-task dispatch entirely — a natively-paused controller could
+    not process the ``set_control_state`` Update that Resume relies on.
+    """
+    logger.warning(
+        "Pausing recovered generation after unclean shutdown",
+        workflow_id=control.workflow_id,
+        generation=control.generation,
+        reason=reason,
+    )
+    try:
+        result = await handle_pause_workflow(
+            {
+                "workflow_id": control.workflow_id,
+                "expected_revision": control.revision,
+                "idempotency_key": f"recovery:{control.id}:{control.revision}",
+            },
+            None,
+        )
+        if not (isinstance(result, dict) and result.get("success")):
+            logger.warning(
+                "Recovery pause did not complete",
+                workflow_id=control.workflow_id,
+                error=(result or {}).get("error") if isinstance(result, dict) else None,
+            )
+    except Exception as exc:  # noqa: BLE001 — lazy reconcile retries later
+        logger.warning(
+            "Recovery pause failed",
+            workflow_id=control.workflow_id,
+            error=str(exc),
+        )
+    latest = await service.database.get_latest_workflow_control(control.workflow_id)
+    return latest if latest is not None else control
+
+
 async def reconcile_active_controls_on_boot() -> int:
     """Converge every active durable control after a backend restart.
 
-    Three responsibilities per active row:
+    Responsibilities per active row:
 
     1. Run the same lazy :func:`_reconcile_control` used by status reads
-       (finishes interrupted pause/resume transitions, fails rows whose
-       controller vanished).
+       (finishes interrupted pause/resume transitions, converges rows
+       whose controller vanished).
     2. Converge ``starting`` rows — the one state the lazy path never
        touches while its controller exists, so a crash mid-start used to
        wedge the workflow behind a permanent ``workflow_start_pending``.
@@ -1002,6 +1161,11 @@ async def reconcile_active_controls_on_boot() -> int:
        state (runtime counts, admission, pause fan-in) and in-process
        collectors for non-canary trigger types die with the process and
        previously stayed dead while the row reported ``running`` forever.
+    4. After an UNCLEAN shutdown (kill / crash — dirty-bit marker), pause
+       every generation still ``running`` so the user consciously
+       resumes it (``WORKFLOW_CONTROL_CRASH_RECOVERY=pause``, the
+       default; ``resume`` restores them running). A clean
+       ``company stop`` + start always restores deployments as they were.
 
     Returns the number of rows processed; per-row failures are logged and
     skipped so one broken generation cannot block the rest.
@@ -1010,6 +1174,12 @@ async def reconcile_active_controls_on_boot() -> int:
 
     database = container.database()
     service = WorkflowControlService(database)
+    try:
+        clean_shutdown = await _consume_shutdown_state()
+    except Exception as exc:  # noqa: BLE001 — marker is best-effort
+        logger.warning(f"Shutdown-state marker read failed; assuming clean: {exc}")
+        clean_shutdown = True
+    recovery_pause = not clean_shutdown and _crash_recovery_policy() == "pause"
     controls = await database.list_active_workflow_controls()
     processed = 0
     for control in controls:
@@ -1021,6 +1191,10 @@ async def reconcile_active_controls_on_boot() -> int:
                 )
             if control.status in {"running", "paused"}:
                 await _rearm_generation(control)
+            if recovery_pause and control.status == "running":
+                control = await _pause_for_recovery(
+                    service, control, reason="unclean_shutdown"
+                )
             processed += 1
         except Exception as exc:  # noqa: BLE001 — per-row isolation
             logger.warning(
@@ -1186,6 +1360,57 @@ async def _restore_control_after_failed_update(
         latest = await service.database.get_latest_workflow_control(control.workflow_id)
         restored = latest if latest is not None else control
     await _broadcast_control(restored)
+
+
+async def _rebuild_missing_controller(service: WorkflowControlService, control):
+    """Start a fresh controller for a live generation whose previous one died.
+
+    Resume path for a killed workflow: the generation converged to
+    ``paused`` when its controller vanished (terminated in the Temporal
+    UI, crashed server, retention-deleted execution); Resume calls this
+    to rebuild before applying the running state. Same generation-scoped
+    controller workflow id, fresh run chain (``USE_EXISTING`` conflict
+    policy makes it race-safe against a mis-detected live controller),
+    then the local re-arm re-registers canary triggers with the fresh
+    controller from the persisted graph snapshot.
+    """
+    from core.container import container
+
+    logger.warning(
+        "Rebuilding missing workflow controller",
+        workflow_id=control.workflow_id,
+        controller_workflow_id=control.controller_workflow_id,
+        generation=control.generation,
+    )
+    run_id = await _start_controller(control, use_existing=True)
+    if run_id:
+        control = await service.transition(
+            control,
+            expected_revision=control.revision,
+            from_statuses={control.status},
+            status=control.status,
+            values={"controller_run_id": run_id},
+        )
+        await service.database.update_workflow_run_data_scope(
+            control.data_scope_id or control.execution_id,
+            temporal_run_id=run_id,
+        )
+    # Local trigger state may still be armed against the dead controller —
+    # tear it down so the re-arm registers with the fresh one. The
+    # "not deployed" error from a cold process is expected and benign.
+    workflow_service = container.workflow_service()
+    if workflow_service.is_workflow_deployed(control.workflow_id):
+        try:
+            await handle_cancel_deployment({"workflow_id": control.workflow_id}, None)
+        except Exception as exc:  # noqa: BLE001 — re-arm still proceeds
+            logger.warning(
+                "Local cancel before controller rebuild re-arm failed",
+                workflow_id=control.workflow_id,
+                error=str(exc),
+            )
+    await _rearm_generation(control)
+    await _broadcast_control(control, extra={"recovery": "controller_rebuilt"})
+    return control
     return restored
 
 
@@ -1431,15 +1656,17 @@ async def handle_resume_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
         control, expected_revision=_expected_revision(data, control), from_statuses={"paused"}, status="resuming"
     )
     await _broadcast_control(control)
-    try:
-        controller_status = await _update_controller_state(
-            control,
+    resume_update_key = data.get("idempotency_key") or uuid.uuid4().hex
+
+    async def _apply_resume_update(target):
+        return await _update_controller_state(
+            target,
             "running",
-            update_id=(
-                f"{control.id}:{control.revision}:"
-                f"{data.get('idempotency_key') or uuid.uuid4().hex}:running"
-            ),
+            update_id=f"{target.id}:{target.revision}:{resume_update_key}:running",
         )
+
+    try:
+        controller_status = await _apply_resume_update(control)
     except (TemporalControlUnavailable, TemporalControlAckMismatch):
         await _restore_control_after_failed_update(
             service,
@@ -1448,6 +1675,30 @@ async def handle_resume_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
             stable_state="paused",
         )
         raise
+    except Exception as exc:
+        if not _temporal_target_already_gone(exc):
+            raise
+        # The controller execution is gone (killed in the Temporal UI /
+        # crashed / retention-deleted). Under the missing-controller pause
+        # policy the row converged to paused precisely so this Resume can
+        # rebuild the controller from the durable row + graph snapshot,
+        # then re-apply the running state against the fresh execution.
+        try:
+            control = await _rebuild_missing_controller(service, control)
+            controller_status = await _apply_resume_update(control)
+        except Exception as rebuild_exc:  # noqa: BLE001 — restore + surface
+            logger.warning(
+                "Controller rebuild during resume failed",
+                workflow_id=workflow_id,
+                error=str(rebuild_exc),
+            )
+            await _restore_control_after_failed_update(
+                service,
+                control,
+                transitional_state="resuming",
+                stable_state="paused",
+            )
+            raise
     resumed_schedules = await _set_cron_pause(
         workflow_id,
         paused=False,
@@ -1597,6 +1848,67 @@ async def handle_reset_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
     }
 
 
+async def pause_generation_on_failure(*, workflow_id: str, reason: str) -> Dict[str, Any]:
+    """Circuit breaker: pause a controlled deployment after a failed run.
+
+    Called by the ``workflow_control.pause_on_failure.v1`` activity that
+    MachinaWorkflow schedules on its failure path. Without it a trigger
+    keeps firing new runs into the same error indefinitely; with it the
+    deployment lands ``paused`` so the user fixes the cause and Resumes.
+
+    Gated on ``WORKFLOW_CONTROL_PAUSE_ON_FAILURE`` (default true) and
+    applies only to a generation currently ``running`` — direct manual
+    runs, legacy uncontrolled deployments, and already-paused
+    generations are untouched. The knob is evaluated HERE (activity
+    side) rather than inside workflow code so flipping it never touches
+    recorded workflow commands.
+    """
+    from core.container import container
+
+    if not workflow_id:
+        return {"paused": False, "reason": "no_workflow_id"}
+    if not bool(getattr(container.settings(), "workflow_control_pause_on_failure", True)):
+        return {"paused": False, "reason": "disabled"}
+    service = _control_service()
+    control = await service.database.get_latest_workflow_control(workflow_id)
+    if control is None or control.status != "running":
+        return {
+            "paused": False,
+            "reason": "not_running",
+            "status": getattr(control, "status", None),
+        }
+    logger.warning(
+        "Pausing deployment after failed run (circuit breaker)",
+        workflow_id=workflow_id,
+        generation=control.generation,
+        failure=reason,
+    )
+    try:
+        result = await handle_pause_workflow(
+            {
+                "workflow_id": workflow_id,
+                "expected_revision": control.revision,
+                "idempotency_key": f"pause-on-failure:{control.id}:{control.revision}",
+            },
+            None,
+        )
+    except Exception as exc:  # noqa: BLE001 — activity reports, never raises
+        logger.warning(
+            "Pause-on-failure did not complete",
+            workflow_id=workflow_id,
+            error=str(exc),
+        )
+        return {"paused": False, "error": str(exc)}
+    paused = bool(isinstance(result, dict) and result.get("success"))
+    if not paused:
+        logger.warning(
+            "Pause-on-failure did not complete",
+            workflow_id=workflow_id,
+            error=(result or {}).get("error") if isinstance(result, dict) else None,
+        )
+    return {"paused": paused, "failure": reason}
+
+
 WS_HANDLERS: Dict[str, Any] = {
     "deploy_workflow": handle_deploy_workflow,
     "cancel_deployment": handle_cancel_deployment,
@@ -1611,6 +1923,14 @@ WS_HANDLERS: Dict[str, Any] = {
 }
 
 
+# Clean-shutdown marker for crash detection (see _consume_shutdown_state).
+# Registered through the generic lifespan shutdown-hook registry so main.py
+# never learns about the control plane's internals.
+from services.plugin.shutdown_hooks import register_shutdown_hook  # noqa: E402
+
+register_shutdown_hook("workflow_control_clean_shutdown", mark_clean_shutdown)
+
+
 __all__ = [
     "WS_HANDLERS",
     "handle_cancel_deployment",
@@ -1618,4 +1938,7 @@ __all__ = [
     "handle_get_deployment_status",
     "handle_get_workflow_lock",
     "handle_update_deployment_settings",
+    "mark_clean_shutdown",
+    "pause_generation_on_failure",
+    "reconcile_active_controls_on_boot",
 ]

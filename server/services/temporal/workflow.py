@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from temporalio import workflow
 
-from ._retry_policies import DEFAULT_ACTIVITY_RETRY
+from ._retry_policies import DEFAULT_ACTIVITY_RETRY, QUICK_ACTIVITY_RETRY
 from services.workflow_naming import node_label_slug
 
 # Config handles - nodes connecting via these are config nodes (not executed)
@@ -105,6 +105,14 @@ COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
 # 30s), not by lifetime caps. Patch keeps replay compatibility for
 # histories recorded with the old caps.
 UNBOUNDED_LIFETIMES_PATCH = "machina-unbounded-lifetimes-v1"
+# Circuit breaker: a failed trigger-spawned run schedules the
+# workflow_control.pause_on_failure.v1 activity so the deployment pauses
+# (user fixes + resumes) instead of the trigger firing into the same
+# error indefinitely. The WORKFLOW_CONTROL_PAUSE_ON_FAILURE knob is
+# evaluated on the activity side, so flipping config never touches
+# recorded workflow commands; this patch only gates the activity
+# scheduling itself for replay compatibility with older histories.
+PAUSE_ON_FAILURE_PATCH = "machina-pause-on-failure-v1"
 # start_to_close for node activities on the patched path. Generous by
 # design: a single node step (agent turn batch, browser op, long shell
 # command) may run for hours; worker-death detection is the heartbeat
@@ -162,6 +170,38 @@ class MachinaWorkflow:
     async def _wait_until_resumed(self) -> None:
         if self._control_paused:
             await workflow.wait_condition(lambda: not self._control_paused)
+
+    async def _pause_deployment_on_failure(
+        self,
+        workflow_data: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+        errors: List[Dict],
+    ) -> None:
+        """Circuit breaker: a failed trigger-spawned run pauses its deployment.
+
+        Only deployment-spawned runs qualify — they always carry a
+        ``_pre_executed`` firing trigger, which one-off manual canvas runs
+        never do, so a failed test run cannot pause a live deployment.
+        Legacy uncontrolled deployments no-op inside the activity (no
+        running control row). Non-fatal by design: the run's own failure
+        result is the primary outcome either way.
+        """
+        workflow_id = workflow_data.get("workflow_id")
+        spawned_by_trigger = any(node.get("_pre_executed") for node in nodes)
+        if not workflow_id or not spawned_by_trigger:
+            return
+        try:
+            await workflow.execute_activity(
+                "workflow_control.pause_on_failure.v1",
+                {
+                    "workflow_id": workflow_id,
+                    "reason": str((errors[0] or {}).get("error", "run_failed"))[:500],
+                },
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=QUICK_ACTIVITY_RETRY,
+            )
+        except Exception as exc:  # noqa: BLE001 — cosmetic relative to the run result
+            workflow.logger.warning(f"pause-on-failure activity failed (non-fatal): {exc}")
 
     @workflow.signal
     async def on_event(self, event_payload: Dict[str, Any]) -> None:
@@ -275,6 +315,7 @@ class MachinaWorkflow:
             COOPERATIVE_PAUSE_SCHEDULING_PATCH
         )
         use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
+        use_pause_on_failure = workflow.patched(PAUSE_ON_FAILURE_PATCH)
 
         workflow.logger.info(f"Starting workflow orchestration: {len(nodes)} nodes, {len(edges)} edges")
 
@@ -518,6 +559,9 @@ class MachinaWorkflow:
 
         # Build final result
         success = len(errors) == 0 and len(completed) == len(node_map)
+
+        if errors and use_pause_on_failure:
+            await self._pause_deployment_on_failure(workflow_data, nodes, errors)
 
         workflow.logger.info(f"Workflow complete: success={success}, " f"executed={len(execution_trace)}/{len(node_map)}")
 

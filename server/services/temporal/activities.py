@@ -524,3 +524,32 @@ async def broadcast_trigger_status_activity(payload: Dict[str, Any]) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — non-fatal
         activity.logger.warning(f"broadcast_trigger_status_activity failed for " f"node={payload.get('node_id')!r}: {exc}")
+
+
+@activity.defn(name="workflow_control.pause_on_failure.v1")
+async def pause_workflow_on_failure_activity(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Circuit breaker: pause a controlled deployment after a failed run.
+
+    Scheduled by MachinaWorkflow's failure path (patch-gated). All policy
+    lives in ``services.deployment.handlers.pause_generation_on_failure``
+    — including the WORKFLOW_CONTROL_PAUSE_ON_FAILURE knob, evaluated on
+    the activity side so flipping it never touches recorded workflow
+    commands. Never raises; the result dict lands in workflow history
+    for ops inspection.
+
+    Payload shape:
+        {
+            "workflow_id": str,       # OpenCompany deployment workflow_id
+            "reason": str,            # first node error of the failed run
+        }
+    """
+    from services.deployment.handlers import pause_generation_on_failure
+
+    try:
+        return await pause_generation_on_failure(
+            workflow_id=str(payload.get("workflow_id") or ""),
+            reason=str(payload.get("reason") or "run_failed"),
+        )
+    except Exception as exc:  # noqa: BLE001 — non-fatal
+        activity.logger.warning(f"pause_workflow_on_failure_activity failed for " f"workflow={payload.get('workflow_id')!r}: {exc}")
+        return {"paused": False, "error": str(exc)}

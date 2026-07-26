@@ -1187,12 +1187,70 @@ async def test_terminal_generation_is_never_probed(monkeypatch, terminal_status)
 
 
 @pytest.mark.asyncio
-async def test_live_generation_with_missing_controller_is_failed(monkeypatch):
-    """Otherwise it stays non-'reset' forever and blocks every future Start."""
+async def test_live_generation_with_missing_controller_pauses_by_default(monkeypatch):
+    """WORKFLOW_CONTROL_MISSING_CONTROLLER=pause (default): a killed
+    controller leaves the generation user-resumable — Resume rebuilds it —
+    instead of forcing a Reset that archives conversation state."""
+    paused = _control("paused", 7)
+    transition = AsyncMock(return_value=paused)
+    fail = AsyncMock()
+    broadcast = AsyncMock(return_value={})
+
+    monkeypatch.setattr(handlers, "_missing_controller_policy", lambda: "pause")
+    monkeypatch.setattr(
+        handlers,
+        "_query_controller_state",
+        AsyncMock(side_effect=handlers.ControllerExecutionMissing("gone")),
+    )
+    monkeypatch.setattr(handlers, "_broadcast_control", broadcast)
+
+    control = _control("pausing", 6)
+    result, controller_status = await handlers._reconcile_control(
+        _reconcile_service(fail=fail, transition=transition), control
+    )
+
+    assert result is paused
+    assert controller_status is None
+    assert transition.await_args.kwargs["status"] == "paused"
+    fail.assert_not_awaited()
+    broadcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_already_paused_generation_with_missing_controller_is_left_alone(
+    monkeypatch,
+):
+    """Paused is already the recoverable posture; Resume performs the rebuild."""
+    transition = AsyncMock()
+    fail = AsyncMock()
+    monkeypatch.setattr(handlers, "_missing_controller_policy", lambda: "pause")
+    monkeypatch.setattr(
+        handlers,
+        "_query_controller_state",
+        AsyncMock(side_effect=handlers.ControllerExecutionMissing("gone")),
+    )
+
+    control = _control("paused", 6)
+    result, _ = await handlers._reconcile_control(
+        _reconcile_service(fail=fail, transition=transition), control
+    )
+
+    assert result is control
+    transition.assert_not_awaited()
+    fail.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_live_generation_with_missing_controller_fails_under_legacy_policy(
+    monkeypatch,
+):
+    """WORKFLOW_CONTROL_MISSING_CONTROLLER=fail preserves the Reset-only
+    behaviour; otherwise the row stays non-'reset' forever and blocks Start."""
     failed = _control("failed", 7, terminal_reason="controller_execution_missing")
     fail = AsyncMock(return_value=failed)
     broadcast = AsyncMock(return_value={})
 
+    monkeypatch.setattr(handlers, "_missing_controller_policy", lambda: "fail")
     monkeypatch.setattr(
         handlers,
         "_query_controller_state",
@@ -1209,6 +1267,30 @@ async def test_live_generation_with_missing_controller_is_failed(monkeypatch):
     assert controller_status is None
     assert fail.await_args.args[1] == "controller_execution_missing"
     broadcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_starting_with_missing_controller_still_fails_under_pause_policy(
+    monkeypatch,
+):
+    """Nothing durable runs yet mid-start; Reset + Start rebuilds cleanly."""
+    failed = _control("failed", 7, terminal_reason="controller_execution_missing")
+    fail = AsyncMock(return_value=failed)
+    monkeypatch.setattr(handlers, "_missing_controller_policy", lambda: "pause")
+    monkeypatch.setattr(
+        handlers,
+        "_query_controller_state",
+        AsyncMock(side_effect=handlers.ControllerExecutionMissing("gone")),
+    )
+    monkeypatch.setattr(handlers, "_broadcast_control", AsyncMock(return_value={}))
+
+    control = _control("starting", 6)
+    result, _ = await handlers._reconcile_control(
+        _reconcile_service(fail=fail), control
+    )
+
+    assert result is failed
+    assert fail.await_args.args[1] == "controller_execution_missing"
 
 
 @pytest.mark.asyncio

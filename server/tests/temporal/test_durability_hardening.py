@@ -56,6 +56,7 @@ def test_durability_changes_are_replay_patch_guarded():
 
     expected = {
         machina_module.UNBOUNDED_LIFETIMES_PATCH: inspect.getsource(MachinaWorkflow.run),
+        machina_module.PAUSE_ON_FAILURE_PATCH: inspect.getsource(MachinaWorkflow.run),
         agent_module.UNBOUNDED_LIFETIMES_PATCH: inspect.getsource(AgentWorkflow.run),
         trigger_module.UNBOUNDED_CHILD_RUNS_PATCH: inspect.getsource(
             TriggerListenerWorkflow._spawn_child_run
@@ -80,6 +81,7 @@ def test_durability_changes_are_replay_patch_guarded():
 
     assert set(expected) == {
         "machina-unbounded-lifetimes-v1",
+        "machina-pause-on-failure-v1",
         "agent-unbounded-lifetimes-v1",
         "trigger-unbounded-child-runs-v1",
         "polling-unbounded-child-runs-v1",
@@ -732,6 +734,7 @@ async def test_boot_reconcile_processes_each_active_row_with_isolation(monkeypat
         list_active_workflow_controls=AsyncMock(return_value=[broken, healthy]),
     )
     monkeypatch.setattr(container, "database", MagicMock(return_value=database))
+    monkeypatch.setattr(handlers, "_consume_shutdown_state", AsyncMock(return_value=True))
 
     async def reconcile(_service, control):
         if control.workflow_id == "wf-broken":
@@ -747,3 +750,364 @@ async def test_boot_reconcile_processes_each_active_row_with_isolation(monkeypat
     # The broken row was isolated; the healthy one was re-armed.
     assert processed == 1
     rearm.assert_awaited_once_with(healthy)
+
+
+# ---------------------------------------------------------------------------
+# Crash / kill recovery: unclean-shutdown detection + recovery pause.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_shutdown_marker_protocol(monkeypatch):
+    """Dirty bit: boot stamps "running"; clean teardown stamps "clean";
+    a missing marker (first boot) counts as clean."""
+    from core.container import container
+    from services.deployment import handlers
+
+    store: dict = {}
+
+    async def get_entry(key):
+        value = store.get(key)
+        return SimpleNamespace(value=value) if value is not None else None
+
+    async def set_entry(key, value, *args, **kwargs):
+        store[key] = value
+
+    database = SimpleNamespace(get_cache_entry=get_entry, set_cache_entry=set_entry)
+    monkeypatch.setattr(container, "database", MagicMock(return_value=database))
+
+    # First boot: no marker -> clean; stamps the dirty bit.
+    assert await handlers._consume_shutdown_state() is True
+    assert store[handlers._SHUTDOWN_STATE_CACHE_KEY] == "running"
+    # Crash (no clean stamp) -> next boot detects unclean.
+    assert await handlers._consume_shutdown_state() is False
+    # Graceful teardown stamps clean -> next boot is clean again.
+    await handlers.mark_clean_shutdown()
+    assert store[handlers._SHUTDOWN_STATE_CACHE_KEY] == "clean"
+    assert await handlers._consume_shutdown_state() is True
+
+
+def test_clean_shutdown_hook_is_registered():
+    from services.plugin.shutdown_hooks import registered_labels
+
+    assert "workflow_control_clean_shutdown" in registered_labels()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("clean", "policy", "expect_pause"),
+    [
+        (False, "pause", True),  # crash + default policy -> recovery pause
+        (False, "resume", False),  # crash + resume policy -> keep running
+        (True, "pause", False),  # clean restart -> always restore as-is
+    ],
+)
+async def test_boot_recovery_pauses_running_rows_after_unclean_shutdown(
+    monkeypatch, clean, policy, expect_pause
+):
+    from core.container import container
+    from services.deployment import handlers
+
+    running = _boot_control("running")
+    paused = _boot_control("paused")
+    database = SimpleNamespace(
+        list_active_workflow_controls=AsyncMock(return_value=[running, paused]),
+    )
+    monkeypatch.setattr(container, "database", MagicMock(return_value=database))
+    monkeypatch.setattr(
+        handlers, "_consume_shutdown_state", AsyncMock(return_value=clean)
+    )
+    monkeypatch.setattr(handlers, "_crash_recovery_policy", lambda: policy)
+    monkeypatch.setattr(
+        handlers,
+        "_reconcile_control",
+        AsyncMock(side_effect=lambda _s, c: (c, {"state": c.status})),
+    )
+    monkeypatch.setattr(handlers, "_rearm_generation", AsyncMock())
+    recovery_pause = AsyncMock(side_effect=lambda _s, c, reason: c)
+    monkeypatch.setattr(handlers, "_pause_for_recovery", recovery_pause)
+
+    processed = await handlers.reconcile_active_controls_on_boot()
+
+    assert processed == 2
+    if expect_pause:
+        # Only the RUNNING row gets the recovery pause; already-paused
+        # generations stay untouched.
+        recovery_pause.assert_awaited_once()
+        assert recovery_pause.await_args.args[1] is running
+    else:
+        recovery_pause.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pause_for_recovery_reuses_the_full_pause_ceremony(monkeypatch):
+    from services.deployment import handlers
+
+    control = _boot_control("running")
+    paused = _boot_control("paused")
+    pause_handler = AsyncMock(return_value={"success": True, "state": "paused"})
+    monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
+    service = SimpleNamespace(
+        database=SimpleNamespace(
+            get_latest_workflow_control=AsyncMock(return_value=paused)
+        )
+    )
+
+    result = await handlers._pause_for_recovery(
+        service, control, reason="unclean_shutdown"
+    )
+
+    assert result is paused
+    request = pause_handler.await_args.args[0]
+    assert request["workflow_id"] == control.workflow_id
+    assert request["expected_revision"] == control.revision
+
+
+# ---------------------------------------------------------------------------
+# Killed controller: Resume rebuilds it from the durable row.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rebuild_missing_controller_uses_existing_conflict_policy(monkeypatch):
+    from core.container import container
+    from services.deployment import handlers
+
+    control = _boot_control("resuming")
+    updated = _boot_control("resuming")
+    updated.revision = 4
+    start_controller = AsyncMock(return_value="fresh-run-1")
+    monkeypatch.setattr(handlers, "_start_controller", start_controller)
+    rearm = AsyncMock()
+    monkeypatch.setattr(handlers, "_rearm_generation", rearm)
+    monkeypatch.setattr(handlers, "_broadcast_control", AsyncMock(return_value={}))
+    local_cancel = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(handlers, "handle_cancel_deployment", local_cancel)
+    workflow_service = MagicMock()
+    workflow_service.is_workflow_deployed.return_value = True
+    monkeypatch.setattr(
+        container, "workflow_service", MagicMock(return_value=workflow_service)
+    )
+    service = SimpleNamespace(
+        transition=AsyncMock(return_value=updated),
+        database=SimpleNamespace(
+            update_workflow_run_data_scope=AsyncMock(return_value=True)
+        ),
+    )
+
+    result = await handlers._rebuild_missing_controller(service, control)
+
+    assert result is updated
+    # Race-safe start: adopt a live controller or restart a terminated one.
+    assert start_controller.await_args.kwargs["use_existing"] is True
+    # Fresh run id persisted on the row (status unchanged).
+    assert service.transition.await_args.kwargs["values"] == {
+        "controller_run_id": "fresh-run-1"
+    }
+    # Stale local trigger state torn down, then re-armed against the
+    # fresh controller.
+    local_cancel.assert_awaited_once()
+    rearm.assert_awaited_once_with(updated)
+
+
+@pytest.mark.asyncio
+async def test_resume_rebuilds_a_gone_controller_then_reapplies_running(monkeypatch):
+    from core.container import container
+    from services.deployment import handlers
+
+    paused = _boot_control("paused")
+    resuming = _boot_control("resuming")
+    resuming.revision = 4
+    running = _boot_control("running")
+    running.revision = 5
+
+    class _Gone(Exception):
+        pass
+
+    service = SimpleNamespace(
+        database=SimpleNamespace(
+            get_latest_workflow_control=AsyncMock(return_value=paused)
+        ),
+        transition=AsyncMock(side_effect=[resuming, running]),
+    )
+    monkeypatch.setattr(handlers, "_control_service", lambda: service)
+    monkeypatch.setattr(
+        handlers, "_reconcile_control", AsyncMock(return_value=(paused, None))
+    )
+    monkeypatch.setattr(handlers, "_broadcast_control", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        handlers, "_control_payload", AsyncMock(return_value={"state": "running"})
+    )
+    update_state = AsyncMock(side_effect=[_Gone("not found"), {"state": "running"}])
+    monkeypatch.setattr(handlers, "_update_controller_state", update_state)
+    monkeypatch.setattr(handlers, "_temporal_target_already_gone", lambda exc: isinstance(exc, _Gone))
+    rebuild = AsyncMock(return_value=resuming)
+    monkeypatch.setattr(handlers, "_rebuild_missing_controller", rebuild)
+    monkeypatch.setattr(handlers, "_set_cron_pause", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        handlers, "_signal_generation_workflows", AsyncMock(return_value=0)
+    )
+    workflow_service = MagicMock()
+    workflow_service.resume_deployment = AsyncMock(return_value=0)
+    workflow_service.update_trigger_pause_status = AsyncMock(return_value=0)
+    monkeypatch.setattr(
+        container, "workflow_service", MagicMock(return_value=workflow_service)
+    )
+
+    result = await handlers.handle_resume_workflow(
+        {"workflow_id": "wf", "expected_revision": paused.revision}, None
+    )
+
+    assert result["success"] is True
+    rebuild.assert_awaited_once()
+    # The running update was re-applied against the rebuilt controller.
+    assert update_state.await_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker: failed runs pause the deployment.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pause_on_failure_is_config_gated_and_requires_running(monkeypatch):
+    from core.container import container
+    from services.deployment import handlers
+
+    pause_handler = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
+
+    # Disabled by config -> untouched.
+    monkeypatch.setattr(
+        container,
+        "settings",
+        MagicMock(
+            return_value=SimpleNamespace(workflow_control_pause_on_failure=False)
+        ),
+    )
+    result = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="boom"
+    )
+    assert result == {"paused": False, "reason": "disabled"}
+
+    # Enabled but the generation is already paused -> untouched.
+    monkeypatch.setattr(
+        container,
+        "settings",
+        MagicMock(
+            return_value=SimpleNamespace(workflow_control_pause_on_failure=True)
+        ),
+    )
+    service = SimpleNamespace(
+        database=SimpleNamespace(
+            get_latest_workflow_control=AsyncMock(return_value=_boot_control("paused"))
+        )
+    )
+    monkeypatch.setattr(handlers, "_control_service", lambda: service)
+    result = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="boom"
+    )
+    assert result["paused"] is False
+    pause_handler.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pause_on_failure_pauses_a_running_generation(monkeypatch):
+    from core.container import container
+    from services.deployment import handlers
+
+    running = _boot_control("running")
+    monkeypatch.setattr(
+        container,
+        "settings",
+        MagicMock(
+            return_value=SimpleNamespace(workflow_control_pause_on_failure=True)
+        ),
+    )
+    service = SimpleNamespace(
+        database=SimpleNamespace(
+            get_latest_workflow_control=AsyncMock(return_value=running)
+        )
+    )
+    monkeypatch.setattr(handlers, "_control_service", lambda: service)
+    pause_handler = AsyncMock(return_value={"success": True, "state": "paused"})
+    monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
+
+    result = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="node exploded"
+    )
+
+    assert result == {"paused": True, "failure": "node exploded"}
+    request = pause_handler.await_args.args[0]
+    assert request["workflow_id"] == "wf"
+    assert request["expected_revision"] == running.revision
+
+
+@pytest.mark.asyncio
+async def test_machina_failure_schedules_the_circuit_breaker_activity(monkeypatch):
+    from services.temporal import workflow as machina_module
+    from services.temporal.workflow import MachinaWorkflow
+
+    temporal_workflow = machina_module.workflow
+    monkeypatch.setattr(temporal_workflow, "logger", MagicMock())
+    captured: dict = {}
+
+    async def capture_activity(name, payload, **kwargs):
+        captured["name"] = name
+        captured["payload"] = payload
+
+    monkeypatch.setattr(temporal_workflow, "execute_activity", capture_activity)
+
+    instance = MachinaWorkflow()
+    nodes = [{"id": "t-1", "type": "webhookTrigger", "_pre_executed": True}]
+    errors = [{"node_id": "n-2", "error": "credential expired"}]
+
+    # Trigger-spawned run -> schedules the breaker.
+    await instance._pause_deployment_on_failure({"workflow_id": "wf"}, nodes, errors)
+    assert captured["name"] == "workflow_control.pause_on_failure.v1"
+    assert captured["payload"] == {
+        "workflow_id": "wf",
+        "reason": "credential expired",
+    }
+
+    # Manual run (no pre-executed trigger) -> never pauses a deployment.
+    captured.clear()
+    await instance._pause_deployment_on_failure(
+        {"workflow_id": "wf"}, [{"id": "n-1", "type": "aiAgent"}], errors
+    )
+    assert captured == {}
+
+    # No workflow_id -> nothing to pause.
+    await instance._pause_deployment_on_failure({}, nodes, errors)
+    assert captured == {}
+
+
+def test_recovery_policies_normalize_unknown_values(monkeypatch):
+    from core.container import container
+    from services.deployment import handlers
+
+    monkeypatch.setattr(
+        container,
+        "settings",
+        MagicMock(
+            return_value=SimpleNamespace(
+                workflow_control_crash_recovery="bogus",
+                workflow_control_missing_controller="also-bogus",
+            )
+        ),
+    )
+    assert handlers._crash_recovery_policy() == "pause"
+    assert handlers._missing_controller_policy() == "pause"
+
+    monkeypatch.setattr(
+        container,
+        "settings",
+        MagicMock(
+            return_value=SimpleNamespace(
+                workflow_control_crash_recovery="RESUME",
+                workflow_control_missing_controller="Fail",
+            )
+        ),
+    )
+    assert handlers._crash_recovery_policy() == "resume"
+    assert handlers._missing_controller_policy() == "fail"

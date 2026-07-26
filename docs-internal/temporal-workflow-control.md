@@ -167,6 +167,45 @@ the control plane is hardened against Temporal's per-run event-history ceiling
   ticking through a pause, so the caps silently terminated paused work).
   Replay-patched; see TEMPORAL_ARCHITECTURE.md for the patch inventory.
 
+## Recovery policies
+
+Three env-driven policies (canonical defaults + semantics in
+`.env.template`; consumed by `services/deployment/handlers.py`) govern how a
+generation behaves around kills, crashes, and failures. All three reuse the
+cooperative control-plane pause — Temporal's native Pause/Unpause (server
+1.28+) is deliberately not used: it is an operational control with no Python
+SDK client methods, and it halts workflow-task dispatch entirely, so a
+natively-paused controller could not process the `set_control_state` Update
+that Resume relies on.
+
+- **`WORKFLOW_CONTROL_CRASH_RECOVERY`** (`pause` | `resume`, default
+  `pause`): after an UNCLEAN shutdown — kill or crash, detected via a
+  dirty-bit cache marker the graceful lifespan teardown clears (registered
+  through the generic shutdown-hook registry) — the boot reconcile pauses
+  every generation still `running` so the user consciously resumes it. A
+  clean `company stop` + start always restores deployments as they were.
+- **`WORKFLOW_CONTROL_MISSING_CONTROLLER`** (`pause` | `fail`, default
+  `pause`): a live generation whose controller execution vanished
+  (terminated in the Temporal UI, killed, retention-deleted) converges to
+  `paused` instead of `failed`. Resume then **rebuilds the controller**:
+  same generation-scoped workflow id started with the documented
+  `WorkflowIdConflictPolicy.USE_EXISTING` semantics (race-safe — adopts a
+  live controller or starts a fresh run after termination), persists the
+  new run id, tears down stale local trigger state, and re-arms from the
+  persisted graph snapshot before re-applying the running Update.
+  `starting` rows always fail instead (nothing durable runs yet; Reset +
+  Start rebuilds cleanly). `fail` preserves the legacy Reset-only
+  behaviour.
+- **`WORKFLOW_CONTROL_PAUSE_ON_FAILURE`** (default `true`): circuit
+  breaker — when a trigger-spawned run fails with an error, MachinaWorkflow
+  schedules `workflow_control.pause_on_failure.v1` (patch
+  `machina-pause-on-failure-v1`) and the deployment pauses so the user
+  fixes the cause and Resumes, instead of the trigger firing into the same
+  error indefinitely. Only deployment-spawned runs qualify (they carry a
+  `_pre_executed` firing trigger; a failed manual canvas run never pauses a
+  live deployment), and the knob is evaluated on the activity side so
+  flipping it never touches recorded workflow commands.
+
 ## Delegated-task traces
 
 Each task attempt stores the actual parent, detached runner, and child Temporal

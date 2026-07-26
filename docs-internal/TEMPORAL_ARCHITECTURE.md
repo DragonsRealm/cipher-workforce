@@ -618,6 +618,11 @@ The Temporal binary + persistence are managed in-process by the plugin-folder pa
 | `temporal_graceful_shutdown_seconds` | `TEMPORAL_GRACEFUL_SHUTDOWN_SECONDS` | `30` | `CTRL_BREAK_EVENT` (Windows) / `SIGTERM` (POSIX) → tree-kill grace window. Shared with the embedded worker shutdown. |
 | `temporal_terminate_running_on_startup` | `TEMPORAL_TERMINATE_RUNNING_ON_STARTUP` | `false` | Debug-only startup sweep (see the durability contract above). Keep false so running and paused deployments survive restarts. |
 | `temporal_health_monitor_interval_seconds` | `TEMPORAL_HEALTH_MONITOR_INTERVAL_SECONDS` | `15` | Resident dev-server watchdog probe cadence (lifecycle module; loopback deployments only). |
+| `workflow_control_crash_recovery` | `WORKFLOW_CONTROL_CRASH_RECOVERY` | `pause` | After an UNCLEAN shutdown (kill/crash, dirty-bit marker), boot pauses generations still `running` so the user consciously resumes; `resume` restores them running. Clean restarts always restore as-is. |
+| `workflow_control_missing_controller` | `WORKFLOW_CONTROL_MISSING_CONTROLLER` | `pause` | A live generation whose controller vanished converges to `paused` (Resume rebuilds the controller); `fail` preserves the legacy Reset-only behaviour. |
+| `workflow_control_pause_on_failure` | `WORKFLOW_CONTROL_PAUSE_ON_FAILURE` | `true` | Circuit breaker: a failed trigger-spawned run pauses its deployment (fix + Resume) instead of firing into the same error indefinitely. Evaluated activity-side; never touches recorded commands. |
+
+Full recovery-policy semantics: [temporal-workflow-control.md → Recovery policies](./temporal-workflow-control.md#recovery-policies).
 
 The legacy `TEMPORAL_SERVER_READY_TIMEOUT_SECONDS` knob (CLI-supervised-era readiness wait) was removed — it had no consumer since the backend-owned cutover.
 
