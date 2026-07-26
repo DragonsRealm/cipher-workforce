@@ -33,6 +33,7 @@ from temporalio.plugin import SimplePlugin
 from core.logging import get_logger
 from services.deployment.canary_registry import register_canary_trigger_type
 from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
+from services.plugin.scaling import TRIGGER_START_TO_CLOSE
 from services.temporal.plugin_registry import register_temporal_plugin
 
 from ._workflow import CronTriggerWorkflow
@@ -251,6 +252,12 @@ class CronSchedulerNode(ActionNode):
     handles = ({"name": "output-main", "kind": "output", "position": "right", "label": "Output", "role": "main"},)
     annotations = {"destructive": False, "readonly": True, "open_world": False}
     task_queue = TaskQueue.TRIGGERS_POLL
+    # This node sleeps until the next tick (see `trigger` below), and the
+    # frequency options go up to monthly — so the ActionNode default of ten
+    # minutes was simply untrue, and would truncate any interval longer than
+    # that. It declares the same budget as a TriggerNode because it behaves
+    # like one; it only extends ActionNode to reuse the operation plumbing.
+    start_to_close_timeout = TRIGGER_START_TO_CLOSE
     usable_as_tool = True
 
     Params = CronSchedulerParams

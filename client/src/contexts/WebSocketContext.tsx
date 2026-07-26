@@ -31,6 +31,10 @@ import {
 } from '../types/cloudEvents';
 import { WS_CLOSE, WS_RECONNECT } from '../lib/connectionConfig';
 import { todoQueryKeyFromEvent } from '../lib/todoQuery';
+// Cycle note: lib/nodeSpec imports useWebSocket from this module. Safe in
+// both evaluation orders because neither side calls the other's binding at
+// module top level — `executionBudgetFor` only references it inside a body.
+import { getCachedNodeSpec } from '../lib/nodeSpec';
 import {
   useNodeStatusStore,
   useNodeStatusForId,
@@ -71,16 +75,29 @@ export const WORKFLOW_CONTROL_REQUEST_TIMEOUT = 5 * 60 * 1000;
 // Maximum queued sends before backpressure kicks in (FIFO eviction of oldest)
 const QUEUE_MAX_SIZE = 200;
 
-// Trigger node types that wait indefinitely for events
-const TRIGGER_NODE_TYPES = ['whatsappReceive', 'webhookTrigger', 'cronScheduler', 'chatTrigger', 'telegramReceive'];
-
-// Agent node types that can run for minutes (no timeout)
-const LONG_RUNNING_NODE_TYPES = [
-  'aiAgent', 'chatAgent', 'rlm_agent',
-  'android_agent', 'coding_agent', 'web_agent', 'task_agent', 'social_agent',
-  'travel_agent', 'tool_agent', 'productivity_agent', 'payments_agent', 'consumer_agent',
-  'autonomous_agent', 'orchestrator_agent', 'ai_employee',
-];
+/**
+ * How long to let an `execute_node` request stay in flight.
+ *
+ * Read from the node's own spec rather than a local list. The two hardcoded
+ * arrays this replaced had drifted to 5-of-10 triggers and 16-of-21 agents,
+ * so eight node types — emailReceive, googleGmailReceive, stripeReceive,
+ * taskTrigger, twitterReceive, claude_code_agent, codex_agent,
+ * vertex_managed_agent — hit the 30 s default and produced a phantom
+ * "Request timeout: execute_node" entry while the backend kept running.
+ *
+ * Spec unknown (cold cache, or the revision-bust window in nodeSpec.ts)
+ * falls back to a FINITE 5 minutes, never to "no timeout": an unsettleable
+ * promise leaves the Run spinner stuck with no error until a reconnect,
+ * whereas a rejection is visible and retryable. It must not fall back to the
+ * 30 s default either — that is the value that was cutting healthy triggers
+ * off in the first place.
+ */
+const executionBudgetFor = (nodeType: string): number => {
+  const declared = getCachedNodeSpec(nodeType)?.uiHints?.executionTimeoutMs;
+  return typeof declared === 'number' && declared > 0
+    ? declared
+    : WORKFLOW_CONTROL_REQUEST_TIMEOUT;
+};
 
 // Status types
 export interface AndroidStatus {
@@ -2546,9 +2563,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     edges?: any[]
   ): Promise<any> => {
     try {
-      // Trigger nodes and long-running agents wait indefinitely - no timeout
-      const noTimeout = TRIGGER_NODE_TYPES.includes(nodeType) || LONG_RUNNING_NODE_TYPES.includes(nodeType);
-      const timeoutMs = noTimeout ? -1 : undefined;  // -1 = no timeout
+      // The request budget is the node's OWN declared execution budget,
+      // served on its spec as `uiHints.executionTimeoutMs` (the backend's
+      // BaseNode.start_to_close_timeout). Matching it exactly is the point:
+      // waiting longer than the server will run the activity is pointless,
+      // and waiting less produces the phantom failure this replaced.
+      const timeoutMs = executionBudgetFor(nodeType);
 
       const response = await sendRequest<any>('execute_node', {
         node_id: nodeId,

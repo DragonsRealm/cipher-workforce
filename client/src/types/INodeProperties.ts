@@ -233,6 +233,15 @@ export interface INodeUIHints {
    * the backend's `test_ui_hints_only_carry_known_flags` — that
    * invariant checks flag *names*, not values. */
   outputMode?: 'terminal' | 'audio';
+  /** How long this node may legitimately run, in milliseconds — the backend's
+   * own `BaseNode.start_to_close_timeout`, serialized. The WebSocket layer
+   * sizes its request budget from this instead of keeping a list of "slow"
+   * node types, which had drifted to 5-of-10 triggers and 16-of-21 agents.
+   *
+   * Read it off the RAW spec (`getCachedNodeSpec`), never through
+   * `resolveNodeDescription` — the adapter drops uiHints' siblings and this
+   * value must match what the server will actually allow. */
+  executionTimeoutMs?: number;
 }
 
 export interface INodeTypeDescription {
