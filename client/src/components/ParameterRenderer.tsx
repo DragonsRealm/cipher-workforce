@@ -86,9 +86,14 @@ const applySelectChange = (
 // aliases below cover renamed-but-still-saved-in-old-workflows types.
 const NODE_TYPE_TO_PROVIDER: Record<string, string> = {
   ...AI_MODEL_PROVIDER_MAP,
-  // Legacy aliases for backward compatibility
+  // Legacy aliases: node types that are NOT in the backend registry but may
+  // still sit in an old saved workflow. They cannot execute; this only keeps
+  // the credential lookup sane if someone opens one's panel.
+  //
+  // `googleChatModel` is deliberately absent — `migrateNodes` in
+  // store/useAppStore.ts rewrites it to `geminiChatModel` on load, so the key
+  // could never be reached here.
   'claudeChatModel': 'anthropic',
-  'googleChatModel': 'gemini',
   'azureChatModel': 'azure_openai',
   'cohereChatModel': 'cohere',
 };
@@ -1233,11 +1238,6 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
           const needsSpace = existingValue && !existingValue.endsWith(' ') && existingValue.length > 0;
           const newValue = existingValue + (needsSpace ? ' ' : '') + parsedData.variableTemplate;
           onChange(newValue);
-          return;
-        }
-        if (parsedData.type === 'nodeOutput') {
-          // Handle node output data - use the actual value for direct mapping
-          onChange(parsedData.value);
           return;
         }
         if (parsedData.type === WORKSPACE_FILE_DRAG_TYPE) {

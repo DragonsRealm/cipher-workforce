@@ -26,7 +26,8 @@ Detailed architecture reference for how AI Agent (`aiAgent`) and Chat Agent (`ch
 User clicks "Run" on AI Agent
         |
         v
-useExecution.executeNode()               client/src/hooks/useExecution.ts
+ExecutionService.executeNodeViaWebSocket() client/src/services/executionService.ts
+  Called from ParameterPanel.tsx:71
   Sends ALL workflow nodes + edges
         |
         v
@@ -77,7 +78,7 @@ Result broadcast via WebSocket
 
 | File | Responsibility |
 |------|---------------|
-| `client/src/hooks/useExecution.ts` | Frontend execution trigger, sends nodes + edges |
+| `client/src/services/executionService.ts` | Frontend execution trigger, sends nodes + edges (`executeNodeViaWebSocket`, called from `ParameterPanel.tsx`) |
 | `server/routers/websocket.py` | WebSocket handler `handle_execute_node()` |
 | `server/services/workflow.py` | Facade, builds context, delegates to NodeExecutor |
 | `server/services/node_executor.py` | Plugin handler registry, plain dict dispatch (`self._handlers.get(node_type)`) |

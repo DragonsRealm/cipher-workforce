@@ -147,7 +147,7 @@ client/src/
 │   ├── useUserSettingsQuery.ts     # user_settings row Query + save mutation
 │   ├── useApiKeys.ts               # WS-based API key CRUD
 │   ├── useApiKeyValidation.ts      # Provider-specific validation helpers
-│   ├── useComponentPalette.ts / useDragAndDrop.ts / useExecution.ts
+│   ├── useComponentPalette.ts / useDragAndDrop.ts / useDragWorkspaceFile.ts
 │   ├── useOnboarding.ts            # Reads via useUserSettingsQuery; writes via mutation
 │   ├── useParameterPanel.ts        # Thin orchestrator over useNodeParamsQuery + save mutation
 │   ├── usePricing.ts / useToolSchema.ts / useWhatsApp.ts / useAndroidOperations.ts

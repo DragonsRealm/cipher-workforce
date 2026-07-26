@@ -620,7 +620,7 @@ AI model nodes route through `SquareNode` via `Dashboard.tsx`'s `COMPONENT_BY_KI
 
 ### Hooks & State
 - `src/hooks/useParameterPanel.ts` - Parameter management via WebSocket
-- `src/hooks/useExecution.ts` - Node execution via WebSocket
+- `src/services/executionService.ts` - Node execution via WebSocket (`executeNodeViaWebSocket`)
 - `src/hooks/useApiKeys.ts` - API key management via WebSocket
 - `src/hooks/useAndroidOperations.ts` - Android device operations via WebSocket
 - `src/hooks/useWhatsApp.ts` - WhatsApp operations via WebSocket
@@ -2489,11 +2489,12 @@ Hook for WhatsApp operations via WebSocket:
 const { getStatus, getQRCode, sendMessage, startConnection, isLoading, connectionStatus } = useWhatsApp();
 ```
 
-### useExecution (`client/src/hooks/useExecution.ts`)
-Hook for node execution via WebSocket:
-```typescript
-const { executeNode, cancelExecution, isExecuting, lastResult } = useExecution();
-```
+### Node execution (`client/src/services/executionService.ts`)
+`ExecutionService.executeNodeViaWebSocket()` is the live path, called from
+[`ParameterPanel.tsx`](./client/src/ParameterPanel.tsx). It delegates to the
+context's `executeNode`, which sizes its request budget from the node's own
+`uiHints.executionTimeoutMs` rather than any local list of "slow" node types.
+(A `useExecution` hook once wrapped this; it was unreachable and was deleted.)
 
 ### useApiKeys (`client/src/hooks/useApiKeys.ts`)
 Hook for API key management via WebSocket:
@@ -2618,7 +2619,7 @@ This function:
 - **AI Architecture**: 5-layer system with factory pattern and secure credential management
 - **Android Architecture**: Factory-based node creation with ADB integration for device automation
 - **WebSocket-First Architecture**: most frontend-backend RPC (parameters, execution, API keys, Android, WhatsApp, skill operations) goes through WebSocket. Live handler set lives in the `MESSAGE_HANDLERS` dict in `server/routers/websocket.py` plus plugin-registered handlers via `services.ws_handler_registry`.
-- **WebSocket Hooks**: Dedicated React hooks (useWhatsApp, useExecution, useApiKeys, useAndroidOperations, useParameterPanel) for clean component integration
+- **WebSocket Hooks**: Dedicated React hooks (useWhatsApp, useApiKeys, useParameterPanel) for clean component integration; node execution goes through `services/executionService.ts`
 - **WebSocket Support**: Persistent remote Android device connections via WebSocket proxy with background tasks
   - Connection stays alive across multiple API requests until switched to local ADB
   - Background message receiver and keepalive loop (25s interval)
