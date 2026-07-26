@@ -24,7 +24,7 @@ import TeamMonitorNode from './components/TeamMonitorNode';
 import StartNode from './components/StartNode';
 import ConditionalEdge from './components/ConditionalEdge';
 import NodeContextMenu from './components/ui/NodeContextMenu';
-import { getNodeTypesInGroup } from './lib/nodeSpec';
+import { getNodeTypesInGroup, getCachedNodeSpec } from './lib/nodeSpec';
 import ParameterPanel from './ParameterPanel';
 import LocationParameterPanel from './components/LocationParameterPanel';
 import { useAppStore } from './store/useAppStore';
@@ -762,10 +762,20 @@ const DashboardContent: React.FC = () => {
   const handleDeploy = async () => {
     if (!currentWorkflow) return;
 
-    // Check if there's at least one trigger node (workflow entry points)
-    // Trigger types: start, cronScheduler, webhookTrigger, whatsappReceive, telegramReceive, twitterReceive, googleGmailReceive, workflowTrigger, chatTrigger, taskTrigger
-    const triggerTypes = ['start', 'cronScheduler', 'webhookTrigger', 'whatsappReceive', 'telegramReceive', 'twitterReceive', 'googleGmailReceive', 'emailReceive', 'workflowTrigger', 'chatTrigger', 'taskTrigger'];
-    const hasTriggerNode = nodes.some(node => triggerTypes.includes(node.type || ''));
+    // Workflow entry points are backend-declared: componentKind 'trigger'
+    // (inherited from TriggerNode, so a new trigger plugin cannot forget it)
+    // or 'start'. This used to be a hardcoded list, and it had drifted in
+    // BOTH directions — it named `workflowTrigger`, which is not in the
+    // registry at all, while omitting `stripeReceive`, so a workflow whose
+    // only entry point was a Stripe webhook could not be deployed.
+    //
+    // An unknown kind counts as "maybe an entry point" on purpose. This gate
+    // is a convenience check; the backend validates entry points itself, and
+    // failing closed on a cold spec cache would refuse a valid workflow.
+    const hasTriggerNode = nodes.some((node) => {
+      const kind = node.type ? getCachedNodeSpec(node.type)?.componentKind : undefined;
+      return kind == null || kind === 'trigger' || kind === 'start';
+    });
     if (!hasTriggerNode) {
       alert('No trigger node found in workflow.\n\nAdd a trigger node (Cron Scheduler, WhatsApp Receive, Webhook, Chat Trigger, etc.) to begin deployment.');
       return;
