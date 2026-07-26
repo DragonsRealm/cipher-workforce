@@ -6,7 +6,7 @@ Post-migration (2026-04-14). Single source of truth for the current frontend.
 
 ## TL;DR
 
-- **React 19 + Vite 7 + TypeScript 5.9** with the **React Compiler** (`babel-plugin-react-compiler@19`, scoped to all of `src/` except `components/ui/`).
+- **React 19 + Vite 7**, type-checked by **TypeScript 7** (the native Go compiler, exact-pinned `7.0.2` in the **root** `devDependencies`). The client keeps `typescript@^5.9.3` only because typescript-eslint's peer range excludes 6/7 — it is not the gate. With the **React Compiler** (`babel-plugin-react-compiler@1.0.0`, `target: '19'`, scoped to all of `src/` except `components/ui/`).
 - **Tailwind v4** via `@tailwindcss/vite` + `@import "tailwindcss"` in [src/index.css](../client/src/index.css). Tokens defined in the same CSS file via `@theme inline` (no `tailwind.config.js` colors block).
 - **shadcn/ui** via the canonical CLI (`npx shadcn@latest add`). All primitives live under [client/src/components/ui/](../client/src/components/ui/) as first-class repo files we can edit.
 - **Radix UI** is the primitive engine shadcn uses (Dialog, Accordion, Select, Switch, Tabs, Tooltip, Popover, Dropdown, AlertDialog, Collapsible, Progress, Slider, Label, Checkbox).
@@ -22,7 +22,9 @@ Post-migration (2026-04-14). Single source of truth for the current frontend.
 |---|---|---|
 | Bundler | Vite 7 | [client/vite.config.js](../client/vite.config.js) |
 | Framework | React 19 | [client/src/main.tsx](../client/src/main.tsx) |
-| Compiler | `babel-plugin-react-compiler@19.1.0-rc.3` | [vite.config.js](../client/vite.config.js) (scoped: all of `/src/` except `components/ui/`) |
+| Type checker | `typescript@7.0.2` — native Go compiler, **exact-pinned in the root `package.json`** | root `pnpm run typecheck` → `tsc --noEmit -p client/tsconfig.json`; client's `typecheck` delegates up |
+| Type checker (second opinion) | `typescript@^5.9.3` in **client** `dependencies` | Kept for typescript-eslint's peer range (`>=4.8.4 <6.1.0`). Two `typescript` entries cannot live in one manifest, and both 5.x and 7.x expose a `tsc` bin — hence the root/client split. `pnpm typecheck:tsc` runs it for triage only. |
+| Compiler | `babel-plugin-react-compiler@1.0.0` (exact-pinned; `target: '19'` = the React version, not the plugin version) | [vite.config.js](../client/vite.config.js) (scoped: all of `/src/` except `components/ui/`). Pin is exact because semver sorts the old `19.1.0-rc.3` **above** `1.0.0`, so a range would silently reinstall the release candidate — which lacks the incompatible-library skip list. |
 | Styling | Tailwind v4 + `@tailwindcss/vite` | [index.css](../client/src/index.css) + [tailwind.config.js](../client/tailwind.config.js) |
 | Component library | shadcn/ui (CLI `npx shadcn@latest add`) | [components/ui/](../client/src/components/ui/) |
 | Primitives | Radix UI | Pulled as transitive deps by shadcn |
@@ -501,6 +503,10 @@ Defined on `INodeTypeDescription.uiHints` ([client/src/types/INodeProperties.ts]
 | `isMemoryPanel` | `MiddleSection` | Render the memory markdown panel + token usage stats |
 | `isToolPanel` | `MiddleSection` | Surface the ToolSchemaEditor for connected services |
 | `isMonitorPanel` | `MiddleSection`, `ParameterPanel` | Render the team-monitor panel |
+| `isTodoEditor` | `MiddleSection` | Render the editable Current Todos manager (`writeTodos`) instead of the plain params list |
+| `isTaskManagerPanel` | `MiddleSection` | Render the execution-scoped team task control panel |
+| `isProcessManagerPanel` | `MiddleSection` | Render live managed-process inspection and controls |
+| `isGalleryPanel` | `MiddleSection` | Render the workspace file browser (breadcrumbs, grid/list, search, preview, upload, drag-to-parameter) instead of the plain params list. Declared by `gallery`, which pairs it with `hideInputSection` but **keeps** the Output section — unlike `processManager` it produces output worth seeing and dragging. The panel writes back to the node's own `path` / `selection` params, so what you browse is what the node emits. |
 | `showLocationPanel` | `LocationParameterPanel` | Special-case panel for nodes with map preview |
 | `isAndroidToolkit` | `ToolSchemaEditor` | Toolkit aggregator (Android service hub) |
 | `isChatTrigger` | `ConsolePanel` | This node is a chat-message target |
@@ -607,7 +613,8 @@ pnpm run build          # full prod build; bundle analyzer at dist/stats.html if
 cd client
 pnpm dev                # Vite dev server
 pnpm build              # Vite prod build (Tailwind v4 via @tailwindcss/vite plugin)
-pnpm exec tsc --noEmit  # Typecheck
+pnpm typecheck          # THE gate — delegates up to the root TypeScript 7 compiler
+pnpm typecheck:tsc      # second opinion under client's tsc 5.9.3 (triage only, never the gate)
 ```
 
 **Adding shadcn components:**

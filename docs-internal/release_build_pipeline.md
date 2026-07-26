@@ -8,19 +8,45 @@ User scope (confirmed before this work): stay on npm distribution; **no** Nuitka
 
 | Layer | Tool | Why |
 |---|---|---|
-| TypeScript type-check | `@typescript/native-preview` (tsgo) | Microsoft's Go-port of `tsc`, ~10x faster on `--noEmit`. Type-check only — JS emit in tsgo is still preview. Vite/esbuild keep producing the actual JS bundles. Stays in `devDependencies`, never ships to users. |
+| TypeScript type-check | `typescript@7` (the native Go compiler) at the **repo root** | **5.9× faster** on `--noEmit` — measured 2026-07-26 on this codebase, 3 warm runs each: **~820 ms** vs **~4830 ms** under `tsc` 5.9.3. Type-check only; Vite/esbuild keep producing the actual JS bundles. Lives in root `devDependencies`, exact-pinned, never ships to users. |
 | Vite output | `manualChunks` + `target: 'es2022'` | Split heavy libs (reactflow, radix-ui, lobehub, react-markdown stack) so the main bundle no longer hits the 1500KB warning ceiling. ES2022 unlocks `findLast` / optional-chaining-assignment without polyfills (Chrome 94+, FF 93+, Safari 15.4+ — within React 19 / Tailwind 4 baseline). |
 | Node sidecar | `esbuild` bundle to `dist/index.js`, run via `node` | Drops tsx interpreter startup (~500ms-1s every server boot). `--packages=external` keeps Express in `node_modules/` for patch flow. |
 | Python | `python -m compileall -q -j 0 <project dirs>` + `[tool.uv] compile-bytecode = true` | Pre-compile bytecode. Implemented as step `[5/6]` in [`cli/commands/build.py`](../cli/commands/build.py) (`COMPILEALL_SOURCE_DIRS` constant lists the dirs); `server/pyproject.toml`'s `compile-bytecode = true` makes `uv sync` (step `[4/6]`) compile `.venv/` site-packages too. No `-O`: every runtime launches python without `-O`, and per PEP 488 a non-optimized interpreter only loads plain `.pyc` — the earlier `-O` invocation produced `.opt-1.pyc` that nothing ever loaded (fixed 2026-07-14; ~30-50s cold-start gain, see [performance.md](performance.md)). |
 
 ## Implementation steps
 
-### 1. tsgo type-check
+### 1. TypeScript 7 type-check
 
-- `client/package.json` → add `"@typescript/native-preview"` to `devDependencies`, add scripts:
-  - `"typecheck": "tsgo --noEmit"`
-  - `"typecheck:tsc": "tsc --noEmit"` (fallback during the rollout)
-- `.github/workflows/release.yml` → add `pnpm --filter react-flow-client run typecheck` to the predeploy gate before the build job.
+The native Go compiler shipped inside mainline `typescript` at the 7.0 GA
+(2026-07-08). The old `@typescript/native-preview` channel — whose binary was
+named `tsgo` — stopped publishing the day before and must not come back.
+
+**The gate lives at the repo root, and that placement is forced, not stylistic:**
+
+- `client` already depends on `typescript@^5.9.3`, which typescript-eslint needs
+  (it loads the TS API at module scope and its peer range excludes 6.x/7.x). A
+  single manifest cannot declare `typescript` twice.
+- `typescript@7` and `typescript@5` **both** ship a `tsc` bin. Co-locating them
+  would leave pnpm's bin-link conflict resolution deciding which compiler gates
+  CI. (No collision exists today only because `native-preview`'s bin was `tsgo`.)
+- Root declares no `typescript` and no `typescript-eslint`, so there is no peer
+  conflict and nothing else claims `tsc`.
+
+- root `package.json` → `devDependencies: { "typescript": "7.0.2" }`, **exact —
+  no caret**, so the compiler that gates CI never moves on an unrelated install;
+  plus `"typecheck": "tsc --noEmit -p client/tsconfig.json"`
+- `client/package.json` → `"typecheck": "pnpm -w run typecheck"` (delegates up,
+  so the CI command and its guard test stay byte-identical)
+  - `"typecheck:tsc": "tsc --noEmit"` — resolves client's own 5.9.3. A **second
+    opinion for triaging a red gate**, NOT an equivalent check and NOT a revert
+    path: the two compilers check different programs under different default
+    rules. Nothing in CI runs it, so verify it independently before trusting it.
+- `.github/workflows/predeploy.yml` → `pnpm --filter react-flow-client run typecheck` in the
+  `build-and-lint` job. (This gate lives in `predeploy.yml`, not `release.yml`.) The cross-OS
+  `test-build-start` matrix additionally runs `pnpm exec tsc --version`, because the TS7
+  compiler is a per-platform Go binary delivered via `optionalDependencies` — the type-check
+  itself runs only on ubuntu, so without that step the darwin-arm64 and win32-x64 binaries
+  would be installed on every matrix run and never executed.
 
 ### 2. Vite manualChunks + target
 
@@ -97,14 +123,15 @@ Idempotent on re-runs (compileall only rewrites stale pyc; esbuild is determinis
 
 | File | Action |
 |---|---|
-| `client/package.json` | + tsgo devDep, + typecheck scripts |
+| root `package.json` | + `typescript@7` devDep (exact-pinned), + root `typecheck` script |
+| `client/package.json` | `typecheck` delegates to the root gate; keeps `typescript@^5.x` for typescript-eslint |
 | `client/vite.config.js` | + manualChunks, target, lower warning |
 | `server/nodejs/package.json` | + esbuild devDep, build script, change start |
 | `server/nodejs/.gitignore` | new — ignore `dist/` |
 | `cli/commands/build.py` | + compileall step (`[5/6]`, plain `.pyc` — no `-O`), `COMPILEALL_SOURCE_DIRS` constant |
 | `scripts/install.js` | + sidecar bundle + compileall calls |
 | `server/pyproject.toml` | `[tool.uv] compile-bytecode = true` — `uv sync` compiles `.venv/` site-packages |
-| `.github/workflows/release.yml` | + typecheck gate before build |
+| `.github/workflows/predeploy.yml` | + typecheck gate in `build-and-lint`; + `tsc --version` in the cross-OS matrix |
 
 ## Verification
 

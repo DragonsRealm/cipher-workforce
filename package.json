@@ -94,6 +94,7 @@
     "daemon:status": "python -m cli daemon status",
     "daemon:restart": "python -m cli daemon restart",
     "version:sync": "python -m cli version sync",
+    "typecheck": "tsc --noEmit -p client/tsconfig.json",
     "prepublishOnly": "python -m cli version sync && node -e \"const p=require('./package.json'); if(!p.bin||!p.version){process.exit(1)}\"",
     "preinstall": "node scripts/preinstall.js",
     "postinstall": "node scripts/postinstall.js",
@@ -107,6 +108,9 @@
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.14.0",
     "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   },
   "pnpm": {
     "peerDependencyRules": {

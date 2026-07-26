@@ -1,4 +1,7 @@
-/* eslint-disable react-hooks/incompatible-library -- react-compiler advisory only; no functional impact. */
+/* eslint-disable react-hooks/incompatible-library -- react-hook-form's watch()
+   cannot be memoized safely; the compiler (>= 1.0.0) skips this component
+   rather than miscompiling it, so the warning is advisory. Not true before
+   1.0.0 — do not downgrade. */
 /**
  * RateLimitSection — WhatsApp rate limit configuration.
  *

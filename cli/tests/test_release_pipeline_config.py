@@ -200,34 +200,79 @@ def test_sidecar_dist_is_gitignored(sidecar_dir: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_client_typecheck_uses_tsgo(client_pkg: dict):
-    """The fast type-check (``pnpm run typecheck``) goes through tsgo
-    (Microsoft's Go-port of tsc, ~5x faster). The slower tsc fallback
-    stays available as ``typecheck:tsc`` in case tsgo regresses on a
-    dev release.
+def test_client_typecheck_delegates_to_the_root_gate(
+    client_pkg: dict, root_pkg: dict
+):
+    """The type-check gate runs TypeScript 7 (the native Go compiler),
+    which lives at the ROOT rather than in the client.
+
+    Placement is forced, not stylistic: ``client`` already depends on
+    ``typescript@^5.9.3`` (typescript-eslint needs the JS API), and one
+    manifest cannot declare the same package twice. Worse, ``typescript``
+    7 and 5 both ship a ``tsc`` bin, so co-locating them would let pnpm's
+    bin-link conflict resolution decide which compiler gates CI.
+
+    The client script therefore delegates upward, which keeps the CI
+    command (``pnpm --filter react-flow-client run typecheck``) and its
+    guard below unchanged.
     """
-    scripts = client_pkg["scripts"]
+    assert client_pkg["scripts"].get("typecheck") == "pnpm -w run typecheck", (
+        "client typecheck must delegate to the root gate, got "
+        f"{client_pkg['scripts'].get('typecheck')!r}"
+    )
     assert (
-        scripts.get("typecheck") == "tsgo --noEmit"
-    ), f"client typecheck must be tsgo, got {scripts.get('typecheck')!r}"
-    assert scripts.get("typecheck:tsc") == "tsc --noEmit", (
-        "tsc fallback (typecheck:tsc) must remain available so a tsgo "
-        "regression has a one-line revert path"
+        root_pkg["scripts"].get("typecheck") == "tsc --noEmit -p client/tsconfig.json"
+    ), f"root typecheck must run TS7 against the client project, got {root_pkg['scripts'].get('typecheck')!r}"
+    assert client_pkg["scripts"].get("typecheck:tsc") == "tsc --noEmit", (
+        "typecheck:tsc must remain available as a TS 5.9 SECOND OPINION for "
+        "triaging a red gate (is this my code, or a known typescript-go bug?). "
+        "It is NOT an equivalent check and NOT a revert path: the two "
+        "compilers check different programs under different default rules, "
+        "and no CI lane proves this script still passes."
     )
 
 
-def test_tsgo_devdependency_is_pinned_exactly(client_pkg: dict):
-    """tsgo ships breaking changes between dev releases. A ``^`` or
-    ``~`` range would silently shift the type-check gate on each
-    install. Pin the exact version so upgrades are explicit.
+def test_typescript_is_pinned_exactly_at_the_root(root_pkg: dict):
+    """The compiler that gates CI must never move on an unrelated install.
+
+    An exact pin makes a compiler change an explicit, reviewable commit.
     """
-    version = client_pkg.get("devDependencies", {}).get("@typescript/native-preview")
-    assert (
-        version is not None
-    ), "@typescript/native-preview must be in client devDependencies"
+    version = root_pkg.get("devDependencies", {}).get("typescript")
+    assert version is not None, "typescript must be in ROOT devDependencies"
     assert not version.startswith(
         ("^", "~", ">=", ">", "<")
-    ), f"tsgo must be pinned exactly (no range prefix), got {version!r}"
+    ), f"the gate compiler must be pinned exactly (no range prefix), got {version!r}"
+    assert version.startswith("7."), (
+        f"the gate must run TypeScript 7 (the native Go compiler), got {version!r}"
+    )
+
+
+def test_dead_native_preview_channel_does_not_creep_back(client_pkg: dict):
+    """``@typescript/native-preview`` shipped the Go compiler before it
+    landed in mainline ``typescript``. That channel stopped publishing at
+    the 7.0 GA (last build 2026-07-07) and its bin is ``tsgo``, not
+    ``tsc`` — so a reinstall of it would silently fork the gate.
+    """
+    assert "@typescript/native-preview" not in client_pkg.get("devDependencies", {}), (
+        "@typescript/native-preview is a dead channel superseded by "
+        "typescript@7 — the native compiler now ships in the mainline package"
+    )
+
+
+def test_client_keeps_typescript_5_for_typescript_eslint(client_pkg: dict):
+    """Do NOT 'clean this up' by unifying on one TypeScript.
+
+    ``typescript-eslint`` loads the TypeScript API at module scope and
+    declares a peer range that excludes 6.x and 7.x. With
+    ``strict-peer-dependencies=true`` in .npmrc, bumping this is not a
+    warning — it is a hard ``pnpm install`` failure, and CI installs with
+    ``--frozen-lockfile``.
+    """
+    version = client_pkg.get("dependencies", {}).get("typescript")
+    assert version is not None and version.startswith("^5."), (
+        "client must keep typescript ^5.x for typescript-eslint's peer range; "
+        f"got {version!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -344,10 +389,10 @@ def _step_by_name(job: dict, step_name: str) -> dict | None:
 
 
 def test_predeploy_typecheck_step_routes_through_pnpm_script(predeploy_yml: dict):
-    """The CI typecheck step must invoke the npm script (which routes
-    through tsgo) rather than calling ``tsc`` directly. Keeps the
-    fast-vs-fallback choice in one place — ``client/package.json`` —
-    so devs can swap tools without editing the workflow.
+    """The CI typecheck step must invoke the npm script (which delegates
+    up to the root TypeScript 7 gate) rather than calling ``tsc``
+    directly. Keeps the compiler choice in one place — the ROOT
+    ``package.json`` — so it can change without editing the workflow.
     """
     job = predeploy_yml["jobs"]["build-and-lint"]
     step = _step_by_name(job, "TypeScript check")
@@ -361,7 +406,7 @@ def test_predeploy_typecheck_step_routes_through_pnpm_script(predeploy_yml: dict
     ), f"predeploy.yml typecheck step must filter to {CLIENT_PKG_NAME}, got {cmd!r}"
     assert "tsc --noEmit" not in cmd, (
         "predeploy.yml still calls `tsc --noEmit` directly — switch to "
-        "the typecheck script so tsgo is used"
+        "the typecheck script so the root TypeScript 7 gate is used"
     )
 
 

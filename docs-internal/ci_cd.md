@@ -168,4 +168,4 @@ The following existed in earlier drafts of this doc but are **not present in the
 - **`rollback.yml`** — manual `npm deprecate` + optional revert PR.
 - **`codeql.yml`** — Python + JS/TS SAST (`security-extended`).
 - **`check-zizmor.yml`** — workflow-security linter (SARIF to the Security tab).
-- **`.pre-commit-config.yaml`** — ruff / prettier / eslint / actionlint hooks (note: the project rule is to verify with pytest + tsgo/eslint, not ruff).
+- **`.pre-commit-config.yaml`** — ruff / prettier / eslint / actionlint hooks (note: the project rule is to verify with pytest + the root `typecheck` gate + eslint, not ruff). This file is **not currently present in the tree**; the entry describes intent, not a live hook.

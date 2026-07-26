@@ -42,13 +42,25 @@ corresponding `start.log` measurement.
 | Date | Change | Saved | Commit | Plan / RFC |
 |---|---|---|---|---|
 | 2026-05-04 | Lazy LangChain imports in `services/ai.py` (BaseMessage stays eager; everything else moves into local imports) | **~30 s** AIService cold import | `74b75b6` | inline plan |
-| 2026-05-05 | `tsgo` for client `--noEmit` typecheck (5× faster than `tsc`) | ~6 s in CI gate | `0b45fb1` | [release_build_pipeline.md](release_build_pipeline.md) |
+| 2026-05-05 | `tsgo` for client `--noEmit` typecheck | ~6 s in CI gate | `0b45fb1` | [release_build_pipeline.md](release_build_pipeline.md) |
 | 2026-05-05 | Vite `manualChunks` (split reactflow / radix / lobehub-icons / TanStack Query / markdown stack) + `target: 'es2022'` | main bundle 232 KB gz, 7 vendor chunks separately cached | `0b45fb1` | same |
 | 2026-05-05 | Pre-bundle Node.js sidecar with esbuild (`tsx src/index.ts` → `node dist/index.js`) | ~500 ms-1 s of tsx startup per server boot | `0b45fb1` | same |
 | 2026-05-05 | Scoped `python -O -m compileall` over project source dirs (excludes `.venv/`, `tests/`) | 3-5 s on warm-disk imports | `0b45fb1` | same |
 | 2026-05-05 | Test coverage: 12 build-orchestrator + 32 config-contract tests under `cli/tests/` | n/a (regression guard) | `0f1e55e` | same |
 | 2026-05-06 | Frontend WS reconnect → PartySocket; auth bootstrap → TanStack Query; CloudEvents envelope typed | **~20 s** (eliminates +12 s WS drop + +7 s reconnect cycle on cold start) | `e77215c` | inline plan |
 | 2026-07-14 | Boot-delay fix set: (1) lazy `"module:Class"` SDK exception refs on `ProviderSpec` (no SDK import at provider registration); (2) `[tool.uv] compile-bytecode = true` + `-O`-less compileall (bytecode compiled at build for the interpreter that actually runs); (3) Vite dep cache preserved across `company dev` boots (`--force` → `VITE_FORCE` → `optimizeDeps.force`) + `optimizeDeps.include` for heavy lazily-reached deps; (4) temporalio build-id hash pre-warmed off-loop via `asyncio.to_thread` | **~50 s** on post-clean cold boot (71 s → 21.5 s); ~7 s on warm boot (AIService import back to baseline); ~2 min of Vite re-optimize per warm dev boot; event loop no longer frozen ~3 s during Temporal worker start | this change | plan file `analyze-the-log-txt-file-eager-locket.md`; log evidence `log.txt` / `cold.txt` (2026-07-14) |
+| 2026-07-27 | TypeScript 7 GA (`typescript@7.0.2`, native Go) replaces the frozen `@typescript/native-preview` dev build; gate moves to the repo root | **820 ms vs 4830 ms** on the client `--noEmit` gate | this change | [release_build_pipeline.md](release_build_pipeline.md) |
+
+The 2026-07-27 row is the first **measured** figure for this gate — 3 warm runs of
+each compiler, best-of spread under 70 ms. It supersedes the "5×" that sat in the
+2026-05-05 row above and the "~10×" in `release_build_pipeline.md`; neither had a
+recorded baseline, a benchmark command, or a reproduction. Reproduce with:
+
+```bash
+cd client
+../node_modules/.bin/tsc --noEmit -p tsconfig.json   # TS 7 (the gate)
+./node_modules/.bin/tsc --noEmit                     # TS 5.9.3 (second opinion)
+```
 
 ## Where launch time is spent today (post `e77215c`, warm cache)
 

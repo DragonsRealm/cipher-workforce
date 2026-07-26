@@ -41,10 +41,12 @@ beforeAll(() => {
   // Vitest's jsdom env normally provides rAF (pretendToBeVisual); polyfill
   // defensively so the flush helper below always works.
   if (typeof globalThis.requestAnimationFrame === 'undefined') {
-    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
-      setTimeout(() => cb(performance.now()), 0)) as typeof requestAnimationFrame;
-    globalThis.cancelAnimationFrame = ((id: number) =>
-      clearTimeout(id)) as typeof cancelAnimationFrame;
+    // `window.setTimeout`, not the bare global: with @types/node in scope the
+    // bare one is typed `NodeJS.Timeout`, which does not convert to the
+    // `number` that rAF must return (TS2352 under tsc 5.x).
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) =>
+      window.setTimeout(() => cb(performance.now()), 0);
+    globalThis.cancelAnimationFrame = (id: number) => window.clearTimeout(id);
   }
 });
 

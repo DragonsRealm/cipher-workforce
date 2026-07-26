@@ -132,7 +132,8 @@ pnpm install           # install workspace dependencies
 pnpm run dev           # start the app (Vite HMR + backend; Temporal starts from the backend when TEMPORAL_ENABLED, WhatsApp only on demand)
 pnpm run stop          # stop everything
 pnpm run build         # production build
-pnpm exec tsc --noEmit # typecheck client (from client/)
+pnpm --filter react-flow-client run typecheck   # THE gate: TypeScript 7 (native Go). Same command CI runs.
+pnpm --filter react-flow-client run typecheck:tsc # second opinion under tsc 5.9 — for triaging a red gate, not a substitute
 uv run pytest          # run backend tests (from server/, uv-managed venv)
 ```
 
@@ -183,7 +184,7 @@ Full setup and scripts reference: [SETUP.md](docs-internal/SETUP.md) - [SCRIPTS.
 | [authentication.md](docs-internal/authentication.md) | JWT/cookie auth — modes, middleware, frontend bootstrap |
 | [errors.md](docs-internal/errors.md) | Known errors and troubleshooting |
 | [performance.md](docs-internal/performance.md) | Cold-start measurements, optimisation history, anti-patterns |
-| [release_build_pipeline.md](docs-internal/release_build_pipeline.md) | npm-distribution build pipeline (tsgo, esbuild sidecar, bytecode) |
+| [release_build_pipeline.md](docs-internal/release_build_pipeline.md) | npm-distribution build pipeline (TypeScript 7 native-Go type-check, esbuild sidecar, bytecode) |
 | [Skill Creation Guide](server/skills/GUIDE.md) | How to create new skills |
 
 ## Community

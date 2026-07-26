@@ -68,6 +68,14 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm run build
 
+      # The TS7 compiler is a per-platform Go binary delivered through
+      # optionalDependencies. The type-check gate runs on ubuntu only, so
+      # without this the darwin-arm64 and win32-x64 binaries are installed
+      # on every matrix run and never executed — a broken one would pass CI
+      # and surface on a developer machine instead.
+      - name: TypeScript binary resolves on this platform
+        run: pnpm exec tsc --version
+
       - name: Test start (Unix)
         if: runner.os != 'Windows'
         shell: bash

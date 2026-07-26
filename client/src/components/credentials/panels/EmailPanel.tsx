@@ -1,5 +1,10 @@
 /* eslint-disable react-hooks/exhaustive-deps -- form bootstrap effect runs once on mount; deps intentionally curated. */
-/* eslint-disable react-hooks/incompatible-library -- react-compiler advisory only; no functional impact. */
+/* eslint-disable react-hooks/incompatible-library -- react-hook-form's watch()
+   returns a value the compiler cannot memoize safely. babel-plugin-react-compiler
+   >= 1.0.0 knows this and skips memoizing the component, so the warning is
+   advisory. That skip list did NOT exist before 1.0.0 (the repo sat on
+   19.1.0-rc.3, where this suppression hid a real stale-render risk) — so do not
+   downgrade the compiler, and note semver sorts rc.3 ABOVE 1.0.0. */
 /**
  * EmailPanel — Himalaya IMAP/SMTP credentials.
  *
