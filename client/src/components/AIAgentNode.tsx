@@ -1,10 +1,9 @@
 /* eslint-disable react-hooks/exhaustive-deps -- ``handles`` derived from spec.handles; spec is a stable React-Query slice, dep list omits it intentionally. */
-import React, { memo, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { nodePropsEqual } from './nodeMemoEquality';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { NodeData, NodeStyle } from '../types/NodeTypes';
 import { useAppStore } from '../store/useAppStore';
-import AIAgentExecutionService from '../services/execution/aiAgentExecutionService';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useNodeStatus } from '../contexts/WebSocketContext';
 import { useNodeSpec } from '../lib/nodeSpec';
@@ -51,8 +50,6 @@ const AIAgentNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
   const setSelectedNode = useAppStore((s) => s.setSelectedNode);
   const setRenamingNodeId = useAppStore((s) => s.setRenamingNodeId);
   const updateNodeData = useAppStore((s) => s.updateNodeData);
-  const [_configValid, setConfigValid] = useState(true);
-  const [_configErrors, setConfigErrors] = useState<string[]>([]);
 
   // Wave 10.D: every piece of per-type config comes from the backend
   // NodeSpec envelope (server/nodes/agents.py → register_node()). The
@@ -118,18 +115,11 @@ const AIAgentNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
   const showIterationBadge =
     isExecuting && typeof iteration === 'number' && typeof maxIterations === 'number';
 
-  // Validate configuration whenever data changes
-  useEffect(() => {
-    try {
-      const validation = AIAgentExecutionService.validateConfiguration(data || {});
-      setConfigValid(validation.valid);
-      setConfigErrors(validation.errors);
-    } catch (error) {
-      console.error('Configuration validation error:', error);
-      setConfigValid(false);
-      setConfigErrors(['Configuration validation failed']);
-    }
-  }, [data, id]);
+  // Configuration validation used to run here on every `data` change and
+  // write its result into two state slots nothing ever read (they were
+  // underscore-prefixed, so the compiler could not warn). The backend
+  // validates node configuration at execution time and reports it through
+  // the normal error envelope, so this was doing no work twice.
 
   const handleLabelChange = useCallback(
     (newLabel: string) => updateNodeData(id, { label: newLabel }),
