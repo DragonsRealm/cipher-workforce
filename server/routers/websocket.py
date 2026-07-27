@@ -1071,10 +1071,21 @@ async def handle_send_chat_message(data: Dict[str, Any], websocket: WebSocket) -
     # Build event data matching chatTrigger output schema
     event_data = {"message": message, "timestamp": timestamp, "session_id": session_id}
 
+    # Chat is inherently workflow-scoped: the panel is bound to ONE
+    # workflow and its ``session_id`` IS that workflow's id ("default"
+    # only when no workflow is open — that legacy session keeps broadcast
+    # semantics). The scope rides the envelope's ``workflow_id`` so
+    # ``dispatch.emit`` signals only this workflow's consumers via the
+    # EventWorkflowId Search Attribute; without it, one workflow's chat
+    # message fired EVERY deployed workflow's chatTrigger. The scoping
+    # decision lives here (core router) and the narrowing in core
+    # dispatch — the plugin factory only carries the field.
+    workflow_scope = session_id if session_id and session_id != "default" else None
+
     # Dispatch via canary CloudEvents path — Visibility-query Signal
     # fan-out to running TriggerListenerWorkflow consumers + in-process
     # WS broadcast on ``chat_message_received``.
-    await dispatch_chat_message_received(event_data)
+    await dispatch_chat_message_received(event_data, workflow_id=workflow_scope)
 
     logger.info(f"[ChatMessage] Dispatched canary event for session={session_id}")
 

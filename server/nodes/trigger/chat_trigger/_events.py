@@ -13,7 +13,7 @@ so the deployment manager skips ``setup_event_trigger`` and the legacy
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from services.events.envelope import WorkflowEvent
 
@@ -24,25 +24,40 @@ from services.events.envelope import WorkflowEvent
 _WIRE_ROUTING_KEY = "chat_message_received"
 
 
-def chat_message_received(event_data: Mapping[str, Any]) -> WorkflowEvent:
+def chat_message_received(
+    event_data: Mapping[str, Any],
+    *,
+    workflow_id: Optional[str] = None,
+) -> WorkflowEvent:
     """Incoming chat message envelope. ``subject`` is the session_id so
-    consumers can route per-conversation."""
+    consumers can route per-conversation.
+
+    ``workflow_id`` is carried verbatim onto the envelope — the scoping
+    DECISION belongs to the core call site (routers/websocket.py) and
+    the scoped-delivery rule to core dispatch; this factory only plumbs
+    the field of its own wire shape.
+    """
     payload = dict(event_data)
     session_id = payload.get("session_id")
     return WorkflowEvent(
         source="opencompany://nodes/chat_trigger",
         type="com.opencompany.chat.message.received",
         subject=str(session_id) if session_id else None,
+        workflow_id=workflow_id,
         data=payload,
     )
 
 
-async def dispatch_chat_message_received(event_data: Mapping[str, Any]) -> None:
+async def dispatch_chat_message_received(
+    event_data: Mapping[str, Any],
+    *,
+    workflow_id: Optional[str] = None,
+) -> None:
     """Dispatch an incoming chat message via the canary CloudEvents path."""
     from services.events.dispatch import emit
 
     await emit(
-        chat_message_received(dict(event_data)),
+        chat_message_received(dict(event_data), workflow_id=workflow_id),
         wire_routing_key=_WIRE_ROUTING_KEY,
     )
 

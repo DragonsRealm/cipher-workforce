@@ -99,3 +99,48 @@ class TestChatTriggerProducerCanaryEmit:
         assert event.type == "com.opencompany.chat.message.received"
         assert event.subject == "sess-1"
         assert emit_calls[0]["wire_routing_key"] == "chat_message_received"
+        # No scope passed -> unscoped envelope (broadcast semantics).
+        assert event.workflow_id is None
+
+    @pytest.mark.asyncio
+    async def test_workflow_scope_rides_the_envelope_verbatim(self, monkeypatch):
+        """The factory plumbs ``workflow_id`` onto the envelope without
+        any decision logic — the scoping RULE lives at the core call
+        site (routers/websocket.py) and the scoped-delivery narrowing in
+        core dispatch. Without the scope, one workflow's chat message
+        fired every deployed workflow's chatTrigger."""
+        from nodes.trigger.chat_trigger import _events
+        from services.events import dispatch as dispatch_mod
+
+        emit_calls: List[Any] = []
+
+        async def fake_emit(event, **kwargs):
+            emit_calls.append({"event": event, **kwargs})
+            return event
+
+        monkeypatch.setattr(dispatch_mod, "emit", fake_emit)
+
+        await _events.dispatch_chat_message_received(
+            {"message": "hi", "session_id": "wf-1", "timestamp": "t"},
+            workflow_id="wf-1",
+        )
+
+        assert emit_calls[0]["event"].workflow_id == "wf-1"
+
+    def test_router_decides_the_scope_not_the_plugin(self):
+        """The chat WS handler (core) derives the workflow scope from the
+        session and the plugin factory carries it verbatim — execution
+        logic stays out of the node folder."""
+        from nodes.trigger.chat_trigger import _events
+        from routers import websocket as ws_router
+
+        factory_src = inspect.getsource(_events.chat_message_received)
+        assert '"default"' not in factory_src, (
+            "The plugin factory must not embed the session!='default' "
+            "scoping decision — that rule lives in "
+            "routers/websocket.py:handle_send_chat_message."
+        )
+
+        handler_src = inspect.getsource(ws_router.handle_send_chat_message)
+        assert "workflow_id=workflow_scope" in handler_src
+        assert 'session_id != "default"' in handler_src

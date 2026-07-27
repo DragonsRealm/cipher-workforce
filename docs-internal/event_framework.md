@@ -89,6 +89,20 @@ services/events/dispatch.py:emit(event: WorkflowEvent)
        └─→ status_broadcaster.broadcast() — direct in-process WS fan-out
 ```
 
+**Workflow-scoped delivery** (core dispatch rule, July 2026): an envelope
+whose `workflow_id` field is set by its producer's call site reaches ONLY
+that workflow's consumers — `_signal_running_consumers` appends
+`AND EventWorkflowId='<id>'` to both the listener clause and the controller
+clause of the Visibility query (every consumer shape carries that Search
+Attribute). Unscoped envelopes (telegram / webhook / gmail — genuinely
+broadcast semantics) are unchanged. First producer: chat — the panel is
+bound to one workflow (`session_id` IS its workflow id), and without the
+scope one workflow's chat message fired every deployed workflow's
+chatTrigger. The scoping DECISION lives in the core call site
+(`routers/websocket.py:handle_send_chat_message`; the legacy `"default"`
+session stays unscoped) and the narrowing in core dispatch — plugin
+`_events.py` factories only plumb the field of their own wire shape.
+
 Worker is embedded in the FastAPI process (`main.py:211-292`
 `TemporalWorkerManager.start()` runs as `asyncio.create_task()`). Activities
 and the WebSocket connection pool share memory + event loop, so the fan-out

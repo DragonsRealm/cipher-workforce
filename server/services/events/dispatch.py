@@ -126,11 +126,26 @@ async def _signal_running_consumers(event: WorkflowEvent) -> None:
         clauses = " OR ".join(f"EventType='{event_type}'" for event_type in event_types)
         query = _RUNNING_COMPAT_CONSUMERS_QUERY.format(event_type_clauses=clauses)
 
+    # Workflow-scoped delivery (core dispatch rule, not per-plugin code):
+    # an envelope whose ``workflow_id`` is set by its producer's call site
+    # reaches ONLY that workflow's consumers. Every consumer shape carries
+    # the EventWorkflowId Search Attribute (controllers via
+    # _start_controller, canary listeners via the deployment manager,
+    # direct-exec MachinaWorkflow via the executor), so the narrowing is
+    # uniform. Unscoped envelopes (telegram / webhook / gmail — genuinely
+    # broadcast semantics) are unchanged. Without this, one workflow's
+    # chat message fired every deployed workflow's chatTrigger.
+    scope_clause = ""
+    scoped_workflow_id = getattr(event, "workflow_id", None)
+    if scoped_workflow_id:
+        literal = str(scoped_workflow_id).replace("'", "''")
+        scope_clause = f" AND EventWorkflowId='{literal}'"
+
     try:
         # Controlled deployments keep trigger definitions in their controller
         # history. Controllers filter the event against those definitions, so
         # no TriggerListenerWorkflow/ PollingTriggerWorkflow execution exists.
-        query = f"({query}) OR ({_RUNNING_CONTROLLERS_QUERY})"
+        query = f"({query}{scope_clause}) OR ({_RUNNING_CONTROLLERS_QUERY}{scope_clause})"
         consumers = []
         async for wf in client.list_workflows(query=query):
             consumers.append(wf)
