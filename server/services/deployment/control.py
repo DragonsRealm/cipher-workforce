@@ -21,11 +21,22 @@ def _graph_hash(nodes: list[dict], edges: list[dict]) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+# Canvas editability is a server-owned capability, like can_start/can_pause:
+# the frontend renders it, never re-derives it from state strings. Editable
+# while nothing is armed (ready / failed) and while PAUSED — controlled
+# generations execute their immutable admitted snapshot, so edits cannot
+# corrupt in-flight runs, and paused is exactly the "fix it, then resume"
+# posture the recovery policies produce. Locked while starting / running /
+# transitional so a live deployment cannot be rewired mid-flight.
+_EDITABLE_STATES = frozenset({"ready", "paused", "failed"})
+
+
 def serialize_control(control: Optional[WorkflowControlExecution]) -> Dict[str, Any]:
     if control is None:
         return {
             "state": "never_started", "revision": 0, "generation": 0,
             "can_start": True, "can_pause": False, "can_resume": False, "can_reset": False,
+            "can_edit": True,
         }
     state = "ready" if control.status == "reset" else control.status
     return {
@@ -42,6 +53,7 @@ def serialize_control(control: Optional[WorkflowControlExecution]) -> Dict[str, 
         "can_pause": state == "running",
         "can_resume": state == "paused",
         "can_reset": state != "ready",
+        "can_edit": state in _EDITABLE_STATES,
         "created_at": control.created_at.isoformat() if control.created_at else None,
         "updated_at": control.updated_at.isoformat() if control.updated_at else None,
         "terminal_reason": control.terminal_reason,

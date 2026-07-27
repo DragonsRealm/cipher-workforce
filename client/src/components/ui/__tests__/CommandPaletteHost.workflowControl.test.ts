@@ -19,6 +19,7 @@ const control = (
   can_pause: false,
   can_resume: false,
   can_reset: false,
+  can_edit: false,
   ...overrides,
 });
 

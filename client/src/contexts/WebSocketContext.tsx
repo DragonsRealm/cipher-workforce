@@ -132,7 +132,7 @@ export interface WorkflowStatus {
 export interface DeploymentStatus {
   isRunning: boolean;
   activeRuns: number;
-  status: 'idle' | 'starting' | 'running' | 'stopped' | 'cancelled' | 'error';
+  status: 'idle' | 'starting' | 'running' | 'paused' | 'stopped' | 'cancelled' | 'error';
   workflow_id?: string | null;  // Which workflow is deployed (for scoping)
   totalTime?: number;
   error?: string;
@@ -159,6 +159,9 @@ export interface WorkflowControlStatus {
   can_pause: boolean;
   can_resume: boolean;
   can_reset: boolean;
+  /** Server-owned canvas-editability capability (backend SSOT — the FE
+   * renders it, never re-derives it from state strings). */
+  can_edit: boolean;
   started_at?: string | null;
   updated_at?: string | null;
   error?: string | null;
@@ -560,6 +563,7 @@ export const emptyWorkflowControlStatus = (workflowId?: string): WorkflowControl
   can_pause: false,
   can_resume: false,
   can_reset: false,
+  can_edit: true,
 });
 
 export const normalizeWorkflowControlStatus = (value: any, workflowId?: string): WorkflowControlStatus => {
@@ -579,6 +583,10 @@ export const normalizeWorkflowControlStatus = (value: any, workflowId?: string):
     can_pause: source.can_pause ?? state === 'running',
     can_resume: source.can_resume ?? state === 'paused',
     can_reset: source.can_reset ?? state !== 'never_started',
+    // Pre-capability payloads (older backend) fall back to a state-derived
+    // approximation of the server rule; new payloads carry it verbatim.
+    can_edit: source.can_edit
+      ?? !['starting', 'running', 'pausing', 'resuming', 'resetting'].includes(state),
   };
 };
 
@@ -950,7 +958,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               setDeploymentStatus({
                 isRunning: data.deployment.isRunning || false,
                 activeRuns: data.deployment.activeRuns || 0,
-                status: data.deployment.status || 'idle'
+                status: data.deployment.status || 'idle',
+                // The backend slot carries the owning workflow — dropping
+                // it left isCurrentWorkflowDeployed false after reconnect
+                // (and mis-attributed running state across workflows).
+                workflow_id: data.deployment.workflow_id ?? null,
               });
             }
             // Catalogue 'stored' flags derive from api_keys + oauth state;
@@ -1508,9 +1520,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // stayed showing "Stop" forever.
           const envelope = data as WorkflowEvent<{
             running_workflow_ids?: string[];
+            paused_workflow_ids?: string[];
           }> | undefined;
           const runningIds = envelope?.data?.running_workflow_ids ?? [];
           const runningSet = new Set(runningIds);
+          // Armed-but-paused deployments: deployed (in running_workflow_ids)
+          // but must not render as executing.
+          const pausedSet = new Set(envelope?.data?.paused_workflow_ids ?? []);
           const store = useAppStore.getState();
           const currentId = store.currentWorkflow?.id;
 
@@ -1518,15 +1534,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // Anything currently flagged isExecuting=true that isn't in
           // the snapshot's running set gets cleared (the load-bearing
           // reset for stale state after backend restart). Anything in
-          // the snapshot gets flagged true.
+          // the snapshot gets flagged true — unless it is paused.
           const existingStates = store.workflowUIStates ?? {};
           for (const [wid, ui] of Object.entries(existingStates)) {
-            if (ui?.isExecuting && !runningSet.has(wid)) {
+            if (ui?.isExecuting && (!runningSet.has(wid) || pausedSet.has(wid))) {
               store.setWorkflowExecuting(wid, false);
             }
           }
           for (const wid of runningIds) {
-            store.setWorkflowExecuting(wid, true);
+            if (!pausedSet.has(wid)) {
+              store.setWorkflowExecuting(wid, true);
+            }
           }
 
           // Reconcile the toolbar `deploymentStatus` for the active workflow
@@ -1534,7 +1552,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const next: DeploymentStatus = { ...prev };
             if (currentId && runningSet.has(currentId)) {
               next.isRunning = true;
-              next.status = 'running';
+              next.status = pausedSet.has(currentId) ? 'paused' : 'running';
               next.workflow_id = currentId;
             } else if (currentId && !runningSet.has(currentId) && prev.workflow_id === currentId) {
               // Previously thought current workflow was deployed; backend says no.
@@ -1623,7 +1641,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     newStatus.activeRuns = message.data?.active_runs || prev.activeRuns + 1;
                     break;
                   case 'run_complete':
+                  // The deployment manager emits `run_completed` /
+                  // `run_failed` (see manager status callbacks); without
+                  // these cases activeRuns only ever incremented.
+                  case 'run_completed':
+                  case 'run_failed':
                     newStatus.activeRuns = Math.max(0, message.data?.active_runs || prev.activeRuns - 1);
+                    break;
+                  case 'paused':
+                    // Deployment stays armed; nothing new executes.
+                    newStatus.isRunning = true;
+                    newStatus.status = 'paused';
                     break;
                   case 'stopped':
                     // Only clear if this was our workflow or no workflow was tracked
@@ -1661,7 +1689,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               if (deploymentWorkflowId) {
                 const { setWorkflowExecuting } = useAppStore.getState();
                 const isRunning = ['starting', 'running', 'started', 'run_started'].includes(message.status);
-                const isStopped = ['stopped', 'cancelled', 'error'].includes(message.status);
+                // `paused` keeps the deployment armed but stops execution
+                // visuals (edge animation, toolbar indicator).
+                const isStopped = ['stopped', 'cancelled', 'error', 'paused'].includes(message.status);
                 if (isRunning || isStopped) {
                   setWorkflowExecuting(deploymentWorkflowId, isRunning);
                 }
@@ -1744,27 +1774,34 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         case 'workflow_lock':
           // Handle workflow lock status updates (per-workflow locking - n8n pattern)
-          // Only update lock state if it's for the current workflow or if unlocking
           if (data) {
             const lockWorkflowId = message.workflow_id || data.workflow_id;
             const activeWorkflowId = useAppStore.getState().currentWorkflow?.id;
 
-            // Apply lock update if:
-            // 1. It's for the current workflow, OR
-            // 2. We're unlocking (locked=false), OR
-            // 3. No specific workflow context (backward compatibility)
-            const shouldApplyLock = !lockWorkflowId ||
-                                     lockWorkflowId === activeWorkflowId ||
-                                     !data.locked;
-
-            if (shouldApplyLock) {
-              setWorkflowLock({
-                locked: data.locked || false,
-                workflow_id: data.workflow_id || null,
-                locked_at: data.locked_at || null,
-                reason: data.reason || null
-              });
-            }
+            setWorkflowLock(prev => {
+              if (data.locked) {
+                // Apply a lock when it targets the current workflow, or
+                // carries no workflow context (backward compatibility).
+                if (!lockWorkflowId || lockWorkflowId === activeWorkflowId) {
+                  return {
+                    locked: true,
+                    workflow_id: data.workflow_id || null,
+                    locked_at: data.locked_at || null,
+                    reason: data.reason || null,
+                  };
+                }
+                return prev;
+              }
+              // Unlock ONLY when it releases the lock we're holding —
+              // an unscoped unlock or one for the held workflow. An
+              // unlock for a DIFFERENT workflow (e.g. resetting workflow
+              // B while viewing locked workflow A) previously clobbered
+              // the singleton and unlocked A's canvas mid-run.
+              if (!prev.locked || !lockWorkflowId || prev.workflow_id === lockWorkflowId || !prev.workflow_id) {
+                return { locked: false, workflow_id: null, locked_at: null, reason: null };
+              }
+              return prev;
+            });
           }
           break;
 

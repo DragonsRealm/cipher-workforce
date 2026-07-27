@@ -23,7 +23,9 @@ import {
   Repeat,
   Clock,
   Zap,
+  Lock,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -483,6 +485,19 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
             <RotateCcw className="h-3 w-3" />
             {isRetryingReset ? 'Retry Reset' : 'Reset'}
           </ActionButton>
+        )}
+
+        {/* Canvas-lock indicator — renders the server-owned `can_edit`
+            capability so a silently-dead drag never reads as broken UI. */}
+        {workflowControl.can_edit === false && (
+          <Badge
+            variant="outline"
+            className="gap-1 text-muted-foreground"
+            title="Canvas locked while the workflow runs — pause it to edit"
+          >
+            <Lock className="h-3 w-3" />
+            Locked
+          </Badge>
         )}
 
         <AlertDialog open={resetOpen} onOpenChange={setResetOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reset workflow execution?</AlertDialogTitle><AlertDialogDescription>This immediately terminates active work and archives the current generation. Task history remains available. The workflow will remain stopped until you press Start.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep current execution</AlertDialogCancel><AlertDialogAction disabled={hasPendingControlMutation} onClick={onResetWorkflow}>{isRetryingReset ? 'Retry reset' : 'Reset workflow'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>

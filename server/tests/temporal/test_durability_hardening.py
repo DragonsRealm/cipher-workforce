@@ -512,6 +512,92 @@ def test_control_event_types_search_attribute_is_registered():
     assert "ControlEventTypes" in names
 
 
+class _EmptyWorkflowList:
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise StopAsyncIteration
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("workflow_id", "expect_scoped"),
+    [
+        (None, False),  # broadcast semantics (telegram/webhook/gmail)
+        ("wf-1", True),  # workflow-scoped (chat panel)
+    ],
+)
+async def test_dispatch_narrows_visibility_query_for_scoped_envelopes(
+    monkeypatch, workflow_id, expect_scoped
+):
+    """A workflow-scoped envelope must reach ONLY its own workflow's
+    consumers — without the EventWorkflowId narrowing, one workflow's
+    chat message fired every deployed workflow's chatTrigger."""
+    from core.container import container
+    from services.events.dispatch import _signal_running_consumers
+    from services.events.envelope import WorkflowEvent
+
+    captured: dict = {}
+
+    def list_workflows(query):
+        captured["query"] = query
+        return _EmptyWorkflowList()
+
+    client = MagicMock()
+    client.list_workflows = list_workflows
+    monkeypatch.setattr(
+        container,
+        "temporal_client",
+        MagicMock(return_value=SimpleNamespace(client=client)),
+    )
+
+    event = WorkflowEvent(
+        source="opencompany://nodes/chat_trigger",
+        type="com.opencompany.chat.message.received",
+        workflow_id=workflow_id,
+    )
+    await _signal_running_consumers(event)
+
+    query = captured["query"]
+    assert "EventType='com.opencompany.chat.message.received'" in query
+    assert "WorkflowType='WorkflowControlWorkflow'" in query
+    if expect_scoped:
+        # Both the listener clause and the controller clause are scoped.
+        assert query.count("AND EventWorkflowId='wf-1'") == 2
+    else:
+        assert "EventWorkflowId" not in query
+
+
+@pytest.mark.asyncio
+async def test_dispatch_scope_escapes_visibility_literals(monkeypatch):
+    from core.container import container
+    from services.events.dispatch import _signal_running_consumers
+    from services.events.envelope import WorkflowEvent
+
+    captured: dict = {}
+
+    def list_workflows(query):
+        captured["query"] = query
+        return _EmptyWorkflowList()
+
+    client = MagicMock()
+    client.list_workflows = list_workflows
+    monkeypatch.setattr(
+        container,
+        "temporal_client",
+        MagicMock(return_value=SimpleNamespace(client=client)),
+    )
+
+    event = WorkflowEvent(
+        source="opencompany://nodes/chat_trigger",
+        type="com.opencompany.chat.message.received",
+        workflow_id="wf'1",
+    )
+    await _signal_running_consumers(event)
+    assert "EventWorkflowId='wf''1'" in captured["query"]
+
+
 # ---------------------------------------------------------------------------
 # Terminate-sweep guard + controller addressing.
 # ---------------------------------------------------------------------------
@@ -1184,6 +1270,42 @@ async def test_machina_failure_schedules_the_circuit_breaker_activity(monkeypatc
     # No workflow_id -> nothing to pause.
     await instance._pause_deployment_on_failure({}, nodes, errors)
     assert captured == {}
+
+
+def test_can_edit_capability_is_server_owned():
+    """Canvas editability is a capability the backend computes — the FE
+    renders it and never re-derives the rule from state strings. Paused
+    is editable (controlled generations execute an immutable snapshot);
+    starting/running/transitional states are not."""
+    from services.deployment.control import serialize_control
+
+    assert serialize_control(None)["can_edit"] is True
+
+    expectations = {
+        "starting": False,
+        "running": False,
+        "pausing": False,
+        "resuming": False,
+        "resetting": False,
+        "paused": True,
+        "failed": True,
+        "reset": True,  # serialized as "ready"
+    }
+    for status, expected in expectations.items():
+        control = _boot_control(status)
+        assert serialize_control(control)["can_edit"] is expected, status
+
+
+def test_deployment_snapshot_carries_paused_ids():
+    from services.events.envelope import WorkflowEvent
+
+    event = WorkflowEvent.deployment_snapshot(["wf-1", "wf-2"], ["wf-2"])
+    assert event.data["running_workflow_ids"] == ["wf-1", "wf-2"]
+    assert event.data["paused_workflow_ids"] == ["wf-2"]
+
+    # Compatibility: the paused list defaults to empty, never absent.
+    legacy = WorkflowEvent.deployment_snapshot(["wf-1"])
+    assert legacy.data["paused_workflow_ids"] == []
 
 
 def test_recovery_policies_normalize_unknown_values(monkeypatch):

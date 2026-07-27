@@ -156,6 +156,7 @@ class StatusBroadcaster:
             workflow_service = container.workflow_service()
             dm = workflow_service._get_deployment_manager()
             running_ids = dm.get_deployed_workflows()
+            paused_ids = dm.get_paused_workflows()
         except Exception as e:
             # Backend startup race or DI not wired yet -- skip the snapshot
             # rather than fail the connect entirely. The empty-list path
@@ -165,7 +166,7 @@ class StatusBroadcaster:
             )
             return
 
-        event = WorkflowEvent.deployment_snapshot(running_ids)
+        event = WorkflowEvent.deployment_snapshot(running_ids, paused_ids)
         await websocket.send_json(
             {
                 "type": "deployment_snapshot",

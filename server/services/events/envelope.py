@@ -404,6 +404,7 @@ class WorkflowEvent(BaseModel):
     def deployment_snapshot(
         cls,
         running_workflow_ids: list[str],
+        paused_workflow_ids: Optional[list[str]] = None,
     ) -> "WorkflowEvent":
         """Push-on-connect snapshot of every currently-running deployment.
 
@@ -424,7 +425,13 @@ class WorkflowEvent(BaseModel):
         return cls(
             source="opencompany://services/workflow",
             type=f"{_TYPE_PREFIX}workflow.deployment.snapshot",
-            data={"running_workflow_ids": list(running_workflow_ids)},
+            data={
+                "running_workflow_ids": list(running_workflow_ids),
+                # Armed-but-paused deployments: still deployed (they stay
+                # in running_workflow_ids) but must not render as
+                # executing on the client.
+                "paused_workflow_ids": list(paused_workflow_ids or []),
+            },
         )
 
     @classmethod

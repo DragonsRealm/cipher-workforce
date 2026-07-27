@@ -100,6 +100,16 @@ class DeploymentManager:
         """Get list of deployed workflow IDs."""
         return [wid for wid, state in self._deployments.items() if state.is_running]
 
+    def get_paused_workflows(self) -> List[str]:
+        """Deployed workflow IDs whose admission is cooperatively paused.
+
+        A paused deployment stays in ``get_deployed_workflows`` (it is
+        armed), so consumers that render execution state need this set to
+        avoid animating a paused workflow as running (the deployment
+        snapshot carries both).
+        """
+        return [wid for wid in self._paused_workflows if self.is_workflow_deployed(wid)]
+
     def pause(self, workflow_id: str) -> bool:
         """Cooperatively stop admitting new runs for a deployment."""
         if not self.is_workflow_deployed(workflow_id):

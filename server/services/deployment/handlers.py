@@ -209,6 +209,16 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
 
             if not result.get("success"):
                 logger.error("Deployment setup failed", error=result.get("error"), workflow_id=workflow_id)
+                # Clear BOTH UI-facing flags: the deploy handler already
+                # broadcast executing=True, and deployments never touch
+                # the run counter, so nothing else would ever emit
+                # executing=False for this workflow (toolbar stuck).
+                await broadcaster.update_workflow_status(
+                    executing=False,
+                    current_node=None,
+                    progress=0,
+                    workflow_id=workflow_id,
+                )
                 await broadcaster.update_deployment_status(
                     is_running=False,
                     status="error",
@@ -238,8 +248,22 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
                 )
                 return result
 
+        except asyncio.CancelledError:
+            # CancelledError is BaseException — the branch below cannot
+            # catch it, and a deploy task cancelled outside
+            # handle_cancel_deployment (which unlocks itself) previously
+            # left the workflow lock dangling forever.
+            await broadcaster.unlock_workflow(workflow_id)
+            _deployment_tasks.pop(workflow_id, None)
+            raise
         except Exception as e:
             logger.error("Deployment task error", workflow_id=workflow_id, error=str(e))
+            await broadcaster.update_workflow_status(
+                executing=False,
+                current_node=None,
+                progress=0,
+                workflow_id=workflow_id,
+            )
             await broadcaster.update_deployment_status(
                 is_running=False,
                 status="error",
@@ -308,21 +332,26 @@ async def handle_cancel_deployment(data: Dict[str, Any], websocket: WebSocket) -
         for node_id in result.get("cancelled_listener_node_ids", []):
             await broadcaster.clear_node_status(node_id)
 
-        await broadcaster.update_workflow_status(
-            executing=False,
-            current_node=None,
-            progress=0,
-            workflow_id=workflow_id,
-        )
-        await broadcaster.update_deployment_status(
-            is_running=False,
-            status="cancelled",
-            active_runs=0,
-            workflow_id=workflow_id,
-            data={
-                "iterations_completed": result.get("iterations_completed", 0),
-            },
-        )
+    # Terminal UI-facing state is emitted UNCONDITIONALLY: cancelling a
+    # workflow that is not locally deployed (post-restart before re-arm,
+    # or a Reset after a crash) previously emitted nothing, leaving the
+    # FE showing executing/running forever. The idempotent terminal
+    # broadcast is harmless when nothing was running.
+    await broadcaster.update_workflow_status(
+        executing=False,
+        current_node=None,
+        progress=0,
+        workflow_id=workflow_id,
+    )
+    await broadcaster.update_deployment_status(
+        is_running=False,
+        status="cancelled",
+        active_runs=0,
+        workflow_id=workflow_id,
+        data={
+            "iterations_completed": result.get("iterations_completed", 0),
+        },
+    )
 
     return {
         "success": result.get("success", False),
@@ -1315,6 +1344,20 @@ async def _rearm_generation(control) -> None:
             paused=True,
         )
         await _set_cron_pause(control.workflow_id, paused=True, strict=False)
+        # The deploy handler just broadcast executing=true / status=running
+        # on the wire; counter-broadcast the paused posture so a connected
+        # client doesn't watch the workflow flip to running and never back.
+        from services.status_broadcaster import get_status_broadcaster
+
+        broadcaster = get_status_broadcaster()
+        await broadcaster.update_workflow_status(
+            executing=False, current_node=None, progress=0,
+            workflow_id=control.workflow_id,
+        )
+        await broadcaster.update_deployment_status(
+            is_running=True, status="paused", active_runs=0,
+            workflow_id=control.workflow_id,
+        )
     logger.info(
         "Re-armed durable generation after restart",
         workflow_id=control.workflow_id,
@@ -1542,6 +1585,19 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
                 error=str(reset_exc),
             )
         await _terminate_generation_workflows(control)
+        # Tear down the local half too: the deploy may have armed
+        # listeners and taken the workflow lock, and leaving them meant a
+        # locked, armed, invisible deployment that blocked every future
+        # Start AND the boot re-arm for this workflow. Cancel unlocks and
+        # emits the terminal UI-facing state; "not deployed" is benign.
+        try:
+            await handle_cancel_deployment({"workflow_id": workflow_id}, None)
+        except Exception as cancel_exc:  # noqa: BLE001 — best-effort teardown
+            logger.warning(
+                "Local teardown after failed start did not complete",
+                workflow_id=workflow_id,
+                error=str(cancel_exc),
+            )
         await _broadcast_control(control)
         raise
 
@@ -1619,6 +1675,20 @@ async def handle_pause_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
         strict=True,
     )
     control = await service.transition(control, expected_revision=control.revision, from_statuses={"pausing"}, status="paused")
+    # UI-facing execution flags follow the pause: the deployment stays
+    # armed but nothing new executes, so the canvas edge animation and
+    # toolbar executing indicator must stop. The pause family previously
+    # emitted only workflow_control_status, leaving `executing=true` /
+    # `status=running` stale on every connected client.
+    from services.status_broadcaster import get_status_broadcaster
+
+    broadcaster = get_status_broadcaster()
+    await broadcaster.update_workflow_status(
+        executing=False, current_node=None, progress=0, workflow_id=workflow_id,
+    )
+    await broadcaster.update_deployment_status(
+        is_running=True, status="paused", active_runs=0, workflow_id=workflow_id,
+    )
     payload = await _broadcast_control(control, controller_status=controller_status, extra={
         "signalled_executions": signalled,
         "paused_schedules": paused_schedules,
@@ -1716,6 +1786,17 @@ async def handle_resume_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
     # Operator intervention resets the circuit-breaker streak — the next
     # failure after a resume starts a fresh count, not a near-tripped one.
     await _clear_failure_streak(service.database, control)
+    # Mirror of the pause-side emission: flip the UI-facing execution
+    # flags back so the canvas and toolbar re-animate on every client.
+    from services.status_broadcaster import get_status_broadcaster
+
+    broadcaster = get_status_broadcaster()
+    await broadcaster.update_workflow_status(
+        executing=True, current_node=None, progress=0, workflow_id=workflow_id,
+    )
+    await broadcaster.update_deployment_status(
+        is_running=True, status="running", active_runs=0, workflow_id=workflow_id,
+    )
     payload = await _broadcast_control(control, controller_status=controller_status, extra={
         "resumed_queued_events": queued,
         "signalled_executions": signalled,

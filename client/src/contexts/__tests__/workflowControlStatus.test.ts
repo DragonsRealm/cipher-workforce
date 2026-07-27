@@ -26,6 +26,7 @@ const status = (
   can_pause: true,
   can_resume: false,
   can_reset: true,
+  can_edit: false,
   ...overrides,
 });
 

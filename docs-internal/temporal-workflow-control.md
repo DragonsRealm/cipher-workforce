@@ -214,6 +214,30 @@ that Resume relies on.
   every knob is evaluated on the activity side so flipping config never
   touches recorded workflow commands.
 
+## Canvas editability (`can_edit` capability)
+
+Whether a workflow's canvas may be edited is a **server-owned capability**,
+emitted by `serialize_control` alongside `can_start` / `can_pause` / … —
+the frontend renders it and never re-derives the rule from state strings.
+Editable while nothing is armed (`ready` / `failed` / `never_started`) and
+while **paused** (controlled generations execute their immutable admitted
+snapshot, so edits cannot corrupt in-flight runs — paused is exactly the
+"fix it, then resume" posture the recovery policies produce); locked while
+`starting` / `running` / transitional. On the client,
+[`lib/canvasLock.ts`](../client/src/lib/canvasLock.ts) maps the capability
+(plus the legacy broadcaster lock for deployments driven outside the
+control plane) to a boolean + reason; `Dashboard` feeds it to the React
+Flow interaction props AND a shared `guardCanvasEdit` toast-guard covering
+the paths those props cannot reach (palette drop, paste, context-menu
+delete/rename, node disable, parameter saves); `TopToolbar` shows a
+`Locked` badge so a blocked drag never reads as dead UI.
+
+The pause/resume/cancel/re-arm paths also emit the UI-facing
+`workflow_status(executing=…)` + `deployment_status` broadcasts (status
+`paused` keeps `isRunning=true` — armed but not executing), and the
+connect-time deployment snapshot carries `paused_workflow_ids` so an
+armed-but-paused generation doesn't animate as running after a reconnect.
+
 ## Delegated-task traces
 
 Each task attempt stores the actual parent, detached runner, and child Temporal

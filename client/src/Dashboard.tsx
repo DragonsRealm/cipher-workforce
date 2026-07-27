@@ -15,6 +15,7 @@ import {
   Edge,
 } from 'reactflow';
 import { featureFlags } from './lib/featureFlags';
+import { deriveCanvasLock } from './lib/canvasLock';
 import { prefetchAllNodeSpecs, listCachedNodeSpecs, cachedNodeSpecTypesKey } from './lib/nodeSpec';
 import AIAgentNode from './components/AIAgentNode';
 import SquareNode from './components/SquareNode';
@@ -240,17 +241,46 @@ const DashboardContent: React.FC = () => {
         workflow_id: currentWorkflow.id, state: 'never_started' as const, revision: 0,
         active_count: 0, in_flight_count: 0, queued_count: 0,
         // Status is unresolved until the backend snapshot arrives. Keep every
-        // lifecycle action disabled rather than briefly exposing a stale Start.
+        // lifecycle action disabled rather than briefly exposing a stale Start;
+        // the canvas stays editable until the server says otherwise.
         can_start: false, can_pause: false, can_resume: false, can_reset: false,
+        can_edit: true,
       }
-    : { state: 'never_started' as const, revision: 0, active_count: 0, in_flight_count: 0, queued_count: 0, can_start: false, can_pause: false, can_resume: false, can_reset: false };
+    : { state: 'never_started' as const, revision: 0, active_count: 0, in_flight_count: 0, queued_count: 0, can_start: false, can_pause: false, can_resume: false, can_reset: false, can_edit: true };
   const workflowControlPendingMutation = currentWorkflow?.id
     ? workflowControlPending[currentWorkflow.id]
     : undefined;
-  const isCurrentWorkflowLocked = workflowLock.locked &&
-    workflowLock.workflow_id === currentWorkflow?.id;
+  // Canvas edit lock — the server-owned `can_edit` capability from the
+  // durable control plane is authoritative (backend SSOT; the FE only
+  // renders it). The legacy broadcaster lock remains a secondary input
+  // for deployments driven outside the control plane.
+  const canvasLock = deriveCanvasLock({
+    control: workflowControl,
+    legacyLock: workflowLock,
+    workflowId: currentWorkflow?.id ?? null,
+  });
+  const isCurrentWorkflowLocked = canvasLock.locked;
+  // Single guard for every canvas mutation the React Flow props can't
+  // reach (palette drop, paste, context-menu delete/rename, node
+  // disable, import, parameter saves). Toasts the reason so a blocked
+  // edit never reads as a dead UI.
+  const guardCanvasEdit = React.useCallback((): boolean => {
+    if (!canvasLock.locked) return true;
+    toast.warning(canvasLock.reason ?? 'Workflow is running — pause it to edit the canvas');
+    return false;
+  }, [canvasLock.locked, canvasLock.reason]);
   const [globalModelDefaults, setGlobalModelDefaults] = React.useState<{ provider: string; model: string } | null>(null);
   const { onDragOver, onDrop, handleComponentDragStart } = useDragAndDrop({ nodes, setNodes, saveNodeParameters, globalModelDefaults, workflowId: currentWorkflow?.id ?? 'new' });
+  // Palette drop creates nodes AND persists their default parameters —
+  // an HTML5 drop that React Flow's nodesDraggable/Connectable cannot
+  // block, so it goes through the shared guard.
+  const handleGuardedDrop = React.useCallback((event: React.DragEvent) => {
+    if (!guardCanvasEdit()) {
+      event.preventDefault();
+      return;
+    }
+    onDrop(event);
+  }, [guardCanvasEdit, onDrop]);
   const { onConnect: baseOnConnect, onNodesDelete, onEdgesDelete: baseOnEdgesDelete } = useReactFlowNodes({ setNodes, setEdges, clearNodeStatus });
   const { onConnect, onEdgesDelete } = useAutoSkillEdges({
     baseOnConnect,
@@ -1168,11 +1198,11 @@ const DashboardContent: React.FC = () => {
 
   // Context menu actions
   const handleContextMenuRename = React.useCallback(() => {
-    if (contextMenu) {
+    if (contextMenu && guardCanvasEdit()) {
       setRenamingNodeId(contextMenu.nodeId);
     }
     closeContextMenu();
-  }, [contextMenu, setRenamingNodeId, closeContextMenu]);
+  }, [contextMenu, guardCanvasEdit, setRenamingNodeId, closeContextMenu]);
 
   const handleContextMenuCopy = React.useCallback(() => {
     if (contextMenu) {
@@ -1188,11 +1218,13 @@ const DashboardContent: React.FC = () => {
   }, [contextMenu, nodes, setNodes, copySelectedNodes, closeContextMenu]);
 
   const handleContextMenuDelete = React.useCallback(() => {
-    if (contextMenu) {
+    // The emptied deleteKeyCode only blocks the keyboard path — this
+    // menu action bypassed the lock entirely before the shared guard.
+    if (contextMenu && guardCanvasEdit()) {
       onNodesDelete([nodes.find(n => n.id === contextMenu.nodeId)].filter(Boolean) as Node[]);
     }
     closeContextMenu();
-  }, [contextMenu, nodes, onNodesDelete, closeContextMenu]);
+  }, [contextMenu, guardCanvasEdit, nodes, onNodesDelete, closeContextMenu]);
 
   // Keyboard shortcut handler for workflow operations
   useEffect(() => {
@@ -1211,7 +1243,9 @@ const DashboardContent: React.FC = () => {
       // F2 to rename selected node
       if (event.key === 'F2' && selectedNode) {
         event.preventDefault();
-        setRenamingNodeId(selectedNode.id);
+        if (guardCanvasEdit()) {
+          setRenamingNodeId(selectedNode.id);
+        }
         return;
       }
 
@@ -1229,7 +1263,11 @@ const DashboardContent: React.FC = () => {
             break;
           case 'v':
             event.preventDefault();
-            pasteNodes();
+            // Paste creates nodes AND persists their parameters to the
+            // DB — canvas-mutation guard applies.
+            if (guardCanvasEdit()) {
+              pasteNodes();
+            }
             break;
         }
       } else {
@@ -1238,7 +1276,9 @@ const DashboardContent: React.FC = () => {
           case 'd':
             // Toggle disable on selected nodes
             event.preventDefault();
-            toggleDisableSelected();
+            if (guardCanvasEdit()) {
+              toggleDisableSelected();
+            }
             break;
         }
       }
@@ -1249,7 +1289,7 @@ const DashboardContent: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleSave, copySelectedNodes, pasteNodes, toggleDisableSelected, selectedNode, renamingNodeId, setRenamingNodeId]);
+  }, [handleSave, copySelectedNodes, pasteNodes, toggleDisableSelected, selectedNode, renamingNodeId, setRenamingNodeId, guardCanvasEdit]);
 
   return (
     <>
@@ -1364,7 +1404,7 @@ const DashboardContent: React.FC = () => {
                   onEdgesDelete={onEdgesDelete}
                   onConnect={onConnect}
                   onDragOver={onDragOver}
-                  onDrop={onDrop}
+                  onDrop={handleGuardedDrop}
                   onNodeContextMenu={onNodeContextMenu}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}

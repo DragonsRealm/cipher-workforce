@@ -8,6 +8,7 @@ import { ExecutionService, ExecutionResult } from './services/executionService';
 import { ActionButton } from './components/ui/action-button';
 import { NodeIcon } from './assets/icons';
 import { nodeExecutionReducer } from './utils/parameterPanelExecutionState';
+import { deriveCanvasLock } from './lib/canvasLock';
 
 const ParameterPanel: React.FC = () => {
   const {
@@ -22,7 +23,16 @@ const ParameterPanel: React.FC = () => {
   } = useParameterPanel();
 
   const currentWorkflow = useAppStore((s) => s.currentWorkflow);
-  const { executeNode, getNodeParameters, clearNodeStatus, cancelEventWait, getNodeStatus } = useWebSocket();
+  const { executeNode, getNodeParameters, clearNodeStatus, cancelEventWait, getNodeStatus, workflowControlStatuses, workflowLock } = useWebSocket();
+
+  // Server-owned canvas-edit capability: parameter saves mutate the
+  // workflow's persisted configuration, so they follow the same
+  // `can_edit` capability the canvas gates on.
+  const canvasLock = deriveCanvasLock({
+    control: currentWorkflow?.id ? workflowControlStatuses[currentWorkflow.id] : null,
+    legacyLock: workflowLock,
+    workflowId: currentWorkflow?.id ?? null,
+  });
 
   // Get current node status to check if waiting
   const nodeStatus = selectedNode ? getNodeStatus(selectedNode.id) : null;
@@ -170,7 +180,12 @@ const ParameterPanel: React.FC = () => {
             {selectedExecution.running ? 'Running...' : 'Run'}
           </ActionButton>
         )}
-        <ActionButton intent="tools" onClick={handleSave} disabled={!hasUnsavedChanges}>
+        <ActionButton
+          intent="tools"
+          onClick={handleSave}
+          disabled={!hasUnsavedChanges || canvasLock.locked}
+          title={canvasLock.locked ? (canvasLock.reason ?? undefined) : undefined}
+        >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
             <polyline points="17 21 17 13 7 13 7 21" />
