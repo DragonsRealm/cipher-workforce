@@ -620,7 +620,9 @@ The Temporal binary + persistence are managed in-process by the plugin-folder pa
 | `temporal_health_monitor_interval_seconds` | `TEMPORAL_HEALTH_MONITOR_INTERVAL_SECONDS` | `15` | Resident dev-server watchdog probe cadence (lifecycle module; loopback deployments only). |
 | `workflow_control_crash_recovery` | `WORKFLOW_CONTROL_CRASH_RECOVERY` | `pause` | After an UNCLEAN shutdown (kill/crash, dirty-bit marker), boot pauses generations still `running` so the user consciously resumes; `resume` restores them running. Clean restarts always restore as-is. |
 | `workflow_control_missing_controller` | `WORKFLOW_CONTROL_MISSING_CONTROLLER` | `pause` | A live generation whose controller vanished converges to `paused` (Resume rebuilds the controller); `fail` preserves the legacy Reset-only behaviour. |
-| `workflow_control_pause_on_failure` | `WORKFLOW_CONTROL_PAUSE_ON_FAILURE` | `true` | Circuit breaker: a failed trigger-spawned run pauses its deployment (fix + Resume) instead of firing into the same error indefinitely. Evaluated activity-side; never touches recorded commands. |
+| `workflow_control_pause_on_failure` | `WORKFLOW_CONTROL_PAUSE_ON_FAILURE` | `true` | Circuit breaker: repeatedly-failing trigger-spawned runs pause their deployment (fix + Resume) instead of firing into the same error indefinitely. Evaluated activity-side; never touches recorded commands. |
+| `workflow_control_pause_on_failure_threshold` | `WORKFLOW_CONTROL_PAUSE_ON_FAILURE_THRESHOLD` | `3` | Failed runs inside the rolling window required to trip the breaker — one node hiccup never pauses a deployment. `1` = pause on the first failure. Resume resets the streak. |
+| `workflow_control_pause_on_failure_window_seconds` | `WORKFLOW_CONTROL_PAUSE_ON_FAILURE_WINDOW_SECONDS` | `600` | Rolling window for the failure streak; older failures age out (streak state lives in the cache table with a matching TTL). |
 
 Full recovery-policy semantics: [temporal-workflow-control.md → Recovery policies](./temporal-workflow-control.md#recovery-policies).
 

@@ -197,14 +197,22 @@ that Resume relies on.
   Start rebuilds cleanly). `fail` preserves the legacy Reset-only
   behaviour.
 - **`WORKFLOW_CONTROL_PAUSE_ON_FAILURE`** (default `true`): circuit
-  breaker — when a trigger-spawned run fails with an error, MachinaWorkflow
+  breaker — when trigger-spawned runs keep failing, MachinaWorkflow
   schedules `workflow_control.pause_on_failure.v1` (patch
   `machina-pause-on-failure-v1`) and the deployment pauses so the user
   fixes the cause and Resumes, instead of the trigger firing into the same
-  error indefinitely. Only deployment-spawned runs qualify (they carry a
-  `_pre_executed` firing trigger; a failed manual canvas run never pauses a
-  live deployment), and the knob is evaluated on the activity side so
-  flipping it never touches recorded workflow commands.
+  error indefinitely. The breaker trips only after
+  **`WORKFLOW_CONTROL_PAUSE_ON_FAILURE_THRESHOLD`** (default `3`) failed
+  runs inside the rolling
+  **`WORKFLOW_CONTROL_PAUSE_ON_FAILURE_WINDOW_SECONDS`** (default `600`)
+  — one node hiccup on one firing (missing config, transient API error)
+  never pauses a deployment; `1` restores pause-on-the-first-failure. The
+  streak lives in the durable cache table keyed by the generation (Reset /
+  Start begins fresh), Resume resets it, and tripping clears it. Only
+  deployment-spawned runs qualify (they carry a `_pre_executed` firing
+  trigger; a failed manual canvas run never pauses a live deployment), and
+  every knob is evaluated on the activity side so flipping config never
+  touches recorded workflow commands.
 
 ## Delegated-task traces
 

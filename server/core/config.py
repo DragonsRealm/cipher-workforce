@@ -275,6 +275,20 @@ class Settings(BaseSettings):
         default=True,
         env="WORKFLOW_CONTROL_PAUSE_ON_FAILURE",
     )
+    # The breaker trips only after this many failed runs inside the rolling
+    # window below — one node hiccup on one firing (missing config,
+    # transient API error) never pauses a deployment. 1 = pause on the
+    # first failure.
+    workflow_control_pause_on_failure_threshold: int = Field(
+        default=3,
+        env="WORKFLOW_CONTROL_PAUSE_ON_FAILURE_THRESHOLD",
+        ge=1,
+    )
+    workflow_control_pause_on_failure_window_seconds: float = Field(
+        default=600.0,
+        env="WORKFLOW_CONTROL_PAUSE_ON_FAILURE_WINDOW_SECONDS",
+        gt=0,
+    )
 
     # API Keys (all optional, injected at runtime)
     google_maps_api_key: Optional[str] = Field(default=None, env="GOOGLE_MAPS_API_KEY")

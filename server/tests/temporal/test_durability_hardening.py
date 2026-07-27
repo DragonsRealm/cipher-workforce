@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
+import time
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -760,15 +762,20 @@ async def test_boot_reconcile_processes_each_active_row_with_isolation(monkeypat
 @pytest.mark.asyncio
 async def test_shutdown_marker_protocol(monkeypatch):
     """Dirty bit: boot stamps "running"; clean teardown stamps "clean";
-    a missing marker (first boot) counts as clean."""
+    a missing marker (first boot) counts as clean.
+
+    The fake mirrors the real contract: ``Database.get_cache_entry``
+    returns the stored STRING directly, not an entry object — an
+    entry-shaped fake previously masked a bug where crash detection
+    could never fire against the real database.
+    """
     from core.container import container
     from services.deployment import handlers
 
     store: dict = {}
 
     async def get_entry(key):
-        value = store.get(key)
-        return SimpleNamespace(value=value) if value is not None else None
+        return store.get(key)
 
     async def set_entry(key, value, *args, **kwargs):
         store[key] = value
@@ -947,6 +954,8 @@ async def test_resume_rebuilds_a_gone_controller_then_reapplies_running(monkeypa
     monkeypatch.setattr(
         handlers, "_signal_generation_workflows", AsyncMock(return_value=0)
     )
+    clear_streak = AsyncMock()
+    monkeypatch.setattr(handlers, "_clear_failure_streak", clear_streak)
     workflow_service = MagicMock()
     workflow_service.resume_deployment = AsyncMock(return_value=0)
     workflow_service.update_trigger_pause_status = AsyncMock(return_value=0)
@@ -962,6 +971,8 @@ async def test_resume_rebuilds_a_gone_controller_then_reapplies_running(monkeypa
     rebuild.assert_awaited_once()
     # The running update was re-applied against the rebuilt controller.
     assert update_state.await_count == 2
+    # Operator intervention resets the circuit-breaker streak.
+    clear_streak.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1011,24 +1022,50 @@ async def test_pause_on_failure_is_config_gated_and_requires_running(monkeypatch
     pause_handler.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_pause_on_failure_pauses_a_running_generation(monkeypatch):
-    from core.container import container
-    from services.deployment import handlers
+def _streak_database(running, store: dict):
+    """Dict-backed cache fake honouring the real string-value contract."""
 
-    running = _boot_control("running")
+    async def get_entry(key):
+        return store.get(key)
+
+    async def set_entry(key, value, *args, **kwargs):
+        store[key] = value
+
+    async def delete_entry(key):
+        store.pop(key, None)
+        return True
+
+    return SimpleNamespace(
+        get_latest_workflow_control=AsyncMock(return_value=running),
+        get_cache_entry=get_entry,
+        set_cache_entry=set_entry,
+        delete_cache_entry=delete_entry,
+    )
+
+
+def _breaker_settings(monkeypatch, *, threshold: int, window: float = 600.0):
+    from core.container import container
+
     monkeypatch.setattr(
         container,
         "settings",
         MagicMock(
-            return_value=SimpleNamespace(workflow_control_pause_on_failure=True)
+            return_value=SimpleNamespace(
+                workflow_control_pause_on_failure=True,
+                workflow_control_pause_on_failure_threshold=threshold,
+                workflow_control_pause_on_failure_window_seconds=window,
+            )
         ),
     )
-    service = SimpleNamespace(
-        database=SimpleNamespace(
-            get_latest_workflow_control=AsyncMock(return_value=running)
-        )
-    )
+
+
+@pytest.mark.asyncio
+async def test_pause_on_failure_pauses_immediately_at_threshold_one(monkeypatch):
+    from services.deployment import handlers
+
+    running = _boot_control("running")
+    _breaker_settings(monkeypatch, threshold=1)
+    service = SimpleNamespace(database=_streak_database(running, {}))
     monkeypatch.setattr(handlers, "_control_service", lambda: service)
     pause_handler = AsyncMock(return_value={"success": True, "state": "paused"})
     monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
@@ -1041,6 +1078,73 @@ async def test_pause_on_failure_pauses_a_running_generation(monkeypatch):
     request = pause_handler.await_args.args[0]
     assert request["workflow_id"] == "wf"
     assert request["expected_revision"] == running.revision
+
+
+@pytest.mark.asyncio
+async def test_single_node_failure_does_not_trip_the_breaker(monkeypatch):
+    """The reported regression: one telegramSend NodeUserError on one
+    firing paused the whole deployment. Below the streak threshold the
+    breaker only counts — the next firing proceeds."""
+    from services.deployment import handlers
+
+    running = _boot_control("running")
+    store: dict = {}
+    _breaker_settings(monkeypatch, threshold=3)
+    service = SimpleNamespace(database=_streak_database(running, store))
+    monkeypatch.setattr(handlers, "_control_service", lambda: service)
+    pause_handler = AsyncMock()
+    monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
+
+    first = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="Bot owner not detected"
+    )
+    second = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="Bot owner not detected"
+    )
+
+    assert first == {
+        "paused": False,
+        "reason": "below_threshold",
+        "streak": 1,
+        "threshold": 3,
+    }
+    assert second["streak"] == 2
+    pause_handler.assert_not_awaited()
+
+    # The third failure inside the window trips the breaker and clears
+    # the streak so a post-fix failure starts a fresh count.
+    pause_handler.return_value = {"success": True, "state": "paused"}
+    third = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="Bot owner not detected"
+    )
+    assert third["paused"] is True
+    pause_handler.assert_awaited_once()
+    assert handlers._failure_streak_key(running) not in store
+
+
+@pytest.mark.asyncio
+async def test_failure_streak_ages_out_beyond_the_window(monkeypatch):
+    from services.deployment import handlers
+
+    running = _boot_control("running")
+    store = {
+        handlers._failure_streak_key(running): json.dumps(
+            {"count": 2, "last_at": time.time() - 10_000}
+        )
+    }
+    _breaker_settings(monkeypatch, threshold=3, window=600.0)
+    service = SimpleNamespace(database=_streak_database(running, store))
+    monkeypatch.setattr(handlers, "_control_service", lambda: service)
+    pause_handler = AsyncMock()
+    monkeypatch.setattr(handlers, "handle_pause_workflow", pause_handler)
+
+    result = await handlers.pause_generation_on_failure(
+        workflow_id="wf", reason="sporadic blip"
+    )
+
+    # The stale streak restarted at 1 instead of tripping at 3.
+    assert result["streak"] == 1
+    pause_handler.assert_not_awaited()
 
 
 @pytest.mark.asyncio

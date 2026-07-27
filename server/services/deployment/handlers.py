@@ -21,6 +21,7 @@ same shape — only the import path changes.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from datetime import datetime, timezone
@@ -1077,12 +1078,12 @@ async def _consume_shutdown_state() -> bool:
 
     A missing marker (first boot / pre-feature database) counts as clean
     so a fresh install never boots into a recovery pause.
+    ``Database.get_cache_entry`` returns the stored string directly.
     """
     from core.container import container
 
     database = container.database()
-    entry = await database.get_cache_entry(_SHUTDOWN_STATE_CACHE_KEY)
-    previous = getattr(entry, "value", None) if entry is not None else None
+    previous = await database.get_cache_entry(_SHUTDOWN_STATE_CACHE_KEY)
     await database.set_cache_entry(_SHUTDOWN_STATE_CACHE_KEY, "running")
     return previous is None or previous == "clean"
 
@@ -1712,6 +1713,9 @@ async def handle_resume_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
     queued = await container.workflow_service().resume_deployment(workflow_id)
     resumed_triggers = await container.workflow_service().update_trigger_pause_status(workflow_id, paused=False)
     control = await service.transition(control, expected_revision=control.revision, from_statuses={"resuming"}, status="running")
+    # Operator intervention resets the circuit-breaker streak — the next
+    # failure after a resume starts a fresh count, not a near-tripped one.
+    await _clear_failure_streak(service.database, control)
     payload = await _broadcast_control(control, controller_status=controller_status, extra={
         "resumed_queued_events": queued,
         "signalled_executions": signalled,
@@ -1848,20 +1852,93 @@ async def handle_reset_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
     }
 
 
+def _pause_on_failure_threshold() -> int:
+    """Failures within the rolling window required to trip the breaker.
+
+    Default 3 — a single node hiccup on one firing (missing config,
+    transient API error) must never pause a live deployment; only a
+    sustained failure streak does. 1 restores pause-on-first-failure.
+    """
+    from core.container import container
+
+    try:
+        value = int(getattr(container.settings(), "workflow_control_pause_on_failure_threshold", 3))
+    except (TypeError, ValueError):
+        value = 3
+    return max(1, value)
+
+
+def _pause_on_failure_window_seconds() -> float:
+    """Rolling window for the failure streak; older failures age out."""
+    from core.container import container
+
+    try:
+        value = float(
+            getattr(container.settings(), "workflow_control_pause_on_failure_window_seconds", 600.0)
+        )
+    except (TypeError, ValueError):
+        value = 600.0
+    return max(1.0, value)
+
+
+def _failure_streak_key(control) -> str:
+    # Keyed by the control row id, which embeds workflow + generation —
+    # a Reset/Start naturally begins with a fresh streak.
+    return f"workflow_control:failure_streak:{control.id}"
+
+
+async def _bump_failure_streak(database, control, *, window_seconds: float) -> int:
+    """Increment the rolling-window failure counter and return it.
+
+    State lives in the durable cache table (value is a JSON blob; the
+    TTL doubles as the window so stale streaks age out even if the
+    timestamp check is bypassed). Concurrent failed runs can race the
+    read-modify-write and miscount by one — acceptable slack for a
+    breaker threshold.
+    """
+    key = _failure_streak_key(control)
+    now = time.time()
+    count = 0
+    raw = await database.get_cache_entry(key)
+    if raw:
+        try:
+            state = json.loads(raw)
+            if now - float(state.get("last_at") or 0.0) <= window_seconds:
+                count = int(state.get("count") or 0)
+        except (TypeError, ValueError):
+            count = 0
+    count += 1
+    await database.set_cache_entry(
+        key,
+        json.dumps({"count": count, "last_at": now}),
+        int(window_seconds),
+    )
+    return count
+
+
+async def _clear_failure_streak(database, control) -> None:
+    try:
+        await database.delete_cache_entry(_failure_streak_key(control))
+    except Exception as exc:  # noqa: BLE001 — the TTL ages it out anyway
+        logger.debug(f"Failed to clear failure streak: {exc}")
+
+
 async def pause_generation_on_failure(*, workflow_id: str, reason: str) -> Dict[str, Any]:
-    """Circuit breaker: pause a controlled deployment after a failed run.
+    """Circuit breaker: pause a controlled deployment after failed runs.
 
     Called by the ``workflow_control.pause_on_failure.v1`` activity that
     MachinaWorkflow schedules on its failure path. Without it a trigger
     keeps firing new runs into the same error indefinitely; with it the
     deployment lands ``paused`` so the user fixes the cause and Resumes.
 
-    Gated on ``WORKFLOW_CONTROL_PAUSE_ON_FAILURE`` (default true) and
-    applies only to a generation currently ``running`` — direct manual
-    runs, legacy uncontrolled deployments, and already-paused
-    generations are untouched. The knob is evaluated HERE (activity
-    side) rather than inside workflow code so flipping it never touches
-    recorded workflow commands.
+    Trips only after ``WORKFLOW_CONTROL_PAUSE_ON_FAILURE_THRESHOLD``
+    failed runs inside the rolling window — small things (one node
+    failing on one firing) never pause the deployment. Gated on
+    ``WORKFLOW_CONTROL_PAUSE_ON_FAILURE`` (default true) and applies
+    only to a generation currently ``running`` — direct manual runs,
+    legacy uncontrolled deployments, and already-paused generations are
+    untouched. All knobs are evaluated HERE (activity side) rather than
+    inside workflow code so config flips never touch recorded commands.
     """
     from core.container import container
 
@@ -1877,6 +1954,28 @@ async def pause_generation_on_failure(*, workflow_id: str, reason: str) -> Dict[
             "reason": "not_running",
             "status": getattr(control, "status", None),
         }
+    threshold = _pause_on_failure_threshold()
+    if threshold > 1:
+        streak = await _bump_failure_streak(
+            service.database,
+            control,
+            window_seconds=_pause_on_failure_window_seconds(),
+        )
+        if streak < threshold:
+            logger.info(
+                "Run failure below circuit-breaker threshold; not pausing",
+                workflow_id=workflow_id,
+                streak=streak,
+                threshold=threshold,
+                failure=reason,
+            )
+            return {
+                "paused": False,
+                "reason": "below_threshold",
+                "streak": streak,
+                "threshold": threshold,
+            }
+        await _clear_failure_streak(service.database, control)
     logger.warning(
         "Pausing deployment after failed run (circuit breaker)",
         workflow_id=workflow_id,
