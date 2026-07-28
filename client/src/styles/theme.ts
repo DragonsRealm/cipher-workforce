@@ -9,8 +9,7 @@
 //     dark / light family — see `theme_system.md` for the contract.
 //   - `dracula` / `solarized` raw palette constants stay for cases a
 //     Tailwind class can't express: SVG `fill=`, React Flow JS edge
-//     styles, prismjs token CSS strings, MapSelector / GoogleMaps SDK
-//     JS-side colors.
+//     styles, prismjs token CSS strings, GoogleMaps SDK JS-side colors.
 //   - `spacing` / `fontSize` / `fontWeight` / `nodeSize` / `iconSize` /
 //     `buttonSize` / `layout` / `transitions` / `constants` stay too —
 //     these are not color tokens; they back the canvas-animation engine

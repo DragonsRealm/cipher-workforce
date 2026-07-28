@@ -612,7 +612,7 @@ authoring model.
 AI model nodes route through `SquareNode` via `Dashboard.tsx`'s `COMPONENT_BY_KIND['model']` lookup. Per-provider visual data (icon, color, displayName) comes from the backend `NodeSpec` declared in `server/nodes/model/<provider>_chat_model/__init__.py`. The pre-Wave-11 per-provider wrappers (`BaseChatModelNode`, `OpenAIChatModelNode`, `ClaudeChatModelNode`, `GeminiChatModelNode`, `ModelNode`) were deleted -- nothing imported them after the migration.
 
 ### Specialized UI
-- `src/components/ui/MapSelector.tsx` - Interactive location picker
+- `src/components/maps/GoogleMapsPicker.tsx` - Interactive location picker (click / drag marker); wrapped by `maps/MapsPreviewPanel.tsx` and rendered through `parameterPanel/MapsSection.tsx` for `gmaps_create`. Uses Google's default map styling.
 - `src/components/output/OutputPanel.tsx` - Execution result display (the active renderer; the legacy `ui/OutputDisplayPanel.tsx` was deleted)
 - `src/components/ui/ComponentPalette.tsx` - Searchable component library with emoji icons and dracula-themed category colors. Categories: Workflow, Triggers, AI Agents, AI Models, AI Skills, AI Abilities, AI Tools, Google Maps, Social Media Platforms (merged WhatsApp + Social), Android, Chat, Code Executors
 - `src/components/ui/ComponentItem.tsx` - Draggable node items with hover effects and icon rendering
