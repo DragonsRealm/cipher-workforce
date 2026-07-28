@@ -2,7 +2,7 @@
 #    uv export --frozen --no-emit-project --no-hashes --no-dev -o requirements.txt
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.1
+aiohttp==3.14.3
     # via opencompany-server
 aiosignal==1.4.0
     # via aiohttp
@@ -32,7 +32,7 @@ anyio==4.14.2
     #   sse-starlette
     #   starlette
     #   watchfiles
-apify-client==3.0.5
+apify-client==3.1.0
     # via opencompany-server
 async-timeout==5.0.1
     # via crawlee
@@ -105,9 +105,9 @@ email-validator==2.3.0
     #   pydantic
 fake-useragent==2.2.0
     # via ddgs
-fastapi==0.139.0
+fastapi==0.140.13
     # via opencompany-server
-filelock==3.29.7
+filelock==3.32.0
     # via tldextract
 filetype==1.2.0
     # via langchain-google-genai
@@ -115,7 +115,7 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-google-api-core==2.31.0
+google-api-core==2.33.0
     # via google-api-python-client
 google-api-python-client==2.198.0
     # via opencompany-server
@@ -278,14 +278,14 @@ openai==2.45.0
     #   langchain-openai
     #   opencompany-server
     #   rlms
-opentelemetry-api==1.43.0
+opentelemetry-api==1.44.0
     # via
     #   opencompany-server
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-sdk==1.43.0
+opentelemetry-sdk==1.44.0
     # via opencompany-server
-opentelemetry-semantic-conventions==0.64b0
+opentelemetry-semantic-conventions==0.65b0
     # via opentelemetry-sdk
 orjson==3.11.9
     # via
@@ -385,7 +385,9 @@ python-dotenv==1.2.2
     #   rlms
     #   uvicorn
 python-multipart==0.0.32
-    # via mcp
+    # via
+    #   mcp
+    #   opencompany-server
 python-slugify==8.0.4
     # via opencompany-server
 python-telegram-bot==22.8
@@ -458,7 +460,7 @@ sqlalchemy==2.0.51
     # via sqlmodel
 sqlmodel==0.0.39
     # via opencompany-server
-sse-starlette==3.4.5
+sse-starlette==3.4.6
     # via mcp
 starlette==1.3.1
     # via
@@ -477,6 +479,8 @@ text-unidecode==1.3
     # via python-slugify
 tiktoken==0.13.0
     # via langchain-openai
+tinytag==2.2.1
+    # via opencompany-server
 tldextract==5.3.1
     # via crawlee
 tqdm==4.68.4
@@ -548,7 +552,7 @@ watchfiles==1.2.0
     # via uvicorn
 webencodings==0.5.1
     # via html5lib
-websockets==15.0.1
+websockets==16.1.1
     # via
     #   google-genai
     #   langsmith
