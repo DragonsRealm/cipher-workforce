@@ -145,7 +145,15 @@ dependencies = [
     # MCP (Model Context Protocol) — host server for spawned CLI sessions
     # to discover and call OpenCompany tools (mcp__opencompany__*) the same way
     # VSCode's Claude Code extension does.
-    "mcp>=1.0.0",
+    #
+    # Capped below 2.0 deliberately. `services/cli_agent/mcp_server.py` imports
+    # `mcp.server.fastmcp.FastMCP`, which 2.0.0 (released 2026-07-28) removed;
+    # taking it unpinned fails that module at import with ModuleNotFoundError.
+    # Because uv.lock is intentionally not committed, CI re-resolves this floor
+    # on every run, so an unbounded constraint means an upstream major release
+    # breaks the build with no change on our side -- which is exactly what
+    # happened. Lift the cap together with the FastMCP migration.
+    "mcp>=1.0.0,<2",
 
     # PTY transports — drive `claude` interactive TUI cross-platform.
     # POSIX uses ptyprocess (wraps forkpty) for `loop.add_reader`-friendly

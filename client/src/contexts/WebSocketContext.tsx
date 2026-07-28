@@ -1640,10 +1640,14 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     newStatus.status = 'running';
                     newStatus.activeRuns = message.data?.active_runs || prev.activeRuns + 1;
                     break;
-                  case 'run_complete':
                   // The deployment manager emits `run_completed` /
                   // `run_failed` (see manager status callbacks); without
                   // these cases activeRuns only ever incremented.
+                  //
+                  // Comment sits above the group, not inside it: a comment
+                  // between two case labels makes the first one non-empty,
+                  // and `no-fallthrough` then flags it as a missing break.
+                  case 'run_complete':
                   case 'run_completed':
                   case 'run_failed':
                     newStatus.activeRuns = Math.max(0, message.data?.active_runs || prev.activeRuns - 1);
