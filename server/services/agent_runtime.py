@@ -2,9 +2,6 @@
 
 This module is the shared boundary between orchestration (the in-process
 ``AIService`` loop and Temporal activities) and the native provider SDK layer.
-It deliberately has no eager LangChain imports.  ``AgentToolSpec.to_langchain``
-exists only so Temporal histories recorded before the native cutover can drain;
-it is lazy and is removed with the legacy activity branch.
 """
 
 from __future__ import annotations
@@ -51,21 +48,6 @@ class AgentToolSpec:
     @property
     def parameters(self) -> Dict[str, Any]:
         return self.definition.parameters
-
-    def to_langchain(self):
-        """Build the legacy adapter used only by pre-cutover Temporal runs."""
-
-        from langchain_core.tools import StructuredTool
-
-        def _placeholder(**kwargs):
-            return kwargs
-
-        return StructuredTool.from_function(
-            name=self.name,
-            description=self.description,
-            func=_placeholder,
-            args_schema=self.args_schema,
-        )
 
 
 def _tool_definition(tool: ToolDef | AgentToolSpec) -> ToolDef:

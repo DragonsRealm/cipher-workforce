@@ -4,7 +4,7 @@ One :class:`ApiKeyCredential` per provider. Used by the chat-model
 plugins in this folder (openai, anthropic, gemini, openrouter, groq,
 cerebras, deepseek, kimi, mistral, ollama, lmstudio) plus the xAI
 credential referenced by agent plugins. At execution time the plugin's
-LangChain / native SDK client pulls the key directly from
+The native SDK client pulls the key directly from
 :mod:`services.auth`; this class is the Credentials-modal + discovery
 manifest, not the runtime client.
 

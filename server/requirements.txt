@@ -14,17 +14,14 @@ annotated-types==0.7.0
     # via pydantic
 anthropic==0.96.0
     # via
-    #   langchain-anthropic
     #   opencompany-server
     #   rlms
 anyio==4.14.2
     # via
     #   anthropic
     #   google-genai
-    #   groq
     #   httpx
     #   httpx-ws
-    #   langsmith
     #   lmstudio
     #   mcp
     #   openai
@@ -91,8 +88,6 @@ distro==1.9.0
     # via
     #   anthropic
     #   google-genai
-    #   groq
-    #   langsmith
     #   openai
     #   portkey-ai
 dnspython==2.8.0
@@ -109,8 +104,6 @@ fastapi==0.140.13
     # via opencompany-server
 filelock==3.32.0
     # via tldextract
-filetype==1.2.0
-    # via langchain-google-genai
 frozenlist==1.8.0
     # via
     #   aiohttp
@@ -135,7 +128,6 @@ google-auth-oauthlib==1.4.0
     # via opencompany-server
 google-genai==2.11.0
     # via
-    #   langchain-google-genai
     #   opencompany-server
     #   rlms
 googleapis-common-protos==1.75.0
@@ -146,8 +138,6 @@ greenlet==3.5.3
     # via
     #   opencompany-server
     #   sqlalchemy
-groq==0.37.1
-    # via langchain-groq
 h11==0.16.0
     # via
     #   httpcore
@@ -176,9 +166,7 @@ httpx==0.28.1
     #   anthropic
     #   ddgs
     #   google-genai
-    #   groq
     #   httpx-ws
-    #   langsmith
     #   lmstudio
     #   mcp
     #   ollama
@@ -211,38 +199,10 @@ jiter==0.16.0
     #   anthropic
     #   openai
     #   portkey-ai
-jsonpatch==1.33
-    # via langchain-core
-jsonpointer==3.1.1
-    # via jsonpatch
 jsonschema==4.26.0
     # via mcp
 jsonschema-specifications==2025.9.1
     # via jsonschema
-langchain-anthropic==1.4.6
-    # via opencompany-server
-langchain-cerebras==0.8.2
-    # via opencompany-server
-langchain-core==1.4.9
-    # via
-    #   langchain-anthropic
-    #   langchain-cerebras
-    #   langchain-google-genai
-    #   langchain-groq
-    #   langchain-openai
-    #   opencompany-server
-langchain-google-genai==4.2.5
-    # via opencompany-server
-langchain-groq==1.1.2
-    # via opencompany-server
-langchain-openai==1.1.14
-    # via
-    #   langchain-cerebras
-    #   opencompany-server
-langchain-protocol==0.0.18
-    # via langchain-core
-langsmith==0.10.2
-    # via langchain-core
 lmstudio==1.5.0
     # via opencompany-server
 lxml==6.1.1
@@ -275,7 +235,6 @@ ollama==0.6.2
     # via opencompany-server
 openai==2.45.0
     # via
-    #   langchain-openai
     #   opencompany-server
     #   rlms
 opentelemetry-api==1.44.0
@@ -288,13 +247,9 @@ opentelemetry-sdk==1.44.0
 opentelemetry-semantic-conventions==0.65b0
     # via opentelemetry-sdk
 orjson==3.11.9
-    # via
-    #   langsmith
-    #   opencompany-server
+    # via opencompany-server
 packaging==26.2
     # via
-    #   langchain-core
-    #   langsmith
     #   pooch
     #   pytest
 pillow==12.3.0
@@ -342,11 +297,6 @@ pydantic==2.12.5
     #   crawlee
     #   fastapi
     #   google-genai
-    #   groq
-    #   langchain-anthropic
-    #   langchain-core
-    #   langchain-google-genai
-    #   langsmith
     #   mcp
     #   ollama
     #   openai
@@ -400,7 +350,6 @@ pywinpty==3.0.5 ; sys_platform == 'win32'
     # via opencompany-server
 pyyaml==6.0.3
     # via
-    #   langchain-core
     #   opencompany-server
     #   uvicorn
 qrcode==8.2
@@ -409,21 +358,16 @@ referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.7.10
-    # via tiktoken
 requests==2.34.2
     # via
     #   google-api-core
     #   google-auth
     #   google-genai
     #   googlemaps
-    #   langsmith
     #   pooch
     #   requests-file
     #   requests-oauthlib
-    #   requests-toolbelt
     #   rlms
-    #   tiktoken
     #   tldextract
     #   xdk
 requests-file==3.0.1
@@ -432,8 +376,6 @@ requests-oauthlib==2.0.0
     # via
     #   google-auth-oauthlib
     #   xdk
-requests-toolbelt==1.0.0
-    # via langsmith
 rich==15.0.0
     # via rlms
 rlms==0.1.3
@@ -448,8 +390,6 @@ sniffio==1.3.1
     # via
     #   anthropic
     #   google-genai
-    #   groq
-    #   langsmith
     #   openai
     #   portkey-ai
 socksio==1.0.0
@@ -472,13 +412,9 @@ structlog==26.1.0
 temporalio==1.30.0
     # via opencompany-server
 tenacity==9.1.4
-    # via
-    #   google-genai
-    #   langchain-core
+    # via google-genai
 text-unidecode==1.3
     # via python-slugify
-tiktoken==0.13.0
-    # via langchain-openai
 tinytag==2.2.1
     # via opencompany-server
 tldextract==5.3.1
@@ -502,10 +438,6 @@ typing-extensions==4.16.0
     #   dependency-injector
     #   fastapi
     #   google-genai
-    #   groq
-    #   langchain-core
-    #   langchain-protocol
-    #   langsmith
     #   lmstudio
     #   mcp
     #   nexus-rpc
@@ -538,10 +470,6 @@ urllib3==2.7.0
     # via
     #   requests
     #   types-requests
-uuid-utils==0.17.0
-    # via
-    #   langchain-core
-    #   langsmith
 uvicorn==0.51.0
     # via
     #   mcp
@@ -555,18 +483,13 @@ webencodings==0.5.1
 websockets==16.1.1
     # via
     #   google-genai
-    #   langsmith
     #   opencompany-server
     #   uvicorn
 wsproto==1.3.2
     # via httpx-ws
 xdk==0.9.0
     # via opencompany-server
-xxhash==3.8.1
-    # via langsmith
 yarl==1.24.2
     # via
     #   aiohttp
     #   crawlee
-zstandard==0.25.0
-    # via langsmith

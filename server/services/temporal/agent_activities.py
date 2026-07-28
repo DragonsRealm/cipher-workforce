@@ -27,7 +27,7 @@ and may read frozen registry dicts deterministically.
 References:
 - Temporal AI Cookbook -- https://docs.temporal.io/ai-cookbook
 - ``temporalio.contrib.openai_agents.activity_as_tool`` mirrors this
-  pattern; we re-implement manually because OpenCompany uses LangChain
+  pattern; we re-implement manually because OpenCompany uses native SDK
   (``chat_model.bind_tools`` for schema generation) rather than the
   OpenAI Agents SDK.
 """
@@ -38,16 +38,16 @@ import asyncio
 from dataclasses import asdict
 import hashlib
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 from temporalio import activity
 
 logger = logging.getLogger(__name__)
 
+# The only engine there is. Kept as a named constant rather than inlined
+# because it is written into Temporal history by ``prepare_agent_payload``
+# and read back by ``execute_llm_step`` to detect pre-cutover runs.
 _NATIVE_LLM_ENGINE = "native"
-_LEGACY_LLM_ENGINE = "langchain"
-_LLM_ENGINES = frozenset({_NATIVE_LLM_ENGINE, _LEGACY_LLM_ENGINE})
 
 
 # Activity result shapes — keep these in sync with AgentWorkflow's
@@ -87,18 +87,6 @@ def _ensure_llm_contents(messages: List[Any]) -> None:
         type="EmptyAgentPrompt",
         non_retryable=True,
     )
-
-
-def _configured_llm_engine() -> str:
-    """Return the engine that new prepare activity results will record."""
-
-    engine = os.getenv("AGENT_LLM_ENGINE", _NATIVE_LLM_ENGINE).strip().lower()
-    if engine not in _LLM_ENGINES:
-        raise ValueError(
-            "AGENT_LLM_ENGINE must be either 'native' or 'langchain'; "
-            f"received {engine!r}"
-        )
-    return engine
 
 
 async def _resolve_activity_api_key(payload: Dict[str, Any]) -> str:
@@ -388,137 +376,31 @@ async def execute_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     activity.heartbeat(f"LLM step starting: {payload.get('model')}")
 
-    # The engine marker is recorded in ``agent.prepare_payload.v1`` output.
-    # Its absence is the migration sentinel for histories started before the
-    # native cutover and MUST continue through the untouched LangChain path.
-    engine_value = payload.get("llm_engine")
-    engine = (
-        _LEGACY_LLM_ENGINE
-        if engine_value is None
-        else str(engine_value).strip().lower()
-    )
-    if engine not in _LLM_ENGINES:
+    # ``agent.prepare_payload.v1`` records the engine marker. Its absence
+    # means the run predates the native cutover, when conversation state was
+    # serialised in a retired wire format the native reader cannot
+    # interpret. Failing loudly is the honest outcome: reinterpreting those
+    # messages would silently corrupt the conversation.
+    engine = str(payload.get("llm_engine") or "").strip().lower()
+    if engine != _NATIVE_LLM_ENGINE:
         from temporalio.exceptions import ApplicationError
 
+        detail = (
+            "was started before the native LLM cutover, so its conversation "
+            "state is in a retired wire format"
+            if not engine
+            else f"records an unsupported LLM engine {engine!r}"
+        )
         raise ApplicationError(
-            f"Unsupported agent LLM engine {engine!r}",
+            f"This agent run {detail} and cannot continue. Reset the workflow "
+            "to start a new generation.",
             type="InvalidAgentLLMEngine",
             non_retryable=True,
         )
-    if engine == _NATIVE_LLM_ENGINE:
-        result = await _execute_native_llm_step(payload)
-        activity.heartbeat("LLM step: model returned")
-        return result
 
-    # Lazy import — keep top-level light so the worker can register this
-    # activity without pulling LangChain in for every plugin.
-    from core.container import container
-    from services.ai import extract_thinking_from_response
-
-    provider = payload["provider"]
-    model = payload["model"]
-    api_key = await _resolve_activity_api_key(payload)
-    messages = payload.get("messages", [])
-    tool_data = payload.get("tool_data", [])
-    temperature = payload.get("temperature", 0.7)
-    max_tokens = payload.get("max_tokens", 4096)
-    thinking_config = payload.get("thinking_config")
-
-    ai_service = container.ai_service()
-
-    chat_model = ai_service.create_model(
-        provider=provider,
-        api_key=api_key,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        thinking=thinking_config,
-    )
-
-    # Reuse the same tool-binding path execute_agent uses. The returned
-    # StructuredTool has a proper Pydantic args_schema every provider's
-    # bind_tools knows how to convert. The tool's callback is never
-    # invoked here — the workflow schedules per-type activities for each
-    # tool_call the model emits.
-    bound_tools: List[Any] = []
-    for tool_info in tool_data:
-        tool, _config = await ai_service._build_tool_from_node(tool_info)
-        if tool is not None:
-            # Stage-1 compatibility: the canonical builder now returns the
-            # provider-neutral AgentToolSpec.  Old histories still need the
-            # exact LangChain binding surface until they drain.
-            to_langchain = getattr(tool, "to_langchain", None)
-            bound_tools.append(
-                to_langchain() if callable(to_langchain) else tool
-            )
-    if bound_tools:
-        chat_model = chat_model.bind_tools(bound_tools)
-
-    # Workflow state is serialisable JSON dicts. Use LangChain's own
-    # ``messages_from_dict`` / ``messages_to_dict`` helpers so
-    # provider-specific metadata (Gemini ``thought_signature``,
-    # Anthropic cache fields, OpenAI ``reasoning_content``) survives
-    # the workflow ↔ activity round-trip. Manually constructing
-    # AIMessage(content=...) from a stripped dict loses these and
-    # blows up Gemini's ``Function call is missing a thought_signature``
-    # on the next turn.
-    from langchain_core.messages import messages_from_dict
-    from services.llm.messages import filter_empty_messages
-
-    rehydrated = messages_from_dict(messages)
-    # Same filter ``_run_agent_loop`` runs in services/ai.py — empty-content
-    # messages trigger 400s on Gemini / Anthropic.
-    rehydrated = filter_empty_messages(rehydrated)
-    _ensure_llm_contents(rehydrated)
-
-    activity.heartbeat("LLM step: invoking model")
-    response = await _await_with_llm_heartbeats(
-        chat_model.ainvoke(rehydrated),
-        detail=f"LLM step waiting: {model}",
-    )
+    result = await _execute_native_llm_step(payload)
     activity.heartbeat("LLM step: model returned")
-
-    # Extract usage if present (anthropic-style token counts).
-    usage: Dict[str, Any] = {}
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        usage = dict(response.usage_metadata)
-    elif hasattr(response, "response_metadata"):
-        meta_usage = response.response_metadata.get("usage", {})
-        if meta_usage:
-            usage = dict(meta_usage)
-
-    # Serialise the full assistant message so the workflow can append
-    # it verbatim to its messages list (preserves thought_signature,
-    # cache metadata, etc.). The workflow extracts ``tool_calls`` from
-    # ``response.tool_calls`` separately for scheduling.
-    from langchain_core.messages import messages_to_dict
-
-    assistant_dict = messages_to_dict([response])[0]
-
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        return {
-            "kind": "tool_calls",
-            "assistant_message": assistant_dict,
-            "calls": [
-                {
-                    "id": tc.get("id", ""),
-                    "name": tc.get("name", ""),
-                    "args": tc.get("args", {}),
-                }
-                for tc in response.tool_calls
-            ],
-            "usage": usage,
-        }
-
-    # No tool calls → final response.
-    text, thinking = extract_thinking_from_response(response)
-    return {
-        "kind": "final",
-        "assistant_message": assistant_dict,
-        "content": text or "",
-        "thinking": thinking,
-        "usage": usage,
-    }
+    return result
 
 
 @activity.defn(name="agent.persist_turn.v1")
@@ -813,7 +695,7 @@ async def store_agent_output(payload: Dict[str, Any]) -> Dict[str, Any]:
 async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
     """Resolve everything ``AgentWorkflow`` needs from the canvas + DB.
 
-    The workflow itself cannot do DB lookups or LangChain tool builds
+    The workflow itself cannot do DB lookups or tool builds
     (deterministic-replay constraint). This activity runs *before* the
     workflow is scheduled and returns the fully-resolved payload.
 
@@ -1270,12 +1152,9 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001 — last-resort fallback
             effective_recursion_limit = 200
 
-    llm_engine = _configured_llm_engine()
-    message_wire_version = 1
-    if llm_engine == _NATIVE_LLM_ENGINE:
-        from services.llm.protocol import MESSAGE_WIRE_VERSION
+    from services.llm.protocol import MESSAGE_WIRE_VERSION
 
-        message_wire_version = MESSAGE_WIRE_VERSION
+    message_wire_version = MESSAGE_WIRE_VERSION
 
     return {
         "node_id": node_id,
@@ -1306,10 +1185,10 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
             or context.get("execution_id")
             or ""
         ),
-        # Sticky execution-engine selection: this activity result is recorded
-        # in Temporal history, so environment changes cannot flip a run
-        # halfway through its agent loop.
-        "llm_engine": llm_engine,
+        # The marker `execute_llm_step` checks: a history without it
+        # predates the native cutover and carries messages in a retired wire
+        # format that can no longer be read.
+        "llm_engine": _NATIVE_LLM_ENGINE,
         "message_wire_version": message_wire_version,
     }
 

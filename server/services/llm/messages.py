@@ -20,11 +20,11 @@ def is_valid_message_content(content: Any) -> bool:
 def filter_empty_messages(messages: Sequence) -> List:
     """Filter out messages with empty content.
 
-    Works with both LangChain BaseMessage objects and native Message dataclasses.
+    Works with native Message dataclasses and raw provider payloads.
     """
     filtered = []
     for m in messages:
-        # Detect role (works for both LangChain and native messages)
+        # Detect role across native messages and raw provider payloads
         role = getattr(m, "role", None) or getattr(m, "type", "")
 
         # Tool messages -- always keep

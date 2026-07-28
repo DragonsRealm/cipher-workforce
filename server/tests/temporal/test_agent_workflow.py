@@ -755,13 +755,13 @@ class TestEmptyPromptGuard:
 
     def test_raises_non_retryable_on_system_only_list(self):
         import pytest
-        from langchain_core.messages import SystemMessage
         from temporalio.exceptions import ApplicationError
 
+        from services.llm.protocol import Message
         from services.temporal.agent_activities import _ensure_llm_contents
 
         with pytest.raises(ApplicationError) as excinfo:
-            _ensure_llm_contents([SystemMessage(content="you are helpful")])
+            _ensure_llm_contents([Message(role="system", content="you are helpful")])
         assert excinfo.value.non_retryable is True
         assert excinfo.value.type == "EmptyAgentPrompt"
 
@@ -775,20 +775,23 @@ class TestEmptyPromptGuard:
             _ensure_llm_contents([])
 
     def test_passes_with_human_message(self):
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        from services.temporal.agent_activities import _ensure_llm_contents
-
-        _ensure_llm_contents([SystemMessage(content="sys"), HumanMessage(content="hi")])
-
-    def test_passes_with_tool_message(self):
-        """Mid-loop turns may legitimately be tool-result-only."""
-        from langchain_core.messages import SystemMessage, ToolMessage
-
+        from services.llm.protocol import Message
         from services.temporal.agent_activities import _ensure_llm_contents
 
         _ensure_llm_contents(
-            [SystemMessage(content="sys"), ToolMessage(content="42", tool_call_id="c1")]
+            [Message(role="system", content="sys"), Message(role="user", content="hi")]
+        )
+
+    def test_passes_with_tool_message(self):
+        """Mid-loop turns may legitimately be tool-result-only."""
+        from services.llm.protocol import Message
+        from services.temporal.agent_activities import _ensure_llm_contents
+
+        _ensure_llm_contents(
+            [
+                Message(role="system", content="sys"),
+                Message(role="tool", content="42", tool_call_id="c1"),
+            ]
         )
 
     def test_guard_runs_after_empty_message_filter(self):
@@ -798,12 +801,12 @@ class TestEmptyPromptGuard:
         would miss exactly the failing case."""
         import inspect
 
-        from services.temporal.agent_activities import execute_llm_step
+        from services.temporal.agent_activities import _execute_native_llm_step
 
-        src = inspect.getsource(execute_llm_step)
-        assert "_ensure_llm_contents(rehydrated)" in src
-        assert src.index("filter_empty_messages(rehydrated)") < src.index(
-            "_ensure_llm_contents(rehydrated)"
+        src = inspect.getsource(_execute_native_llm_step)
+        assert "_ensure_llm_contents(messages)" in src
+        assert src.index("filter_empty_messages(") < src.index(
+            "_ensure_llm_contents(messages)"
         )
 
 

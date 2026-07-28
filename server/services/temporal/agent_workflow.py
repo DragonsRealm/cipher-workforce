@@ -187,7 +187,7 @@ def _append_tool_result_message(
         return
 
     # Do not change this legacy shape: histories created before the cutover
-    # pass it through LangChain's messages_from_dict on replay.
+    # pass it through the legacy message reader on replay.
     messages.append(
         {
             "type": "tool",
@@ -752,7 +752,7 @@ class AgentWorkflow:
 
         # ---- Build initial message list ---------------------------------
         # Native executions use the SDK-neutral v2 wire codec. Legacy
-        # histories keep LangChain's canonical {type, data} shape exactly.
+        # histories keep the legacy canonical {type, data} shape exactly.
         messages: List[Dict[str, Any]] = []
 
         system = payload.get("system_message") or ""
@@ -1017,7 +1017,7 @@ class AgentWorkflow:
             kind = step_result.get("kind")
 
             # The activity returns the FULL serialized assistant message
-            # (LangChain's canonical {type, data} shape from messages_to_dict).
+            # (the legacy canonical {type, data} shape).
             # Appending verbatim preserves Gemini thought_signature, Anthropic
             # cache markers, OpenAI reasoning content — everything the next
             # turn's request needs.

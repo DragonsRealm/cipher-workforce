@@ -1,8 +1,7 @@
 """AI service backed by the native provider SDK layer.
 
-The LangChain model factory and loop below are retained temporarily and are
-used only by pre-cutover Temporal histories.  Every new in-process or durable
-agent execution uses :mod:`services.agent_runtime`.
+Every in-process and durable agent execution goes through
+:mod:`services.agent_runtime` and :mod:`services.llm`.
 """
 
 from __future__ import annotations
@@ -13,19 +12,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Dict, Any, List, Optional, Callable, Type, TYPE_CHECKING
 
-# ---------------------------------------------------------------------------
-# LangChain imports — fully lazy and retained only for old Temporal histories.
-#
-# Cold-start measurement (Windows, fresh disk):
-#   ``from langchain_openai import ChatOpenAI``          ~20.8s (pulls openai SDK + tiktoken)
-# Deferring the heavy imports until the first agent run trims server-ready time.
-#
-# ``services/llm/`` and ``services/agent_runtime.py`` handle every new chat
-# and agent execution. The imports below are type-checking-only or function-
-# local so a native process never loads LangChain unless it must execute an
-# already-recorded legacy Temporal activity.
-# ---------------------------------------------------------------------------
-
 import json
 
 # ``NodeUserError`` is the framework's "user-correctable, no-traceback"
@@ -35,82 +21,13 @@ from services.plugin import NodeUserError
 from services.tool_identity import DuplicateToolNameError, ensure_unique_tool_names
 
 if TYPE_CHECKING:
-    from langchain_openai import ChatOpenAI  # noqa: F401
-    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage  # noqa: F401
-    from langchain_core.tools import StructuredTool  # noqa: F401
     from pydantic import BaseModel, Field, create_model  # noqa: F401
-    from langchain_anthropic import ChatAnthropic  # noqa: F401
-    from langchain_groq import ChatGroq  # noqa: F401
-    from langchain_cerebras import ChatCerebras  # noqa: F401
 
 
-@functools.cache
-def _get_chat_anthropic() -> Type:
-    """Lazy import: ``langchain_anthropic`` is ~800ms cold."""
-    from langchain_anthropic import ChatAnthropic
-
-    return ChatAnthropic
-
-
-@functools.cache
-def _get_chat_groq() -> Type:
-    """Lazy import: ``langchain_groq`` adds ~270ms cold."""
-    from langchain_groq import ChatGroq
-
-    return ChatGroq
-
-
-@functools.cache
-def _get_chat_cerebras() -> Optional[Type]:
-    """Lazy import: ``langchain_cerebras`` is optional (Python <3.13).
-
-    Returns the class if importable, ``None`` otherwise. Cached so the
-    ImportError path runs once.
-    """
-    try:
-        from langchain_cerebras import ChatCerebras
-
-        return ChatCerebras
-    except ImportError:
-        return None
-
-
-# Lazy import for Google GenAI (google-generativeai init hangs on Windows/Python 3.13)
-@functools.cache
-def _get_google_genai_class() -> Type:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    return ChatGoogleGenerativeAI
-
-
-def _is_cerebras_available() -> bool:
-    """Whether the langchain-cerebras package is importable."""
-    return _get_chat_cerebras() is not None
-
-
-# Backwards-compat shims (PEP 562 module-level __getattr__) for code that
-# historically read these as module-level constants. The "import" cost is paid
-# only on first access. ``PROVIDER_CONFIGS`` resolves through ``get_provider_configs()``
-# so any external `from services.ai import PROVIDER_CONFIGS` keeps working
-# without triggering the heavy LangChain imports until first use.
+# Backwards-compat shim (PEP 562 module-level ``__getattr__``) for code that
+# historically read ``PROVIDER_CONFIGS`` as a module-level constant here. It
+# resolves to the native config map.
 def __getattr__(name: str):
-    if name == "ChatAnthropic":
-        return _get_chat_anthropic()
-    if name == "ChatGroq":
-        return _get_chat_groq()
-    if name == "ChatCerebras":
-        return _get_chat_cerebras()
-    if name == "CEREBRAS_AVAILABLE":
-        return _is_cerebras_available()
-    if name == "CEREBRAS_IMPORT_ERROR":
-        # Reproduce the error string without re-raising; helpful for log messages.
-        if _get_chat_cerebras() is not None:
-            return None
-        try:
-            __import__("langchain_cerebras")
-            return None
-        except ImportError as e:
-            return str(e)
     if name == "PROVIDER_CONFIGS":
         return NATIVE_PROVIDER_CONFIGS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -227,76 +144,8 @@ async def _get_configured_memory_vector_store(
 # =============================================================================
 
 
-@dataclass
-class ProviderConfig:
-    """Configuration for an AI provider."""
-
-    name: str
-    model_class: Optional[Type]
-    api_key_param: str  # Parameter name for API key in model constructor
-    max_tokens_param: str  # Parameter name for max tokens
-    detection_patterns: tuple  # Patterns to detect this provider from model name
-    default_model: str  # Default model when none specified
-    models_endpoint: str  # API endpoint to fetch models
-    models_header_fn: Callable[[str], dict]  # Function to create headers
-    base_url: str = ""  # Custom base URL for OpenAI-compatible providers
-    extra_headers: Optional[Dict[str, str]] = None  # Default headers for API calls
-    supported_params: Optional[List[str]] = None  # API-supported params (from llm_defaults.json)
-
-
 # Compatibility export. Native configuration is the single source of truth.
 ThinkingConfig = NativeThinkingConfig
-
-
-def _openai_headers(api_key: str) -> dict:
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-def _anthropic_headers(api_key: str) -> dict:
-    return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-
-
-def _gemini_headers(api_key: str) -> dict:
-    return {}  # API key in URL for Gemini
-
-
-def _openrouter_headers(api_key: str) -> dict:
-    return {"Authorization": f"Bearer {api_key}", "HTTP-Referer": "http://localhost:5678", "X-Title": "OpenCompany"}
-
-
-def _groq_headers(api_key: str) -> dict:
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-def _cerebras_headers(api_key: str) -> dict:
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-def _bearer_headers(api_key: str) -> dict:
-    """Generic Bearer auth headers for OpenAI-compatible providers."""
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-# Map of provider -> (model_class_factory, header_fn) for providers with custom
-# LangChain classes. Factories let us defer the heavy ``langchain_anthropic`` /
-# ``langchain_groq`` / ``langchain_cerebras`` imports until an agent actually
-# runs. Providers NOT in this map use ChatOpenAI + _bearer_headers
-# (OpenAI-compatible). ``model_class_factory`` returns the resolved class
-# (or None for gemini, whose lazy resolver lives at the call site).
-def _build_provider_class_map() -> Dict[str, tuple]:
-    from langchain_openai import ChatOpenAI
-
-    mapping: Dict[str, tuple] = {
-        "openai": (ChatOpenAI, _openai_headers),
-        "anthropic": (_get_chat_anthropic(), _anthropic_headers),
-        "gemini": (None, _gemini_headers),  # resolved via _get_google_genai_class()
-        "openrouter": (ChatOpenAI, _openrouter_headers),
-        "groq": (_get_chat_groq(), _groq_headers),
-    }
-    cerebras_class = _get_chat_cerebras()
-    if cerebras_class is not None:
-        mapping["cerebras"] = (cerebras_class, _cerebras_headers)
-    return mapping
 
 
 # =============================================================================
@@ -347,55 +196,6 @@ def _resolve_temperature(flattened: dict, model: str, provider: str, thinking_en
         provider,
         thinking_enabled,
     )
-
-
-# Provider configurations - built from config/llm_defaults.json on first use.
-# Building the map triggers the heavy LangChain imports (~1.05s of
-# langchain_anthropic + langchain_groq), so we defer it until a caller asks
-# for a config (i.e. an AI agent actually runs). The native LLM SDK path
-# (services/llm/) bypasses this entirely.
-def _build_provider_configs() -> Dict[str, ProviderConfig]:
-    """Build PROVIDER_CONFIGS from llm_defaults.json + provider-class map."""
-    from langchain_openai import ChatOpenAI
-
-    providers = _LLM_DEFAULTS.get("providers", {})
-    configs: Dict[str, ProviderConfig] = {}
-    class_map = _build_provider_class_map()
-    cerebras_available = _is_cerebras_available()
-
-    for name, prov in providers.items():
-        # Skip cerebras if not available
-        if name == "cerebras" and not cerebras_available:
-            logger.warning("Cerebras provider not available: langchain-cerebras package not installed (Python <3.13 only)")
-            continue
-
-        model_class, header_fn = class_map.get(name, (ChatOpenAI, _bearer_headers))
-        configs[name] = ProviderConfig(
-            name=name,
-            model_class=model_class,
-            api_key_param=prov.get("api_key_param", "api_key"),
-            max_tokens_param=prov.get("max_tokens_param", "max_tokens"),
-            detection_patterns=tuple(prov.get("detection_patterns", [name])),
-            default_model=prov.get("default_model", ""),
-            models_endpoint=prov.get("models_endpoint", ""),
-            models_header_fn=header_fn,
-            base_url=prov.get("base_url", ""),
-            extra_headers=prov.get("extra_headers"),
-            supported_params=prov.get("supported_params"),
-        )
-
-    return configs
-
-
-@functools.cache
-def get_provider_configs() -> Dict[str, ProviderConfig]:
-    """Return PROVIDER_CONFIGS, building on first call (cached thereafter).
-
-    Lazy build defers the LangChain agent-class imports until the first
-    AI agent execution — saves ~1.0s of cold-start time on the
-    chat-only path used by ``execute_chat()``.
-    """
-    return _build_provider_configs()
 
 
 def detect_provider_from_model(model: str) -> str:
@@ -473,298 +273,6 @@ def is_valid_message_content(content: Any) -> bool:
     return bool(content)
 
 
-def filter_empty_messages(messages: List[Any]) -> List[Any]:
-    """Compatibility wrapper around the provider-neutral message filter."""
-
-    return _filter_native_messages(messages)
-
-
-def extract_thinking_from_response(response) -> tuple:
-    """Extract text and thinking content from LLM response.
-
-    Handles multiple formats:
-    - LangChain content_blocks API (Claude, Gemini)
-    - OpenAI responses/v1 format (content list with reasoning blocks containing summary)
-    - Groq additional_kwargs.reasoning_content
-    - Raw string content
-
-    Returns:
-        Tuple of (text_content: str, thinking_content: Optional[str])
-    """
-    if isinstance(response, LLMResponse):
-        return response.content, response.thinking
-
-    text_parts = []
-    thinking_parts = []
-
-    logger.debug(f"[extract_thinking] Starting extraction, response type: {type(response).__name__}")
-    logger.debug(
-        f"[extract_thinking] has content_blocks: {hasattr(response, 'content_blocks')}, value: {getattr(response, 'content_blocks', None)}"
-    )
-    logger.debug(f"[extract_thinking] has content: {hasattr(response, 'content')}, type: {type(getattr(response, 'content', None))}")
-    logger.debug(
-        f"[extract_thinking] has additional_kwargs: {hasattr(response, 'additional_kwargs')}, value: {getattr(response, 'additional_kwargs', None)}"
-    )
-    logger.debug(
-        f"[extract_thinking] has response_metadata: {hasattr(response, 'response_metadata')}, keys: {list(getattr(response, 'response_metadata', {}).keys()) if hasattr(response, 'response_metadata') else None}"
-    )
-
-    # Use content_blocks API (LangChain 1.0+) for Claude/Gemini
-    if hasattr(response, "content_blocks") and response.content_blocks:
-        for block in response.content_blocks:
-            if isinstance(block, dict):
-                block_type = block.get("type", "")
-                if block_type == "reasoning":
-                    thinking_parts.append(block.get("reasoning", ""))
-                elif block_type == "thinking":
-                    thinking_parts.append(block.get("thinking", ""))
-                elif block_type == "text":
-                    text_parts.append(block.get("text", ""))
-
-    # Check additional_kwargs for reasoning_content (Groq, older OpenAI responses)
-    if not thinking_parts and hasattr(response, "additional_kwargs"):
-        reasoning = response.additional_kwargs.get("reasoning_content")
-        if reasoning:
-            thinking_parts.append(reasoning)
-
-    # Check response_metadata for OpenAI o-series reasoning (responses/v1 format)
-    # The output array contains reasoning items with summaries
-    if not thinking_parts and hasattr(response, "response_metadata"):
-        metadata = response.response_metadata
-        output = metadata.get("output", [])
-        if isinstance(output, list):
-            for item in output:
-                if isinstance(item, dict) and item.get("type") == "reasoning":
-                    summary = item.get("summary", [])
-                    if isinstance(summary, list):
-                        for s in summary:
-                            if isinstance(s, dict):
-                                # Handle both summary_text and text types
-                                text = s.get("text", "")
-                                if text:
-                                    thinking_parts.append(text)
-                            elif isinstance(s, str):
-                                thinking_parts.append(s)
-
-    # Check raw content for OpenAI responses/v1 format and other list formats
-    if hasattr(response, "content"):
-        content = response.content
-        if isinstance(content, str):
-            if not text_parts:
-                text_parts.append(content)
-        elif isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict):
-                    block_type = block.get("type", "")
-                    if block_type == "text" or block_type == "output_text":
-                        # Handle both 'text' and 'output_text' (responses/v1 format)
-                        if not text_parts:  # Only add if not already extracted
-                            text_parts.append(block.get("text", ""))
-                    elif block_type == "reasoning":
-                        # OpenAI responses/v1 format: reasoning block with summary array
-                        # Format: {"type": "reasoning", "summary": [{"type": "text", "text": "..."}, {"type": "summary_text", "text": "..."}]}
-                        summary = block.get("summary", [])
-                        if isinstance(summary, list):
-                            for s in summary:
-                                if isinstance(s, dict):
-                                    s_type = s.get("type", "")
-                                    if s_type in ("text", "summary_text"):
-                                        thinking_parts.append(s.get("text", ""))
-                                elif isinstance(s, str):
-                                    thinking_parts.append(s)
-                        elif isinstance(summary, str):
-                            thinking_parts.append(summary)
-                        # Also check direct reasoning field
-                        if block.get("reasoning"):
-                            thinking_parts.append(block.get("reasoning", ""))
-                    elif block_type == "thinking":
-                        thinking_parts.append(block.get("thinking", ""))
-                elif isinstance(block, str) and not text_parts:
-                    text_parts.append(block)
-
-    text = "\n".join(filter(None, text_parts))
-    thinking = "\n".join(filter(None, thinking_parts)) if thinking_parts else None
-
-    logger.debug(f"[extract_thinking] Final text_parts: {text_parts}")
-    logger.debug(f"[extract_thinking] Final thinking_parts: {thinking_parts}")
-    logger.debug(
-        f"[extract_thinking] Returning text={repr(text[:100] if text else None)}, thinking={repr(thinking[:100] if thinking else None)}"
-    )
-
-    return text, thinking
-
-
-async def _run_agent_loop(
-    chat_model,
-    initial_messages: List[BaseMessage],
-    *,
-    tools: Optional[List[Any]] = None,
-    tool_executor: Optional[Callable] = None,
-    max_iterations: int = 500,
-    progress_callback: Optional[Callable[[int], Any]] = None,
-    rebind_from_operations: Optional[Callable[[List[Dict[str, Any]]], Awaitable[List[Any]]]] = None,
-) -> Dict[str, Any]:
-    """Drive an LLM agent loop with optional tool calling.
-
-    Plain-async ``while iteration < max:`` loop. Each iteration:
-
-    1. Invoke ``chat_model.ainvoke(filtered_messages)`` and append the
-       returned assistant message verbatim. Appending the message object
-       itself preserves Gemini ``thought_signature``, Anthropic cache
-       markers, OpenAI ``reasoning_content``, etc.
-    2. Extract thinking content; accumulate across iterations with the
-       ``--- Iteration N ---`` separator.
-    3. If the response carries ``tool_calls``, dispatch each via the
-       supplied ``tool_executor`` and append a ``ToolMessage`` per call.
-       Executor failures get surfaced to the model as an error JSON so
-       the loop can recover rather than abort.
-    4. If no tool calls, return.
-
-    On hitting ``max_iterations``, append a terminal ``AIMessage`` with
-    a truncation note so downstream extraction has a usable response.
-
-    ``progress_callback(iteration)`` is awaited at the top of each turn
-    so callers can drive per-iteration broadcasts (e.g. the FE iteration
-    badge).
-
-    Returns ``{messages, iteration, thinking_content, truncated}``.
-    ``messages`` is the full accumulated list (system + history +
-    interleaved AI / Tool messages); callers extract the last AIMessage
-    as the final response.
-    """
-    from langchain_core.messages import AIMessage, ToolMessage
-
-    # Local mutable tools list so canvas-mutating tools (agentBuilder)
-    # can extend the bound surface mid-loop via ``rebind_from_operations``.
-    current_tools: List[Any] = list(tools or [])
-    model = chat_model.bind_tools(current_tools) if current_tools else chat_model
-    messages: List[BaseMessage] = list(initial_messages)
-    thinking_accumulated = ""
-    iteration = 0
-
-    for iteration in range(1, max_iterations + 1):
-        if progress_callback is not None:
-            try:
-                await progress_callback(iteration)
-            except Exception as e:
-                logger.debug(f"[Agent loop] progress_callback raised: {e}")
-
-        filtered = filter_empty_messages(messages)
-        response = await model.ainvoke(filtered)
-        messages.append(response)
-
-        _, new_thinking = extract_thinking_from_response(response)
-        if new_thinking:
-            if thinking_accumulated:
-                thinking_accumulated = f"{thinking_accumulated}\n\n--- Iteration {iteration} ---\n{new_thinking}"
-            else:
-                thinking_accumulated = new_thinking
-
-        # Gemini occasionally returns a blocked / safety-stopped response;
-        # surface the cause so operators can spot it in the logs.
-        if hasattr(response, "response_metadata"):
-            meta = response.response_metadata or {}
-            if meta.get("finish_reason") == "SAFETY":
-                logger.warning("[Agent loop] Gemini response blocked by safety filters")
-            if meta.get("block_reason"):
-                logger.warning(f"[Agent loop] Gemini block reason: {meta.get('block_reason')}")
-
-        tool_calls = getattr(response, "tool_calls", None) or []
-        if not tool_calls:
-            return {
-                "messages": messages,
-                "iteration": iteration,
-                "thinking_content": thinking_accumulated or None,
-                "truncated": False,
-            }
-
-        if tool_executor is None:
-            logger.warning(
-                "[Agent loop] LLM emitted %d tool_call(s) but no tool_executor " "configured; treating response as final",
-                len(tool_calls),
-            )
-            return {
-                "messages": messages,
-                "iteration": iteration,
-                "thinking_content": thinking_accumulated or None,
-                "truncated": False,
-            }
-
-        iteration_new_tools: List[Any] = []
-        for call in tool_calls:
-            tool_name = call.get("name", "")
-            tool_args = call.get("args", {}) or {}
-            tool_id = call.get("id", "")
-            try:
-                result = await tool_executor(tool_name, tool_args)
-            except Exception as e:
-                logger.error(f"[Agent loop] Tool {tool_name!r} raised: {e}")
-                result = {"error": str(e)}
-
-            # Canvas-mutation rebind: any tool can return an ``operations``
-            # field (workflow_ops protocol). When the agent loop has a
-            # ``rebind_from_operations`` callback wired AND the toggle is
-            # on, build new StructuredTools off the ops list so the LLM
-            # can call them in the very next iteration without a restart.
-            if (
-                rebind_from_operations is not None
-                and isinstance(result, dict)
-                and result.get("operations")
-            ):
-                try:
-                    added = await rebind_from_operations(result["operations"])
-                    if added:
-                        iteration_new_tools.extend(added)
-                except DuplicateToolNameError as exc:
-                    # Reject the whole hot-rebind batch before mutating the
-                    # bound surface.  Return the structured conflict to the
-                    # model so it can rename/rebuild the ambiguous tool.
-                    logger.warning("[Agent loop] rejected ambiguous tool rebind: %s", exc)
-                    result = dict(result)
-                    result["rebind_error"] = exc.as_dict()
-                except Exception as exc:  # noqa: BLE001 — defensive; rebind is opt-in
-                    logger.warning(
-                        "[Agent loop] rebind_from_operations raised: %s", exc, exc_info=True
-                    )
-
-            messages.append(
-                ToolMessage(
-                    content=json.dumps(result, default=str),
-                    tool_call_id=tool_id,
-                    name=tool_name,
-                )
-            )
-
-        if iteration_new_tools:
-            current_tools.extend(iteration_new_tools)
-            model = chat_model.bind_tools(current_tools)
-            logger.info(
-                "[Agent loop] rebound %d tool(s) after canvas mutation (total bound=%d)",
-                len(iteration_new_tools),
-                len(current_tools),
-            )
-
-    # Loop exited without returning -- hit max_iterations. Append a
-    # terminal AIMessage so downstream extraction (and post-loop token
-    # tracking / memory persistence) still have a usable state.
-    messages.append(
-        AIMessage(
-            content=(
-                f"[Recursion limit reached: {max_iterations} iterations. "
-                f"Adjust agent.recursion_limit in llm_defaults.json or "
-                f"simplify the task.]"
-            )
-        )
-    )
-    logger.warning(f"[Agent loop] max_iterations hit ({max_iterations}); " f"returning partial response with {len(messages)} message(s)")
-    return {
-        "messages": messages,
-        "iteration": iteration,
-        "thinking_content": thinking_accumulated or None,
-        "truncated": True,
-    }
-
-
 def _build_skill_system_prompt(skill_data: List[Dict[str, Any]], log_prefix: str = "[Agent]") -> tuple:
     """Build skill injection text for the system message.
 
@@ -788,7 +296,7 @@ def _build_skill_system_prompt(skill_data: List[Dict[str, Any]], log_prefix: str
 
 
 class AIService:
-    """AI model service for LangChain operations."""
+    """AI model service backed by the native provider SDK layer."""
 
     def __init__(
         self,
@@ -857,7 +365,7 @@ class AIService:
         if isinstance(content, str) and content.strip():
             return content
 
-        # LangChain standard: use content_blocks property for typed content extraction
+        # Use the content_blocks property for typed content extraction
         if ai_response and hasattr(ai_response, "content_blocks") and ai_response.content_blocks:
             text_parts = []
             for block in ai_response.content_blocks:
@@ -937,7 +445,7 @@ class AIService:
     ) -> Optional[Dict[str, Any]]:
         """Track token usage and trigger compaction if threshold exceeded.
 
-        Extracts usage_metadata from LangChain AIMessage and tracks it
+        Extracts usage_metadata from the assistant message and tracks it
         in the compaction service for session token monitoring.
 
         Args:
@@ -962,8 +470,9 @@ class AIService:
         if not svc:
             return
 
-        # Native responses expose a normalized ``Usage`` object.  The
-        # LangChain branches below are retained only for pre-cutover histories.
+        # Native responses expose a normalized ``Usage`` object. The
+        # attribute probes below stay because callers also hand this method
+        # raw provider payloads, which carry usage under either name.
         usage = None
         if isinstance(ai_response, Usage):
             usage = ai_response
@@ -1044,154 +553,6 @@ class AIService:
 
         return None
 
-    def create_model(
-        self,
-        provider: str,
-        api_key: str,
-        model: str,
-        temperature: float,
-        max_tokens: int,
-        thinking: Optional[ThinkingConfig] = None,
-        proxy_url: Optional[str] = None,
-    ):
-        """Create LangChain model instance using provider registry.
-
-        Args:
-            provider: AI provider name (openai, anthropic, gemini, groq, openrouter)
-            api_key: Provider API key
-            model: Model name/ID
-            temperature: Sampling temperature
-            max_tokens: Maximum response tokens
-            thinking: Optional thinking/reasoning configuration
-            proxy_url: Optional proxy URL (Ollama-style auth delegation)
-
-        Returns:
-            Configured LangChain chat model instance
-        """
-        from langchain_openai import ChatOpenAI
-
-        config = get_provider_configs().get(provider)
-        if not config:
-            # Provide helpful error for Cerebras if import failed
-            if provider == "cerebras" and not _is_cerebras_available():
-                error_msg = "Cerebras provider not available: langchain-cerebras package not installed"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-            raise ValueError(f"Unsupported provider: {provider}")
-
-        # Strip [FREE] prefix if present (added by OpenRouter model list for display)
-        if model.startswith("[FREE] "):
-            model = model[7:]
-
-        # Strip owner prefix for non-OpenRouter providers (e.g. "openai/gpt-oss-120b" → "gpt-oss-120b")
-        if provider != "openrouter" and "/" in model:
-            model = model.split("/", 1)[-1]
-
-        # Build kwargs dynamically from registry config
-        kwargs = {config.api_key_param: api_key, "model": model, "temperature": temperature, config.max_tokens_param: max_tokens}
-
-        # Agent Platform / Vertex Express keys ("AQ." prefix) route the same
-        # ChatGoogleGenerativeAI to the Vertex backend — billed to the key's
-        # GCP project instead of personal AI Studio credits. The library
-        # handles endpoint construction and key transport.
-        if provider == "gemini" and is_vertex_express_key(api_key):
-            kwargs["vertexai"] = True
-            if proxy_url:
-                logger.warning("[AI] gemini: proxy_url ignored in Vertex AI mode")
-                proxy_url = None
-
-        # Proxy mode: route through local proxy that handles auth (Ollama pattern)
-        # Proxy URL stored as {provider}_proxy credential
-        if proxy_url:
-            kwargs["base_url"] = proxy_url
-            kwargs[config.api_key_param] = "ollama"  # Ollama-style token
-            logger.info(f"[AI] Using proxy for {provider}: {proxy_url}")
-        # OpenAI-compatible providers: apply base_url + pass only supported params
-        elif config.base_url and config.model_class == ChatOpenAI and provider != "openai":
-            kwargs["base_url"] = config.base_url
-            if config.extra_headers:
-                kwargs["default_headers"] = config.extra_headers
-            # LangChain ChatOpenAI converts max_tokens -> max_completion_tokens (OpenAI-specific).
-            # Non-OpenAI providers reject this, so pass supported params via extra_body.
-            del kwargs[config.max_tokens_param]
-            extra_body: Dict[str, Any] = {"max_tokens": max_tokens}
-            if config.supported_params:
-                if "temperature" not in config.supported_params:
-                    kwargs.pop("temperature", None)
-                if "frequency_penalty" not in config.supported_params:
-                    kwargs.pop("frequency_penalty", None)
-                if "presence_penalty" not in config.supported_params:
-                    kwargs.pop("presence_penalty", None)
-            # Handle provider-specific constraints from llm_defaults.json
-            prov_json = _LLM_DEFAULTS.get("providers", {}).get(provider, {})
-
-            # Disable thinking for models that have it ON by default (e.g. kimi-k2.5)
-            default_on = prov_json.get("thinking_default_on", [])
-            if default_on and any(model.startswith(m) for m in default_on):
-                if not (thinking and thinking.enabled):
-                    extra_body["thinking"] = {"type": "disabled"}
-
-            # Apply fixed temperature per model (e.g. kimi-k2.5 requires exactly 0.6)
-            fixed_temps = prov_json.get("fixed_temperature", {})
-            for prefix, fixed_temp in fixed_temps.items():
-                if model.startswith(prefix):
-                    kwargs["temperature"] = fixed_temp
-                    break
-
-            kwargs["extra_body"] = extra_body
-
-        # Apply thinking/reasoning configuration using model registry
-        # The registry determines thinking_type based on model metadata
-        from services.model_registry import get_model_registry
-
-        registry = get_model_registry()
-
-        # Reasoning models (listed in ``reasoning_models`` per provider in
-        # llm_defaults.json) do not support the ``temperature`` parameter —
-        # the API rejects requests that send any value, including 1. Drop
-        # it entirely rather than pass an explicit value.
-        if registry.is_reasoning_model(model, provider):
-            if "temperature" in kwargs:
-                logger.info(f"[AI] Reasoning model '{model}': omitting temperature param")
-                kwargs.pop("temperature", None)
-
-        if thinking and thinking.enabled:
-            thinking_type = registry.get_thinking_type(model, provider)
-
-            if thinking_type == "budget":
-                # Claude, Gemini, Cerebras: budget_tokens approach
-                budget = max(1024, thinking.budget)
-                if provider == "anthropic":
-                    # Claude: max_tokens must be > budget_tokens
-                    if max_tokens <= budget:
-                        kwargs[config.max_tokens_param] = budget + max(1024, max_tokens)
-                        logger.info(
-                            f"[AI] Claude thinking: adjusted max_tokens from {max_tokens} to {kwargs[config.max_tokens_param]} (budget={budget})"
-                        )
-                    kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
-                    kwargs["temperature"] = 1
-                elif provider == "gemini":
-                    kwargs["thinking_budget"] = thinking.budget
-                    kwargs["include_thoughts"] = True
-                    logger.info(f"[AI] Gemini thinking: budget={thinking.budget}")
-                elif provider == "cerebras":
-                    kwargs["thinking_budget"] = thinking.budget
-                    logger.info(f"[AI] Cerebras thinking: budget={thinking.budget}")
-            elif thinking_type == "effort":
-                # OpenAI o-series: reasoning_effort parameter
-                kwargs["reasoning_effort"] = thinking.effort
-                kwargs["temperature"] = 1
-                logger.info(f"[AI] OpenAI reasoning: effort={thinking.effort}, temperature=1")
-            elif thinking_type == "format":
-                # Groq Qwen/QwQ: reasoning_format parameter
-                format_val = thinking.format if thinking.format in ("parsed", "hidden") else "parsed"
-                kwargs["reasoning_format"] = format_val
-            elif thinking_type == "none":
-                logger.warning(f"[AI] Model '{model}' ({provider}) may not support thinking mode")
-
-        # Resolve lazy-loaded model class (gemini)
-        model_class = config.model_class or _get_google_genai_class()
-        return model_class(**kwargs)
 
     def _get_curated_models(self, provider: str) -> List[str]:
         """Get curated model list from llm_defaults.json for a provider.
@@ -1211,7 +572,7 @@ class AIService:
         exception translation, and the JSON-driven ``incompatible_models``
         filter. All 12 providers (4 dedicated + 8 OpenAI-compat
         including groq + cerebras) route through here — Phase D removed
-        the legacy LangChain fallback path.
+        the legacy per-provider fallback path.
 
         On API failure, falls back to the curated list from
         ``llm_defaults.json``. When the provider has no ``default_model``
@@ -1295,9 +656,8 @@ class AIService:
             # errors so ``BaseNode.execute()`` logs one WARN line with
             # no traceback). No per-provider Python lives here.
             #
-            # The LangChain fallback for groq + cerebras was deleted in
-            # Phase D — both providers now register through the
-            # OpenAI-compat path in ``services.llm.providers._compat``.
+            # groq + cerebras register through the OpenAI-compat path in
+            # ``services.llm.providers._compat``.
             if self.chat_unifier is None:
                 raise NodeUserError(
                     "ChatUnifier is not injected. AIService must be constructed via "
@@ -2874,7 +2234,7 @@ class AIService:
                     )
                     logger.info(f"[Agent] Enhanced tool description for {node_type} with {len(child_tools)} child tools")
 
-            # Clean tool name (LangChain requires alphanumeric + underscores)
+            # Clean tool name (providers require alphanumeric + underscores)
             import re
 
             tool_name = re.sub(r"[^a-zA-Z0-9_]", "_", tool_name)

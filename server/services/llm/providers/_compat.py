@@ -34,8 +34,7 @@ logger = get_logger(__name__)
 # Groq + Cerebras moved here in Phase D (May 2026). Both expose
 # OpenAI-compatible `/v1` endpoints (``api.groq.com/openai/v1`` /
 # ``api.cerebras.ai/v1``) so they share the ``OpenAIProvider`` factory
-# with the other compat providers. The only remaining LangChain path is the
-# temporary Temporal-history compatibility branch.
+# with the other compat providers.
 _COMPAT_PROVIDERS: Tuple[str, ...] = (
     "xai",
     "deepseek",

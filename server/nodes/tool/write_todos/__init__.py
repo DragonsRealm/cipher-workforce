@@ -123,7 +123,7 @@ class WriteTodosNode(ToolNode):
         # call leaked TodoService's raw JSON STRING into this key, which
         # the Output validation now rejects; the LLM-facing serialization
         # happens downstream anyway (``_serialise_tool_result`` /
-        # LangChain dump the whole dict to JSON).
+        # providers dump the whole dict to JSON).
         return {
             "message": f"Updated todo list ({len(stored)} items)",
             "todos": stored,

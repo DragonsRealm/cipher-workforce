@@ -1,7 +1,7 @@
 """Provider configuration and model resolution.
 
 Loads provider metadata from config/llm_defaults.json.
-No LangChain imports -- pure config and resolution logic.
+Pure config and resolution logic.
 """
 
 import json

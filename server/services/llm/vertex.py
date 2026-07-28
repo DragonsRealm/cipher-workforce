@@ -8,7 +8,7 @@ Gemini accepts two kinds of API keys:
   billed to the key's GCP project (eligible for Cloud credits) via
   ``aiplatform.googleapis.com``.
 
-Both the native ``google-genai`` SDK and ``langchain-google-genai``
+The native ``google-genai`` SDK
 route to the Vertex backend with ``vertexai=True`` plus the same
 ``api_key`` — endpoint construction, auth headers, and backend parity
 are entirely handled by the official libraries. The only application

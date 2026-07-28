@@ -94,21 +94,65 @@ def patched_workflow(monkeypatch):
 
 
 class TestEngineSelection:
-    def test_new_runs_default_to_native(self, monkeypatch):
-        from services.temporal.agent_activities import _configured_llm_engine
+    """After the LangChain removal there is exactly one engine.
 
-        monkeypatch.delenv("AGENT_LLM_ENGINE", raising=False)
-        assert _configured_llm_engine() == "native"
+    The marker survives because it is the discriminator: a history recorded
+    before the cutover carries LangChain-serialised messages and no
+    ``llm_engine`` key, and those messages can no longer be read.
+    """
 
-    def test_emergency_switch_is_explicit_and_validated(self, monkeypatch):
-        from services.temporal.agent_activities import _configured_llm_engine
+    @pytest.fixture
+    def outside_activity_context(self, monkeypatch):
+        """The guard runs after logging/heartbeat, which need a live activity."""
+        from services.temporal import agent_activities
 
-        monkeypatch.setenv("AGENT_LLM_ENGINE", " LangChain ")
-        assert _configured_llm_engine() == "langchain"
+        monkeypatch.setattr(
+            agent_activities.activity, "logger", MagicMock(), raising=False
+        )
+        monkeypatch.setattr(
+            agent_activities.activity, "heartbeat", lambda *a, **k: None
+        )
 
-        monkeypatch.setenv("AGENT_LLM_ENGINE", "surprise")
-        with pytest.raises(ValueError, match="AGENT_LLM_ENGINE"):
-            _configured_llm_engine()
+    @pytest.mark.asyncio
+    async def test_execute_llm_step_refuses_a_pre_cutover_history(
+        self, outside_activity_context
+    ):
+        from temporalio.exceptions import ApplicationError
+
+        from services.temporal.agent_activities import execute_llm_step
+
+        payload = _payload(native=True)
+        payload.pop("llm_engine")  # the pre-cutover shape
+
+        with pytest.raises(ApplicationError) as excinfo:
+            await execute_llm_step(payload)
+
+        assert excinfo.value.type == "InvalidAgentLLMEngine"
+        assert excinfo.value.non_retryable is True
+        assert "before the native LLM cutover" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_step_refuses_the_retired_langchain_engine(
+        self, outside_activity_context
+    ):
+        from temporalio.exceptions import ApplicationError
+
+        from services.temporal.agent_activities import execute_llm_step
+
+        with pytest.raises(ApplicationError) as excinfo:
+            await execute_llm_step(_emergency_langchain_payload())
+
+        assert excinfo.value.type == "InvalidAgentLLMEngine"
+        assert excinfo.value.non_retryable is True
+
+    @pytest.mark.asyncio
+    async def test_prepare_payload_always_records_native(self, monkeypatch):
+        """No env switch remains; the marker is a constant now."""
+        import services.temporal.agent_activities as activities
+
+        assert activities._NATIVE_LLM_ENGINE == "native"
+        assert not hasattr(activities, "_configured_llm_engine")
+        assert not hasattr(activities, "_LEGACY_LLM_ENGINE")
 
 
 class TestWorkflowBranchContract:

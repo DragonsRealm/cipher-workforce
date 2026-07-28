@@ -2,17 +2,16 @@
 
 > **Authoring model (post-Wave-11):** each chat-model node is a self-contained Python plugin folder under `server/nodes/model/<provider>_chat_model/` that emits a `NodeSpec`. The frontend reads specs via [client/src/lib/nodeSpec.ts](../client/src/lib/nodeSpec.ts) + [adapters/nodeSpecToDescription.ts](../client/src/adapters/nodeSpecToDescription.ts) and renders through `SquareNode` with zero TS edits. See [plugin_system.md](./plugin_system.md) and [server/nodes/README.md](../server/nodes/README.md) for the plugin model, and "Adding a New Provider" below for the chat-model recipe.
 
-OpenCompany routes chat-model nodes and all new agent executions through the
+OpenCompany routes chat-model nodes and every agent execution through the
 native SDK layer in `server/services/llm/`. The shared buffered tool loop lives
-in `server/services/agent_runtime.py`. A narrowly isolated LangChain branch is
-retained only while Temporal histories recorded before the cutover drain.
+in `server/services/agent_runtime.py`.
 
 ## Why a Native Layer
 
-LangChain added a useful abstraction early on, but it introduced three recurring problems:
+Talking to each vendor SDK directly avoids three problems a translation layer kept reintroducing:
 
-1. **Windows/Python 3.13 hangs**: `langchain_google_genai` deadlocks on gRPC init. The native Gemini path bypasses LangChain entirely and uses `google.genai.Client` directly.
-2. **Parameter translation loss**: LangChain's `max_completion_tokens` rewrite breaks OpenAI-compatible providers (DeepSeek, Kimi, Mistral) that expect `max_tokens`.
+1. **Windows/Python 3.13 hangs**: the wrapped Google adapter deadlocked on gRPC init. The native Gemini path uses `google.genai.Client` directly.
+2. **Parameter translation loss**: a `max_completion_tokens` rewrite breaks OpenAI-compatible providers (DeepSeek, Kimi, Mistral) that expect `max_tokens`.
 3. **Endpoint control**: OpenAI-compatible endpoint URLs are declared in
    `server/config/llm_defaults.json` and registered through `_compat.py`.
    Adding one requires the JSON entry plus one `_COMPAT_PROVIDERS` entry, not a
@@ -61,7 +60,7 @@ The native layer currently supports **13 providers**, grouped by implementation:
 |---|---|---|---|
 | `anthropic` | `providers/anthropic.py` | `anthropic` | Extended thinking via `budget_tokens` |
 | `openai` | `providers/openai.py` | `openai` | Reasoning models (o1/o3) and GPT-5 hybrid thinking |
-| `gemini` | `providers/gemini.py` | `google-genai` | Bypasses LangChain (Windows hang fix) |
+| `gemini` | `providers/gemini.py` | `google-genai` | Direct SDK (Windows hang fix) |
 | `openrouter` | `providers/openrouter.py` | `openai` | Sets `HTTP-Referer` + `X-Title` headers |
 | `xai` | `providers/openai.py` + base_url | `openai` | OpenAI-compatible at `api.x.ai/v1` |
 | `deepseek` | `providers/openai.py` + base_url | `openai` | OpenAI-compatible at `api.deepseek.com` |
@@ -69,15 +68,15 @@ The native layer currently supports **13 providers**, grouped by implementation:
 | `mistral` | `providers/openai.py` + base_url | `openai` | OpenAI-compatible |
 | `ollama` | `providers/openai.py` + `{provider}_proxy` URL | `openai` (chat) + `ollama` (probe) | Local server. Validator probes via `ollama.AsyncClient.ps()` for typed `context_length` per loaded model. Runtime uses `OpenAIProvider` with `base_url={user URL}` so traffic stays on `localhost`. |
 | `lmstudio` | `providers/openai.py` + `{provider}_proxy` URL | `openai` (chat) + `lmstudio` (probe) | Local server. Validator probes via `lmstudio.AsyncClient.llm.list_loaded()` for typed `LlmInstanceInfo.context_length`. Same OpenAI-compat runtime path as Ollama. |
-| `groq` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible (chat-path LangChain fallback retired in Phase D) |
-| `cerebras` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible (chat-path LangChain fallback retired in Phase D) |
+| `groq` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible |
+| `cerebras` | `providers/_compat.py` + base_url | `openai` | OpenAI-compatible |
 | `sarvam` | `providers/_compat.py` + base_url | `openai` | Indic-first (`sarvam-105b` 128K, `sarvam-30b` 64K) at `api.sarvam.ai/v1`. Ships **no model-list route**, so it sets `supports_model_listing: false` — see below. Reasoning is on by default and returns in `reasoning_content`, which `OpenAIProvider._normalize` already reads. |
 
 Source of truth for this list: `server/config/llm_defaults.json` (the `providers` dict) and the `register_provider(ProviderSpec(...))` calls in `server/services/llm/providers/` (each provider module registers itself at import; the legacy `factory.py` was removed).
 
 ### Native chat path vs agent dropdown — two different counts
 
-- **Native chat path (`execute_chat` / `fetch_models`) supports 13 providers, all native** — Anthropic and Gemini via their own SDKs; OpenAI and OpenRouter via the openai SDK; and 9 more through the shared OpenAI-compatible client with a per-provider `base_url` (xai, deepseek, kimi, mistral, groq, cerebras, ollama, lmstudio, sarvam — registered in `providers/_compat.py`). `execute_chat` delegates every provider to `ChatUnifier.chat`; there is no per-provider branch and no chat-path LangChain fallback. `xai` lives here.
+- **Native chat path (`execute_chat` / `fetch_models`) supports 13 providers, all native** — Anthropic and Gemini via their own SDKs; OpenAI and OpenRouter via the openai SDK; and 9 more through the shared OpenAI-compatible client with a per-provider `base_url` (xai, deepseek, kimi, mistral, groq, cerebras, ollama, lmstudio, sarvam — registered in `providers/_compat.py`). `execute_chat` delegates every provider to `ChatUnifier.chat`; there is no per-provider branch. `xai` lives here.
 - **The agent dropdown exposes the same 13 providers** for `aiAgent`,
   `chatAgent` (Zeenie), and all specialized agents, including `xai`.
   `test_plugin_shape.py` asserts exact set equality between the registry and
@@ -268,11 +267,9 @@ ChatUnifier.chat(provider=..., Message[], ToolDef[])
 `run_native_agent_loop` appends the provider's exact assistant envelope before
 executing tools. This preserves Gemini thought signatures, Anthropic signed and
 redacted thinking blocks, and OpenAI reasoning continuation state across
-in-process and Temporal turns. A markerless prepare result identifies a
-pre-cutover history and selects the legacy branch. New executions normally
-record `llm_engine=native` and wire version 2; the temporary emergency setting
-can instead record `llm_engine=langchain`. Either recorded choice remains
-deterministic on replay.
+in-process and Temporal turns. Executions record `llm_engine=native` and wire
+version 2. A markerless prepare result identifies a pre-cutover history, which
+is refused rather than executed (see the end of this document).
 
 ## Thinking and Reasoning
 
@@ -383,10 +380,8 @@ AI providers support optional proxy-based authentication — requests route thro
 
 **Configuration:** proxy URLs are stored in the credentials DB under the `{provider}_proxy` pattern (e.g., `anthropic_proxy`, `openai_proxy`). Falls back to direct API key if no proxy configured. This is the SAME mechanism the native Ollama / LM Studio path uses (see "Local LLM Providers" above) — the validator persists the user's server URL under `{provider}_proxy`, and at runtime it carries into `OpenAIProvider`'s `base_url`.
 
-For every new chat and agent run, `proxy_url` flows through `ChatUnifier` into
-the cached native provider factory. The old `create_model()` proxy path exists
-only for markerless pre-cutover histories or emergency executions whose
-prepare result is explicitly pinned to `llm_engine=langchain`.
+For every chat and agent run, `proxy_url` flows through `ChatUnifier` into the
+cached native provider factory.
 
 **Use cases:** Claude Code CLI proxy for Anthropic models; native Ollama / LM Studio support; custom auth proxies; dev/testing with mock servers.
 
@@ -486,17 +481,16 @@ the plugin folder or add a `visuals.json` entry (`"openrouterChatModel":
 
 ## Temporal migration and dependency lifecycle
 
-`agent.prepare_payload.v1` records both `llm_engine` and
-`message_wire_version`. New histories default to `native`/`2`; histories whose
-recorded result lacks those fields deterministically keep the legacy activity
-payload and LangChain replay path. `AGENT_LLM_ENGINE=langchain` is an emergency
-switch for newly prepared runs only.
+`agent.prepare_payload.v1` records `llm_engine` and `message_wire_version`.
+The marker is a discriminator, not a switch: there is one engine.
 
-The remaining LangChain adapter pins in `server/pyproject.toml` are therefore a
-temporary deployment compatibility requirement, not a runtime dependency of
-new executions. Remove the legacy activity branch, compatibility factory and
-pins together only after Temporal visibility confirms that no retained or
-retryable history can still select the legacy engine. The source-boundary test
-keeps `langchain*` confined to the three explicitly allowlisted legacy bridge
-modules, rejects `langgraph*`/`langsmith` everywhere else, and rejects
-`deepagents` throughout production during that drain window.
+A history recorded before the native cutover carries neither field, and its
+messages are in a retired wire format the native `messages_from_wire` reader
+cannot interpret. `execute_llm_step` refuses such a payload with a
+non-retryable `ApplicationError(type="InvalidAgentLLMEngine")` rather than
+reinterpreting the messages and corrupting the conversation. The operator fix
+is to Reset the deployment, which starts a fresh generation.
+
+`tests/llm/test_langchain_removed.py` enforces the dependency end state via an
+AST walk over production sources, the `pyproject.toml` declarations, runtime
+importability, and a guarded `core.container` boot.

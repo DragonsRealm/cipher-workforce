@@ -66,18 +66,8 @@ dependencies = [
     "anthropic==0.96.0",
     "google-genai==2.11.0",
 
-    # Temporary pre-cutover Temporal-history compatibility. New chat and agent
-    # executions do not import these adapters. Remove this block together with
-    # the legacy activity branch after all recorded histories have drained.
-    "langchain-core==1.4.9",
-    "langchain-openai==1.1.14",
-    "langchain-anthropic==1.4.6",
-    "langchain-google-genai==4.2.5",
-    "langchain-groq==1.1.2",
-    "langchain-cerebras==0.8.2",
-
     # Pydantic 2.13 changed validator ordering; pin to main's 2.12 line
-    # to keep AIMessage construction/tool-schema generation identical.
+    # to keep tool-schema generation identical.
     "pydantic==2.12.5",
 
     # Dependency Injection
