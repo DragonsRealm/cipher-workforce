@@ -69,7 +69,7 @@ dependencies = [
     # Temporary pre-cutover Temporal-history compatibility. New chat and agent
     # executions do not import these adapters. Remove this block together with
     # the legacy activity branch after all recorded histories have drained.
-    "langchain-core==1.4.7",
+    "langchain-core==1.4.9",
     "langchain-openai==1.1.14",
     "langchain-anthropic==1.4.6",
     "langchain-google-genai==4.2.5",
