@@ -189,4 +189,4 @@ Full setup and scripts reference: [SETUP.md](docs-internal/SETUP.md) - [SCRIPTS.
 
 ## Community
 
-Join our [Discord](https://discord.gg/NHUEQVSC) for help, feedback, and updates.
+Join our [Discord](https://discord.gg/c9pCJ7d8Ce) for help, feedback, and updates.

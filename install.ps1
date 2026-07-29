@@ -209,8 +209,25 @@ function Main {
     Write-Host "    company start"
     Write-Host ""
     Write-Host "  Open in browser:"
-    $appPort = (Select-String -Path ".env.template" -Pattern "^PYTHON_BACKEND_PORT=(\d+)" -ErrorAction SilentlyContinue).Matches.Groups[1].Value
-    Write-Host "    http://localhost:$appPort"
+    # .env.template ships inside the installed package. This used to read it
+    # from the working directory, which is wherever the user ran the script --
+    # so it printed a bare "http://localhost:", and dereferencing .Matches on
+    # the null result could fault outright. Resolve through npm's global root.
+    $appPort = $null
+    $npmRoot = (npm root -g 2>$null | Select-Object -First 1)
+    if ($npmRoot) {
+        $templatePath = Join-Path $npmRoot "@zeenie-ai/opencompany/.env.template"
+        if (Test-Path $templatePath) {
+            $match = Select-String -Path $templatePath -Pattern "^PYTHON_BACKEND_PORT=(\d+)" |
+                Select-Object -First 1
+            if ($match) { $appPort = $match.Matches.Groups[1].Value }
+        }
+    }
+    if ($appPort) {
+        Write-Host "    http://localhost:$appPort"
+    } else {
+        Write-Host "    the URL printed by 'company start'"
+    }
     Write-Host ""
     Write-Host "  For development from source, install pnpm:"
     Write-Host "    npm install -g pnpm"

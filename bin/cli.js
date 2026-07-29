@@ -15,14 +15,21 @@ const COMMANDS = {
   start: 'Start in production mode',
   dev: 'Start development server (hot-reload)',
   serve: 'Serve on a single public port (API + WS + SPA; used by deploy)',
+  daemon: 'Run the backend detached (start|stop|status|restart)',
   deploy: 'Provision a cloud VM running OpenCompany (Terraform)',
   stop: 'Stop all running services',
   build: 'Build the project for production',
   clean: 'Clean build artifacts',
+  docs: 'Documentation tooling (docs nodes [--check])',
   doctor: 'Check system dependencies and project health',
   help: 'Show this help message',
-  version: 'Show version number',
+  version: 'Show version number (version sync [tag] to sync from a git tag)',
 };
+
+// Verbs whose Python implementation is a Typer sub-app: they take a sub-verb
+// and flags, so every remaining argv entry has to be forwarded rather than
+// dropped by the bare ``run(cmd)`` path.
+const SUBCOMMAND_VERBS = new Set(['daemon', 'deploy', 'docs', 'version']);
 
 function printHelp() {
   console.log(`
@@ -177,20 +184,25 @@ if (USING_LEGACY_ALIAS) {
 
 const cmd = process.argv[2] || 'help';
 
+const rest = process.argv.slice(3);
+
 if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
   printHelp();
-} else if (cmd === 'version' || cmd === '--version' || cmd === '-v') {
+} else if (cmd === '--version' || cmd === '-v' || (cmd === 'version' && rest.length === 0)) {
+  // Bare `version` stays a local, dependency-free print. With a sub-verb
+  // (`version sync`) it is the Typer sub-app instead -- previously that
+  // silently printed the version and discarded `sync`.
   console.log(`company v${PKG.version}`);
 } else if (cmd === 'doctor') {
   doctor();
 } else if (cmd === 'start' || cmd === 'dev' || cmd === 'build' || cmd === 'serve') {
   checkDeps();
-  run(cmd, process.argv.slice(3));
-} else if (cmd === 'deploy') {
-  // Needs sub-verb + flags forwarded (up/status/destroy --provider ...).
-  run(cmd, process.argv.slice(3));
+  run(cmd, rest);
+} else if (SUBCOMMAND_VERBS.has(cmd)) {
+  // Sub-app verbs: forward the sub-verb and every flag verbatim.
+  run(cmd, rest);
 } else if (COMMANDS[cmd]) {
-  run(cmd);
+  run(cmd, rest);
 } else {
   console.error(`Unknown command: ${cmd}`);
   printHelp();

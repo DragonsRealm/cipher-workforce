@@ -315,8 +315,22 @@ main() {
   echo "    company start"
   echo ""
   echo "  Open in browser:"
-  APP_PORT=$(grep -E '^PYTHON_BACKEND_PORT=' .env.template 2>/dev/null | cut -d= -f2)
-  echo "    http://localhost:${APP_PORT}"
+  # `.env.template` ships inside the installed package. This used to grep it
+  # from the working directory, which for `curl | bash` is wherever the user
+  # happened to be -- so the line rendered as a bare "http://localhost:".
+  # Resolve through npm's global root instead, and stay silent about the port
+  # rather than hardcoding it if that lookup fails.
+  APP_PORT=""
+  NPM_ROOT="$(npm root -g 2>/dev/null)"
+  if [ -n "$NPM_ROOT" ] && [ -f "$NPM_ROOT/@zeenie-ai/opencompany/.env.template" ]; then
+    APP_PORT="$(grep -E '^PYTHON_BACKEND_PORT=' "$NPM_ROOT/@zeenie-ai/opencompany/.env.template" \
+      | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+  fi
+  if [ -n "$APP_PORT" ]; then
+    echo "    http://localhost:${APP_PORT}"
+  else
+    echo "    the URL printed by 'company start'"
+  fi
   echo ""
   echo "  Optional: Enable JS-rendered web scraping:"
   echo "    playwright install chromium"
