@@ -53,11 +53,39 @@ describe('deriveCanvasLock', () => {
     expect(running.reason).toContain('pause it to edit');
   });
 
-  it('falls back to the legacy broadcaster lock for the same workflow only', () => {
+  it('lets the server grant editing while paused even though the deployment lock is held', () => {
+    // Regression: pause keeps the deployment armed, so the legacy
+    // broadcaster lock stays held for the workflow's whole armed
+    // lifetime. The server's paused-is-editable grant must win — the
+    // legacy lock is a fallback for ungoverned workflows, never an
+    // override of the control plane's capability.
+    const legacyLocked = { locked: true, workflow_id: 'wf-1' };
+    expect(
+      deriveCanvasLock({
+        control: { state: 'paused', can_edit: true },
+        legacyLock: legacyLocked,
+        workflowId: 'wf-1',
+      }),
+    ).toEqual({ locked: false, reason: null });
+  });
+
+  it('falls back to the legacy broadcaster lock only when no generation governs the workflow', () => {
+    // `never_started` is the control plane's explicit "no generation
+    // exists" answer (serialize_control(None) and the FE placeholder
+    // both use it) — legacy deployments never create a control row, so
+    // the broadcaster lock decides for them.
     const legacyLocked = { locked: true, workflow_id: 'wf-1' };
     expect(
       deriveCanvasLock({
         control: { state: 'never_started', can_edit: true },
+        legacyLock: legacyLocked,
+        workflowId: 'wf-1',
+      }).locked,
+    ).toBe(true);
+
+    expect(
+      deriveCanvasLock({
+        control: null,
         legacyLock: legacyLocked,
         workflowId: 'wf-1',
       }).locked,

@@ -225,8 +225,13 @@ snapshot, so edits cannot corrupt in-flight runs — paused is exactly the
 "fix it, then resume" posture the recovery policies produce); locked while
 `starting` / `running` / transitional. On the client,
 [`lib/canvasLock.ts`](../client/src/lib/canvasLock.ts) maps the capability
-(plus the legacy broadcaster lock for deployments driven outside the
-control plane) to a boolean + reason; `Dashboard` feeds it to the React
+to a boolean + reason. Precedence is strict: once a generation governs the
+workflow (any state other than `never_started`), `can_edit` is rendered
+verbatim and the legacy broadcaster lock is **not** consulted — control-plane
+deployments hold that lock for their whole armed lifetime (paused included),
+so letting it override would deny the server's paused-is-editable grant. The
+legacy lock decides only for ungoverned workflows (deployments driven outside
+the control plane, which never create a control row); `Dashboard` feeds it to the React
 Flow interaction props AND a shared `guardCanvasEdit` toast-guard covering
 the paths those props cannot reach (palette drop, paste, context-menu
 delete/rename, node disable, parameter saves); `TopToolbar` shows a
