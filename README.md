@@ -9,7 +9,7 @@
 
 **Your own AI workforce, running on your own machine.**
 
-OpenCompany is an open-source, self-hosted canvas for AI agent workflows — think n8n, built agent-first. Drag, drop, and connect AI agents to your email, calendar, messages, browser, phone, and 25+ other services, with 115+ nodes to build from. No code required. No subscription. No usage limits. Bring your own API keys, or run models locally with Ollama / LM Studio for free.
+OpenCompany is an open-source, self-hosted canvas for AI agent workflows — think n8n, built agent-first. Drag, drop, and connect AI agents to your email, calendar, messages, browser, phone, and 30 other services, with 132 nodes across 27 categories to build from. No code required. No subscription. No usage limits. Bring your own API keys, or run models locally with Ollama / LM Studio for free.
 
 **[Read the docs →](https://docs.zeenie.xyz)**
 
@@ -24,8 +24,6 @@ company start
 
 Open http://localhost:5678 and click the key icon (**API Credentials**) in the toolbar to connect your first AI provider.
 
-> **Upgrading from MachinaOS?** Existing `~/.machina` and checkout-local `.machina` state is detected when the new `.opencompany` location does not yet exist, so databases and deployment state are not stranded. The `machina` command remains available as a deprecated legacy alias; new scripts should use `company`.
-
 <details>
 <summary><b>Run from source (for contributors)</b></summary>
 
@@ -37,7 +35,9 @@ pnpm run build
 pnpm run dev
 ```
 
-The `dev` task starts the Vite client (with HMR) at http://localhost:5678 — the same URL as production — proxying API/WebSocket traffic to the Python backend on :5679; optional daemons (WhatsApp, Temporal) are spawned by the backend on demand. See [SETUP.md](docs-internal/SETUP.md) and [SCRIPTS.md](docs-internal/SCRIPTS.md) for details, and [CONTRIBUTING.md](CONTRIBUTING.md) for the codebase map and contribution recipes.
+The `dev` task starts the Vite client (with HMR) at http://localhost:5678 — the same URL as production — proxying API/WebSocket traffic to the Python backend on :5679; optional daemons (WhatsApp, Temporal) are spawned by the backend on demand. Every port is declared in `.env.template` and overridable in `.env`; nothing is hardcoded. See [SETUP.md](docs-internal/SETUP.md) and [SCRIPTS.md](docs-internal/SCRIPTS.md) for details, and [CONTRIBUTING.md](CONTRIBUTING.md) for the codebase map and contribution recipes.
+
+**Upgrading from MachinaOS?** Existing `~/.machina` and checkout-local `.machina` state is detected when the new `.opencompany` location does not yet exist, so databases and deployment state are not stranded. The `machina` command remains available as a deprecated legacy alias; new scripts should use `company`.
 
 </details>
 
@@ -80,28 +80,33 @@ Three example workflows load automatically on first launch. Open them on the can
 
 ## AI Capabilities
 
-### 12 providers (11 dedicated model nodes, plus xAI through the OpenAI-compatible path) — bring your own keys or run locally
+### 13 providers, 12 dedicated model nodes — bring your own keys or run locally
 
 | Provider     | Notes                                                                    |
 |--------------|--------------------------------------------------------------------------|
-| OpenAI       | GPT-5 family, GPT-4.1, o-series reasoning models                         |
-| Anthropic    | Claude Fable 5, Opus 4.x, Sonnet 4.6, Haiku 4.5 — with extended thinking |
-| Google       | Gemini 3 Pro/Flash, 2.5 Pro/Flash — with reasoning budgets               |
-| DeepSeek     | DeepSeek V4 (Flash/Pro); chat/reasoner legacy aliases                    |
-| Kimi         | Kimi K2.6, K2.5, K2.7-Code                                               |
-| Mistral      | Mistral Large/Medium/Small, Codestral                                    |
-| Groq         | Llama 3.x, Qwen3, GPT-OSS (ultra-fast inference)                         |
-| Cerebras     | GPT-OSS-120b, GLM-4.7, Gemma-4-31b (custom AI hardware)                  |
+| OpenAI       | GPT-5.6 Sol / Terra / Luna (+ Pro variants), GPT-5.5, GPT-4.1            |
+| Anthropic    | Claude Opus 5, Fable 5, Sonnet 5, Opus 4.8 / 4.7 — with extended thinking |
+| Google       | Gemini 3.6 / 3.5 Flash, 3.1 Pro — with reasoning budgets                 |
+| xAI          | Grok 4.20, 4.20 multi-agent, 4.3 — selectable from any agent             |
+| DeepSeek     | DeepSeek V4 Flash / Pro                                                  |
+| Kimi         | Kimi K3                                                                  |
+| Mistral      | Mistral Large / Medium / Small, Codestral                                |
+| Groq         | GPT-OSS-120b and more (ultra-fast inference)                             |
+| Cerebras     | GPT-OSS-120b (custom AI hardware)                                        |
+| Sarvam       | Indic-first models (sarvam-105b, 128K context)                           |
 | OpenRouter   | 200+ models via one unified API                                          |
 | **Ollama**   | Run any local model on your machine — free, private, offline             |
 | **LM Studio**| Run any local model with a desktop app — free, private, offline          |
 
+Every provider talks to its vendor SDK directly through a native layer — no translation wrapper in between. xAI is the one provider without a standalone chat-model node; it is chosen from the agent's own provider dropdown, which is why there are 13 providers but 12 nodes.
+
 Local providers (Ollama, LM Studio) are first-class — context length is detected automatically from your running server (LM Studio additionally reports vision and tool-use capability). No paid API needed.
 
-### 16 specialized agent types
+### 20 agent node types
 
 | Agent              | Specialized for                                                          |
 |--------------------|--------------------------------------------------------------------------|
+| **AI Agent** / **Chat Agent** | The general-purpose agents most workflows start from          |
 | **AI Employee** / **Orchestrator** | Team leads that coordinate other agents                  |
 | Android Agent      | Phone control                                                            |
 | Web Agent          | Browser automation, scraping, search                                     |
@@ -117,12 +122,13 @@ Local providers (Ollama, LM Studio) are first-class — context length is detect
 | RLM Agent          | Recursive Language Model — write code that calls itself recursively      |
 | Autonomous Agent   | Code-mode loops that reduce token usage 80-98%                           |
 | Tool Agent         | General-purpose tool orchestration                                       |
+| Vertex Agents      | Google Vertex managed agents, plus an admin node for their lifecycle     |
 
 The Claude Code agent keeps warm interactive sessions in a pool (same session across turns, automatic resume after a crash) and runs on interactive billing — a Claude subscription login works instead of per-token API cost. The Codex agent sandboxes parallel tasks in git worktrees.
 
 ### Skills you can edit yourself
 
-Skills are short markdown files that teach an agent how to do something well — when to use which tool, what arguments to pass, common mistakes to avoid. Edit them in the UI; changes apply immediately. Built-in skills cover Android control, Google Workspace, social messaging, web research, coding, terminal use (Bash, PowerShell, WSL, Nushell), and more.
+Skills are short markdown files that teach an agent how to do something well — when to use which tool, what arguments to pass, common mistakes to avoid. Edit them in the UI; changes apply immediately. 73 ship built in across 18 folders, covering Android control, Google Workspace, social messaging, web research, coding, terminal use (Bash, PowerShell, WSL, Nushell), payments, deployment, and more — and you can drop your own into `.opencompany/skills/`, where they override the built-ins of the same name.
 
 ### Memory that scales with your context window
 
@@ -145,7 +151,7 @@ Memory-connected agent runs calculate USD cost from provider-reported usage when
 - **Live execution animations** — nodes glow while running, AI agents show iteration counts, errors surface inline.
 - **Chat + Console panel** — a resizable bottom panel with a chat pane for talking to trigger nodes, plus Console and Terminal tabs for logs and live process output.
 - **Component palette** with search, categories, and a Normal/Dev mode toggle that hides advanced nodes when you don't need them.
-- **5-step onboarding wizard** for first-time users, replayable any time from Settings.
+- **4-step onboarding wizard** for first-time users, replayable any time from Settings.
 
 ## For Developers
 
@@ -158,10 +164,16 @@ Want to add a node, LLM provider, skill, or integration? One Python file = one n
 - **Hosted docs:** https://docs.zeenie.xyz/
 - **DeepWiki:** https://deepwiki.com/zeenie-ai/OpenCompany
 
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the fork/branch/PR workflow, the repository map, and recipes for adding a node, LLM provider, or skill.
+
+One note on scope: connector and provider lists are kept deliberately narrow. The Apify node runs any actor through its `custom` option, and agents reach any OpenAI-compatible endpoint through the existing provider path — so a new first-class preset needs a reason beyond "my service could be in the dropdown too."
+
 ## Community
 
 [Discord](https://discord.gg/c9pCJ7d8Ce) — the fastest way to get help, request features, and follow design discussions.
 
 ## License
 
-MIT
+[MIT](LICENSE) — © 2025 MachinaOs, © 2026 OpenCompany contributors.

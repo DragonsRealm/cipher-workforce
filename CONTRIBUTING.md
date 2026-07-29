@@ -17,11 +17,11 @@ See [SETUP.md](docs-internal/SETUP.md) for environment setup and [SCRIPTS.md](do
 
 At a glance:
 
-- **115+ workflow nodes** across ~30 palette groups (live count: glob `server/nodes/**/__init__.py`; group list: `server/nodes/groups.py`; one self-contained plugin folder per node under `server/nodes/<group>/`)
-- **12 native LLM providers** (10 cloud providers plus Ollama and LM Studio; 11 standalone chat-model nodes because xAI is selected directly by agent nodes)
+- **132 workflow nodes** across 27 populated palette groups (live count: `len(services.node_registry.NODE_METADATA)` *after* importing `nodes` — a bare `server/nodes/**/__init__.py` glob both over-counts helper packages and under-counts groups that hold several node types in one package; group list: `server/nodes/groups.py`)
+- **13 native LLM providers** (11 cloud providers plus Ollama and LM Studio; 12 standalone chat-model nodes because xAI is selected directly by agent nodes)
 - **Specialized AI agents** with the Agent Teams delegation pattern — SSOT is the `AI_AGENT_TYPES` frozenset in `server/constants.py`, which spans the base/specialized/team-lead agents plus the CLI-backed (`claude_code_agent`, `rlm_agent`) and Vertex-hosted (`vertex_managed_agent`) variants; `codex_agent` is a sibling CLI-agent plugin
 - **WebSocket-first API** replacing most REST endpoints (live handler count = `MESSAGE_HANDLERS` + plugin registries)
-- **65+ built-in skills**, editable in-UI with SKILL.md defaults on disk (live count: glob `server/skills/**/SKILL.md`)
+- **73 built-in skills** across 18 folders, editable in-UI with SKILL.md defaults on disk (live count: glob `server/skills/**/SKILL.md`)
 - **Two execution modes** with automatic fallback: Temporal distributed, sequential
 
 ## How Workflows Execute
