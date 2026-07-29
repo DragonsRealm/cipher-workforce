@@ -1,6 +1,6 @@
 # OpenCompany Design System — Claude Code Implementation Guide
 
-This bundle is the **OpenCompany (zeenie.ai) design system**: real design tokens, reference React components, full-screen UI-kit recreations, and foundation/theme documentation. Hand it to Claude Code to implement OpenCompany-branded UI in a real codebase.
+This bundle is the **OpenCompany (opencompany.sh) design system**: real design tokens, reference React components, full-screen UI-kit recreations, and foundation/theme documentation. Hand it to Claude Code to implement OpenCompany-branded UI in a real codebase.
 
 > **What these files are.** `styles.css` + everything under `tokens/` is **production-ready CSS** — ship it as-is. Everything under `components/`, `ui_kits/`, and `guidelines/` is a **design reference**: faithful prototypes (React with inline styles that read the CSS variables) showing the intended look, anatomy, and behavior. Recreate them in the target codebase's own environment and patterns (your component library, your styling system) rather than copying verbatim. If there's no environment yet, React + plain CSS variables is the path of least resistance because the components are already written that way.
 

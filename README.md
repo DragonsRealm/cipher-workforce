@@ -11,7 +11,7 @@
 
 OpenCompany is an open-source, self-hosted canvas for AI agent workflows — think n8n, built agent-first. Drag, drop, and connect AI agents to your email, calendar, messages, browser, phone, and 30 other services, with 132 nodes across 27 categories to build from. No code required. No subscription. No usage limits. Bring your own API keys, or run models locally with Ollama / LM Studio for free.
 
-**[Read the docs →](https://docs.zeenie.xyz)**
+**[Read the docs →](https://docs.opencompany.sh)**
 
 ## Quick Start
 
@@ -161,7 +161,7 @@ Want to add a node, LLM provider, skill, or integration? One Python file = one n
 - **[server/nodes/README.md](server/nodes/README.md)** — 5-minute plugin recipe + folder map
 - **[docs-internal/](docs-internal/)** — deep-dive architecture docs (execution engine, Temporal, LLM layer, credentials, event system, performance, build pipeline)
 - **[CLAUDE.md](CLAUDE.md)** — comprehensive project memory (great for AI-assisted contributions)
-- **Hosted docs:** https://docs.zeenie.xyz/
+- **Hosted docs:** https://docs.opencompany.sh/
 - **DeepWiki:** https://deepwiki.com/zeenie-ai/OpenCompany
 
 ## Contributing

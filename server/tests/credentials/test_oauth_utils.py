@@ -27,7 +27,7 @@ class TestGetBaseUrl:
         assert get_base_url(_conn("ws://localhost:5678/ws/status")) == "http://localhost:5678"
 
     def test_wss_scheme_becomes_https(self):
-        assert get_base_url(_conn("wss://flow.zeenie.xyz/ws/status")) == "https://flow.zeenie.xyz"
+        assert get_base_url(_conn("wss://flow.opencompany.sh/ws/status")) == "https://flow.opencompany.sh"
 
     def test_http_scheme_preserved(self):
         assert get_base_url(_conn("http://localhost:5678/api/google")) == "http://localhost:5678"
@@ -58,8 +58,8 @@ class TestGetRedirectUri:
     @patch("services.oauth_utils.get_oauth_callback_path")
     def test_twitter_prod_https(self, mock_lookup):
         mock_lookup.return_value = "/api/twitter/callback"
-        uri = get_redirect_uri(_conn("wss://flow.zeenie.xyz/ws/status"), "twitter")
-        assert uri == "https://flow.zeenie.xyz/api/twitter/callback"
+        uri = get_redirect_uri(_conn("wss://flow.opencompany.sh/ws/status"), "twitter")
+        assert uri == "https://flow.opencompany.sh/api/twitter/callback"
         mock_lookup.assert_called_once_with("twitter")
 
     def test_unknown_provider_falls_back_to_default_path(self):

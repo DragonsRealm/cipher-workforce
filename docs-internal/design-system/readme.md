@@ -1,15 +1,15 @@
-# OpenCompany Design System (zeenie.ai)
+# OpenCompany Design System (opencompany.sh)
 
-Design system for **OpenCompany** — zeenie.ai's open-source, local-first AI workflow OS. "Your own AI assistant that does real work": users drag, drop, and connect AI agents to email, calendar, messages, phone, and 50+ services on a visual node canvas, then run or deploy workflows that keep running in the background. No code, no subscription; bring your own API keys or run models locally.
+Design system for **OpenCompany** — opencompany.sh's open-source, local-first AI workflow OS. "Your own AI assistant that does real work": users drag, drop, and connect AI agents to email, calendar, messages, phone, and 50+ services on a visual node canvas, then run or deploy workflows that keep running in the background. No code, no subscription; bring your own API keys or run models locally.
 
 **Sources** (explore these to design even better against this product):
 - GitHub: https://github.com/zeenie-ai/OpenCompany — primary source. Key design files: `client/src/index.css` (all color/role tokens), `client/src/themes/{base,light,dark}.css` (contract tokens: surfaces, type, motion), `client/tailwind.config.js`, `client/src/components/ui/` (TopToolbar, ComponentPalette, ActionButton, StatusBar, WorkflowSidebar…), `client/src/components/SquareNode.tsx` (canvas node anatomy), `client/src/assets/icons/index.ts` (icon resolver).
-- Hosted docs: https://docs.zeenie.xyz/ · DeepWiki: https://deepwiki.com/zeenie-ai/OpenCompany
+- Hosted docs: https://docs.opencompany.sh/ · DeepWiki: https://deepwiki.com/zeenie-ai/OpenCompany
 - Reference screenshot: `assets/product-canvas-screenshot.png` (real product — dark canvas, neon nodes, WhatsApp automation demo).
 
 ## Product surfaces
 1. **OpenCompany app** (`localhost:3000`) — the core product. A three-zone desktop workspace: workflow sidebar (left), node canvas (center), component palette (right), top toolbar, bottom status bar, multi-tab console dock. Recreated in `ui_kits/opencompany/`.
-2. **Marketing/docs** (zeenie.ai, docs.zeenie.xyz) — not in the repo; no UI kit was fabricated for them. Use the foundations here plus the README voice when designing those.
+2. **Marketing/docs** (opencompany.sh, docs.opencompany.sh) — not in the repo; no UI kit was fabricated for them. Use the foundations here plus the README voice when designing those.
 
 The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk…). This design system encodes the two canonical ones: **light** (default `:root`) and **dark** (`class="dark"` — the signature look used in every screenshot and demo).
 
@@ -19,7 +19,7 @@ The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk�
 
 **Voice: confident, concrete, slightly conspiratorial about doing less work.** The README sells outcomes, not features: "doing the work you'd rather not", "Agent teams that delegate", "Code execution that's actually safe".
 
-- **Second person, possessive.** "Your own AI assistant", "your data stays with you", "your machine". The product is *yours*; zeenie.ai rarely says "we".
+- **Second person, possessive.** "Your own AI assistant", "your data stays with you", "your machine". The product is *yours*; opencompany.sh rarely says "we".
 - **Short declarative fragments for value props.** "No code required. No subscription. No usage limits."
 - **Sentence case everywhere** — headings ("What You Can Build" is Title Case in README headers, but UI copy is sentence case: "No workflows yet", "Create your first workflow to get started"). Buttons are single words or short verb phrases: **Start**, **Stop**, **Save**, **New Workflow**, **Apply All**.
 - **UI microcopy is terse and systemy.** Status bar reads like a shell prompt: `ONLINE | WF: Test | NODES: 12 | THEME: DARK | 14:02:33`. States: "Saved" / "Modified". Tooltips are full sentences: "Override all agent nodes in this workflow to use the selected model".
@@ -80,6 +80,6 @@ The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk�
 ## Caveats
 - **Fonts substituted:** Geist served from Google Fonts instead of the app's bundled `@fontsource-variable/geist` (same typeface, different delivery). Drop real `.woff2` files into `tokens/` + add `@font-face` if pixel-exact metrics matter.
 - **No official logo found in the repo** (favicon is the Vite placeholder; README hero is a GitHub user-attachment). The wordmark card sets "OpenCompany" in Geist 600 as a stand-in — replace with the real mark when available.
-- zeenie.ai marketing site isn't in the repo; no marketing UI kit was invented.
+- opencompany.sh marketing site isn't in the repo; no marketing UI kit was invented.
 - The app's 10 themed skins are analyzed in `guidelines/THEMES.md` (token contract, per-theme matrix, porting recipe) with sources in `reference/themes/` — but only light/dark are encoded as live token scopes here. Ask to port a skin (e.g. Cyber) into `tokens/` if you want it usable.
 - **Motion** is documented in `guidelines/ANIMATIONS.md` and encoded in `tokens/animations.css` (per-theme `--dur`/`--ease`/`--motion-style` scopes + signature keyframes for all 12 themes). Live demo: `guidelines/animations-all-themes.html`.

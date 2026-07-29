@@ -164,7 +164,7 @@ Android support uses a two-state model because a relay WebSocket can be connecte
 
 | State | Meaning | Frontend behavior |
 |---|---|---|
-| `connected` | Relay WebSocket to `wss://relay.zeenie.xyz/ws` is active | Not shown directly |
+| `connected` | Relay WebSocket to `wss://relay.opencompany.sh/ws` is active | Not shown directly |
 | `paired` | Android app has scanned QR and established session | Green dot on Android nodes |
 
 ```

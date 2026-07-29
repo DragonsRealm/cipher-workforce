@@ -1779,7 +1779,7 @@ The Android relay system uses a **two-state model** for connection status:
 | `paired` | Android device has scanned QR and is paired via relay | Green/Red status dot |
 
 **Key Concepts:**
-- **Relay Connection**: The WebSocket connection to `wss://relay.zeenie.xyz/ws` - can be active without a device
+- **Relay Connection**: The WebSocket connection to `wss://relay.opencompany.sh/ws` - can be active without a device
 - **Device Pairing**: An Android device scans the QR code and pairs - required for service execution
 - **Android service nodes require pairing**, not just relay connection, to execute
 

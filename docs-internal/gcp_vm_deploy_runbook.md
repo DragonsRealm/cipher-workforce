@@ -6,7 +6,7 @@ Written to be executable by an AI agent (or a human) with no other context.
 
 This is the manual path — it does NOT use `company deploy` / Terraform
 (`cli/commands/deploy/`, `cli/terraform/`). It was derived from a real deployment to
-`demo.zeenie.xyz` (June 2026, before the scoped-package cutover) and encodes every pitfall hit on the way.
+`demo.opencompany.sh` (June 2026, before the scoped-package cutover) and encodes every pitfall hit on the way.
 Re-validated July 2026 against `0.0.95` with an **IP-only variant** (no Cloudflare /
 domain — skip step 4): pitfalls 2 and 3 are fixed in `>= 0.0.95` (annotated below),
 and pitfalls 11-13 were added from that run.
@@ -24,9 +24,9 @@ Decide these up front; they appear in commands below as `<PLACEHOLDERS>`.
 | `<VM_NAME>` | `demo` | Instance name |
 | `<REGION>` / `<ZONE>` | `asia-south1` / `asia-south1-a` | Mumbai. Any region works |
 | `<IP_NAME>` | `opencompany-india-ip` | Name for the reserved static IP |
-| `<DOMAIN>` | `demo.zeenie.xyz` | Must be a subdomain of a zone in the Cloudflare account |
+| `<DOMAIN>` | `demo.opencompany.sh` | Must be a subdomain of a zone in the Cloudflare account |
 | `<SUBDOMAIN>` | `demo` | The record name within the zone |
-| `<OWNER_EMAIL>` | `rohith@zeenie.xyz` | Login email for the owner account |
+| `<OWNER_EMAIL>` | `owner@opencompany.sh` | Login email for the owner account |
 | `<OWNER_PASSWORD>` | (generated) | >= 8 chars; generate 20-char alphanumeric if not supplied |
 | `<JWT_KEY>` `<SECRET_KEY>` `<ENC_KEY>` | (generated) | Three independent 48-hex secrets |
 
@@ -304,7 +304,7 @@ JSON `--body` (individual flags like `--type/--name` are NOT supported):
 ```bash
 cf zones list                          # find the zone; grab account id from the output
 cf context set account-id <ACCOUNT_ID>
-cf context set zone <ZONE_DOMAIN>      # e.g. zeenie.xyz
+cf context set zone <ZONE_DOMAIN>      # e.g. opencompany.sh
 cf dns records list                    # check the name is free
 cf dns records create --body '{"type":"A","name":"<SUBDOMAIN>","content":"<STATIC_IP>","proxied":true,"ttl":1,"comment":"OpenCompany VM <ZONE> (gcloud, opencompany@latest)"}'
 ```

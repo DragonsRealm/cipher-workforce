@@ -193,7 +193,7 @@ services:
 
 ### Nginx Configuration
 
-Located at `/etc/nginx/sites-available/flow.zeenie.xyz`:
+Located at `/etc/nginx/sites-available/flow.opencompany.sh`:
 - Frontend: `/` -> `http://127.0.0.1:3000`
 - Backend API: `/api/` -> `http://127.0.0.1:3010/api/`
 - WebSocket: `/ws/` -> `http://127.0.0.1:3010/ws/` (with upgrade headers)

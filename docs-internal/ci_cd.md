@@ -29,7 +29,7 @@ The repo currently ships **three workflows** plus one composite action. A number
 
 > Documentation is NOT deployed from this repo: the Mintlify docs live in
 > the separate [zeenie-ai/docs-OpenCompany](https://github.com/zeenie-ai/docs-OpenCompany)
-> repo and auto-deploy to docs.zeenie.xyz via the Mintlify GitHub app
+> repo and auto-deploy to docs.opencompany.sh via the Mintlify GitHub app
 > (that repo's own workflow only runs `mintlify validate` + broken-links).
 
 ### Workflow summary
@@ -134,7 +134,7 @@ There is currently no audit gate, no PyPI publish, no SLSA `attest-build-provena
 
 ## Documentation deployment (separate repo)
 
-The public Mintlify docs (docs.zeenie.xyz) live in the separate
+The public Mintlify docs (docs.opencompany.sh) live in the separate
 [zeenie-ai/docs-OpenCompany](https://github.com/zeenie-ai/docs-OpenCompany)
 repo. Deployment happens automatically via the Mintlify GitHub app on
 pushes to that repo's `main`; its own workflow only validates

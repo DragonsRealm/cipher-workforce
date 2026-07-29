@@ -8,7 +8,7 @@ from each plugin's ``__init__.py``); the base URL (scheme + host + port) comes
 from the connection itself.
 
     ws://localhost:5678/ws/status    -> http://localhost:5678/api/google/callback
-    wss://flow.zeenie.xyz/ws/status  -> https://flow.zeenie.xyz/api/google/callback
+    wss://flow.opencompany.sh/ws/status  -> https://flow.opencompany.sh/api/google/callback
     http://localhost:5678/api/google -> http://localhost:5678/api/google/callback
 """
 

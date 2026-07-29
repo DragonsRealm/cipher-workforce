@@ -49,7 +49,7 @@ Examples:
   company build          # Build for production
 
 Compatibility: the legacy \`machina\` command remains available but is deprecated.
-Documentation: https://docs.zeenie.xyz/
+Documentation: https://docs.opencompany.sh/
 `);
 }
 

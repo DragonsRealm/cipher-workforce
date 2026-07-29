@@ -346,7 +346,7 @@ Provider × table examples:
 `encrypt(plaintext) -> str` / `decrypt(ciphertext) -> str`. Decryption raises `ValueError` on tampering/wrong-key, `RuntimeError` if `initialize()` was never called.
 
 ### 4.5 Runtime redirect URI derivation
-[server/services/oauth_utils.py](../server/services/oauth_utils.py) `get_redirect_uri(connection, provider)` derives the OAuth callback URI from the live `WebSocket.base_url` (or `Request.base_url`) — converting `ws(s)` to `http(s)` and appending the path from `config/google_apis.json`. No hardcoded hostnames or ports. Works in dev (`http://localhost:5678/api/google/callback`) and prod (`https://flow.zeenie.xyz/api/google/callback`) without env vars.
+[server/services/oauth_utils.py](../server/services/oauth_utils.py) `get_redirect_uri(connection, provider)` derives the OAuth callback URI from the live `WebSocket.base_url` (or `Request.base_url`) — converting `ws(s)` to `http(s)` and appending the path from `config/google_apis.json`. No hardcoded hostnames or ports. Works in dev (`http://localhost:5678/api/google/callback`) and prod (`https://flow.opencompany.sh/api/google/callback`) without env vars.
 
 ---
 
