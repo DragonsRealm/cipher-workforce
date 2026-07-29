@@ -241,10 +241,10 @@ When `TEMPORAL_PER_TYPE_DISPATCH=true` and the run is happening inside a Tempora
 
 This means tool calls inside an agent loop get Temporal's retry / timeout / heartbeat semantics independently of the parent agent's. A `code-exec` task burns its own retries; a `browser` task survives past the parent's `start_to_close_timeout` via its own heartbeat. See [TEMPORAL_ARCHITECTURE.md](./TEMPORAL_ARCHITECTURE.md).
 
-Histories recorded before the engine marker existed deterministically replay
-the frozen LangChain branch, which rebuilds the historical `StructuredTool`
-surface. That compatibility branch is selected only by the missing
-`llm_engine` marker; it is not the path for new executions.
+Histories recorded before the engine marker existed cannot replay: their tool
+and message shapes belong to a retired wire format, so `execute_llm_step`
+refuses them with a non-retryable `InvalidAgentLLMEngine` instead of
+reconstructing them.
 
 ## 10. Auto-skill edges
 

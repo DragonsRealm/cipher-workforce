@@ -82,8 +82,8 @@ flowchart TD
   child-agent tool discovery).
 - **Native agent loop**: current executions call the shared
   `run_native_agent_loop` / `run_native_llm_step` service through
-  `ChatUnifier`. The LangChain tool-binding loop is retained only for
-  replaying eligible pre-cutover or emergency-pinned Temporal histories.
+  `ChatUnifier`. It is the only loop; pre-cutover Temporal histories are
+  refused rather than replayed.
 - **Task context injection** mirrors `aiAgent`: `format_task_context` wraps
   the task result as a plain-English instruction that the LLM must "report
   naturally", then all tools are stripped if the task has already completed

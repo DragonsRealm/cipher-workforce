@@ -251,8 +251,8 @@ Temporal activities.
 `prepare_payload.v1` records `llm_engine` and the message wire version;
 new executions use native Message Wire V2, preserving Gemini thought
 signatures, Anthropic signed/redacted thinking, and OpenAI continuation
-metadata. Histories recorded before cutover lack that engine field and
-deterministically use the temporary LangChain compatibility branch.
+metadata. Histories recorded before cutover lack that engine field; their
+messages are in a retired wire format and the LLM step refuses them.
 `persist_turn.v1` appends per turn, so a mid-loop failure does not lose
 progress.
 

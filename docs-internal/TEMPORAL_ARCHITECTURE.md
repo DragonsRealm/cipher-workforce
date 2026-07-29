@@ -411,13 +411,12 @@ The `agent.prepare_payload.v1` result is recorded in history and therefore
 acts as the deterministic engine selector. New executions default to
 `llm_engine="native"` with Message Wire V2 and use `ChatUnifier` plus the
 native provider SDKs for every turn. Histories whose recorded prepare result
-has no engine marker are pre-cutover histories and follow the frozen LangChain
-path with their historical payload, activity commands, and message shape. The
-temporary `AGENT_LLM_ENGINE=langchain` emergency switch can also pin a newly
-prepared execution to that compatibility path. Those emergency executions are
-marker-bearing histories whose recorded `llm_engine` is `langchain`; they
-continue replaying the compatibility branch just like markerless pre-cutover
-histories. Changing the environment cannot change an execution after it starts,
+has no engine marker are pre-cutover histories: their messages are in a retired
+wire format the native reader cannot interpret, so `agent.execute_llm_step.v1`
+refuses them with a non-retryable
+`ApplicationError(type="InvalidAgentLLMEngine")` rather than misreading them.
+The operator fix is to Reset the deployment, which starts a fresh generation.
+Changing the environment cannot change an execution after it starts,
 and a native run never falls back after a provider request starts.
 
 `emit_phase(phase, status?)` is a thin helper that schedules `agent.broadcast_progress.v1`. The activity emits `WorkflowEvent.agent_progress` (CloudEvents v1.0, `type="com.opencompany.agent.progress"`) for FE consumers; when `status` is supplied it also drives a raw-dict `update_node_status` for the canvas-glow color (executing / success / error). Same dual-channel pattern F4.A's `_node_activity` uses. When this workflow is itself a delegated child (`context["parent_node_id"]` set), every `emit_phase` call ALSO schedules a second broadcast against the parent's `node_id` with `phase="delegating"` — the parent's canvas badge then advances in real time while the child loops, instead of freezing at "executing" glow until the child completes.
@@ -633,7 +632,6 @@ through `Settings`:
 
 | Env var | `.env.template` default | Purpose |
 |---|---|---|
-| `AGENT_LLM_ENGINE` | `native` | `agent.prepare_payload.v1` reads this with `os.getenv` and records `native` or `langchain` in each new execution's prepare result. It affects only executions prepared after the environment changes; recorded histories keep their selected engine. `langchain` is the emergency compatibility setting and is removed with the legacy replay branch in Stage 2. |
 
 ## Debugging
 

@@ -513,10 +513,10 @@ Both flags default to `true` in `.env.template`.
 
 New `AgentWorkflow` executions record `llm_engine="native"` and
 `message_wire_version=2` in the `agent.prepare_payload.v1` result by default.
-Recorded histories whose prepare result predates those markers replay the
-frozen LangChain / `StructuredTool` branch. The temporary
-`AGENT_LLM_ENGINE=langchain` emergency setting can also create a marker-bearing
-prepare result explicitly pinned to that compatibility branch. Marker-bearing
+Recorded histories whose prepare result predates those markers cannot run:
+`agent.execute_llm_step.v1` refuses them with a non-retryable
+`InvalidAgentLLMEngine`, because their messages are in a retired wire format.
+Marker-bearing
 native executions never fall back after a provider request starts, and changing
 the environment does not alter an execution whose prepare result is already in
 history.
