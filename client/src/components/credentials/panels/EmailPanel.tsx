@@ -43,6 +43,7 @@ import { NodeIcon } from '../../../assets/icons';
 import { StatusCard } from '../primitives';
 import {
   AUTH_NOTES,
+  ENCRYPTION_OPTIONS,
   PROVIDER_OPTIONS,
   createEmailFormSchema,
   type EmailFormValues,
@@ -53,11 +54,36 @@ const DEFAULT_VALUES: EmailFormValues = {
   provider: 'gmail',
   address: '',
   password: '',
+  displayName: '',
   imapHost: '',
   imapPort: 993,
+  imapEncryption: 'tls',
   smtpHost: '',
   smtpPort: 465,
+  smtpEncryption: 'tls',
 };
+
+/** Server-specific keys, written only for the `custom` provider and cleared
+ *  when switching away from it. */
+const CUSTOM_SERVER_KEYS = [
+  'email_imap_host',
+  'email_imap_port',
+  'email_imap_encryption',
+  'email_smtp_host',
+  'email_smtp_port',
+  'email_smtp_encryption',
+] as const;
+
+/** Every key this panel owns. `resolve_credentials` in
+ *  `server/nodes/email/_service.py` reads exactly these — keep the two in
+ *  sync, or a key becomes unsettable (or un-removable) from the UI. */
+const ALL_EMAIL_KEYS = [
+  'email_provider',
+  'email_address',
+  'email_password',
+  'email_display_name',
+  ...CUSTOM_SERVER_KEYS,
+] as const;
 
 const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ config, visible }) => {
   const { saveApiKey, getStoredApiKey, hasStoredKey, removeApiKey, isConnected } = useApiKeys();
@@ -85,24 +111,41 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
     let cancelled = false;
     (async () => {
       try {
-        const [providerKey, addr, hasPassword, imapHost, imapPort, smtpHost, smtpPort] = await Promise.all([
+        const [
+          providerKey,
+          addr,
+          hasPassword,
+          displayName,
+          imapHost,
+          imapPort,
+          imapEncryption,
+          smtpHost,
+          smtpPort,
+          smtpEncryption,
+        ] = await Promise.all([
           getStoredApiKey('email_provider'),
           getStoredApiKey('email_address'),
           hasStoredKey('email_password'),
+          getStoredApiKey('email_display_name'),
           getStoredApiKey('email_imap_host'),
           getStoredApiKey('email_imap_port'),
+          getStoredApiKey('email_imap_encryption'),
           getStoredApiKey('email_smtp_host'),
           getStoredApiKey('email_smtp_port'),
+          getStoredApiKey('email_smtp_encryption'),
         ]);
         if (cancelled) return;
         form.reset({
           provider: providerKey || 'gmail',
           address: addr || '',
           password: '',
+          displayName: displayName || '',
           imapHost: imapHost || '',
           imapPort: imapPort ? parseInt(imapPort, 10) : 993,
+          imapEncryption: (imapEncryption as EmailFormValues['imapEncryption']) || 'tls',
           smtpHost: smtpHost || '',
           smtpPort: smtpPort ? parseInt(smtpPort, 10) : 465,
+          smtpEncryption: (smtpEncryption as EmailFormValues['smtpEncryption']) || 'tls',
         });
         setAddress(addr || '');
         setStored(hasPassword);
@@ -120,11 +163,21 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
       await saveApiKey('email_provider', values.provider);
       await saveApiKey('email_address', values.address.trim());
       if (values.password?.trim()) await saveApiKey('email_password', values.password.trim());
+      await saveApiKey('email_display_name', values.displayName?.trim() || '');
       if (values.provider === 'custom') {
+        // The `custom` preset is blank server-side, so these stored keys are
+        // the only source for host/port/encryption — all six must be written.
         if (values.imapHost) await saveApiKey('email_imap_host', values.imapHost.trim());
         if (values.imapPort != null) await saveApiKey('email_imap_port', String(values.imapPort));
+        if (values.imapEncryption) await saveApiKey('email_imap_encryption', values.imapEncryption);
         if (values.smtpHost) await saveApiKey('email_smtp_host', values.smtpHost.trim());
         if (values.smtpPort != null) await saveApiKey('email_smtp_port', String(values.smtpPort));
+        if (values.smtpEncryption) await saveApiKey('email_smtp_encryption', values.smtpEncryption);
+      } else {
+        // Switching away from `custom` must clear the server-specific keys.
+        // Leaving them behind stranded a stale host in the store, which then
+        // silently won the `or` chain for any preset field left blank.
+        await Promise.all(CUSTOM_SERVER_KEYS.map((key) => removeApiKey(key).catch(() => undefined)));
       }
       setStored(true);
       setAddress(values.address.trim());
@@ -140,15 +193,7 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
     setLoading('remove');
     setError(null);
     try {
-      await Promise.all([
-        removeApiKey('email_password'),
-        removeApiKey('email_address'),
-        removeApiKey('email_provider'),
-        removeApiKey('email_imap_host'),
-        removeApiKey('email_imap_port'),
-        removeApiKey('email_smtp_host'),
-        removeApiKey('email_smtp_port'),
-      ]);
+      await Promise.all(ALL_EMAIL_KEYS.map((key) => removeApiKey(key)));
       setStored(false);
       setAddress('');
       form.reset(DEFAULT_VALUES);
@@ -251,6 +296,24 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
             )}
           />
 
+          <FormField
+            control={form.control}
+            name="displayName"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  Display Name
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">(optional)</span>
+                </FormLabel>
+                <FormControl>
+                  <Input placeholder="Alice Example" {...field} value={field.value ?? ''} />
+                </FormControl>
+                <FormDescription>Shown as the sender name on outgoing mail.</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           {provider === 'custom' && (
             <div className="rounded-md border border-border bg-muted p-3">
               <div className="mb-3 text-sm font-medium">Custom IMAP / SMTP</div>
@@ -288,6 +351,30 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="imapEncryption"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>IMAP Security</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? 'tls'}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ENCRYPTION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
               <div className="mt-3 flex gap-3">
                 <FormField
@@ -319,6 +406,30 @@ const EmailPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = ({ co
                           onChange={(e) => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="smtpEncryption"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>SMTP Security</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? 'tls'}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ENCRYPTION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}

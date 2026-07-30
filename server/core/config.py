@@ -2,7 +2,7 @@
 
 from typing import List, Literal, Optional
 from pathlib import Path
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -41,6 +41,35 @@ def dev_secret_offenders(settings) -> list[str]:
     return offenders
 
 
+def cookie_posture_warnings(settings) -> list[str]:
+    """Human-readable warnings about a risky session-cookie configuration.
+
+    Warnings, not failures. The defaults are deliberately permissive because
+    `company deploy` reaches the VM over plain HTTP on its IP and explicitly
+    sets ``JWT_COOKIE_SECURE=false``; flipping the default would break every
+    LAN/IP deployment with the worst possible symptom -- login appearing to
+    succeed and then immediately logging out.
+
+    Duck-typed like ``dev_secret_offenders`` so tests can pass a stub.
+    """
+    warnings: list[str] = []
+
+    if not getattr(settings, "jwt_cookie_secure", False) and getattr(settings, "deployment_mode", "local") != "local":
+        warnings.append(
+            "JWT_COOKIE_SECURE=false outside local deployment: the session cookie "
+            "will travel over plaintext HTTP."
+        )
+
+    origins = getattr(settings, "cors_origins", []) or []
+    if "*" in origins:
+        warnings.append(
+            "CORS_ORIGINS contains '*' while credentialed CORS is enabled: any "
+            "origin can make authenticated requests."
+        )
+
+    return warnings
+
+
 class Settings(BaseSettings):
     """Application settings driven entirely by environment variables."""
 
@@ -62,6 +91,13 @@ class Settings(BaseSettings):
     jwt_cookie_name: str = Field(default="opencompany_token", env="JWT_COOKIE_NAME")
     jwt_cookie_secure: bool = Field(default=False, env="JWT_COOKIE_SECURE")  # True in production
     jwt_cookie_samesite: Literal["lax", "strict", "none"] = Field(default="lax", env="JWT_COOKIE_SAMESITE")
+
+    # Login/registration throttling. Defaults are deliberately tighter than
+    # the generic `rate_limit_*` fields below (100/60s), which are far too
+    # loose for a password endpoint.
+    auth_rate_limit_enabled: bool = Field(default=True, env="AUTH_RATE_LIMIT_ENABLED")
+    auth_rate_limit_attempts: int = Field(default=10, env="AUTH_RATE_LIMIT_ATTEMPTS", ge=1)
+    auth_rate_limit_window: int = Field(default=300, env="AUTH_RATE_LIMIT_WINDOW", ge=1)
 
     # Security
     secret_key: str = Field(env="SECRET_KEY", min_length=32)
@@ -450,6 +486,23 @@ class Settings(BaseSettings):
     @classmethod
     def _expanduser_path(cls, v: Optional[str]) -> Optional[str]:
         return str(Path(v).expanduser()) if v else v
+
+    @model_validator(mode="after")
+    def _reject_unusable_cookie_combination(self):
+        """Fail fast on `SameSite=None` without `Secure`.
+
+        Every current browser rejects that cookie outright, so the app would
+        boot fine and then silently refuse to keep anyone logged in. This is
+        the one cookie misconfiguration worth failing on rather than warning
+        about -- see `cookie_posture_warnings` for the rest.
+        """
+        if self.jwt_cookie_samesite == "none" and not self.jwt_cookie_secure:
+            raise ValueError(
+                "JWT_COOKIE_SAMESITE=none requires JWT_COOKIE_SECURE=true; "
+                "browsers reject a SameSite=None cookie that is not Secure, "
+                "which silently breaks login."
+            )
+        return self
 
     @property
     def database_url(self) -> str:

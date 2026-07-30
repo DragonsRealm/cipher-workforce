@@ -53,17 +53,32 @@ class User(SQLModel, table=True):
 ```
 
 ### Auth Service (`server/services/user_auth.py`)
-- `register_user()` - Creates new user, sets as owner if first user in single mode
-- `authenticate_user()` - Validates credentials, returns user
-- `create_token()` - Generates JWT token
+- `register()` - Creates a new user; sets `is_owner` if first user in single mode.
+  Eligibility checks and the INSERT share ONE session (they used to span four,
+  so two concurrent first-registrations could both be granted ownership), and a
+  `IntegrityError` on the email UNIQUE index returns a 400-shaped error rather
+  than surfacing as a 500.
+- `login()` - Validates credentials, returns `(user, error)`. Every rejection
+  returns the same `"Invalid email or password"`, and the unknown-email path
+  still runs a bcrypt comparison against a dummy hash — distinct messages and
+  an early return were both account-enumeration oracles on a public endpoint.
+- `create_access_token()` - Mints the JWT (HS256, `sub`/`email`/`display_name`/
+  `is_owner`/`exp`/`iat`/`nbf`/`jti`). No `iss`/`aud`: enforcing them would
+  invalidate every token already held by a browser for negligible benefit in a
+  single-audience app with a per-deployment secret.
 - `verify_token()` - Validates JWT token
-- `get_auth_status()` - Returns mode, registration availability, user count
+- `get_current_user()` - Resolves the token's subject to a `User`, rejecting a
+  non-numeric `sub` and any account with `is_active = False`
+- `get_auth_status()` - Returns `auth_mode` and `registration_enabled`
+- `logout()` - A no-op log line. See Known Limitations.
 
-`UserAuthService` is also the integration point for the encrypted-credentials
-system: `login()` calls `_initialize_encryption(password)` (derives the Fernet
-key via PBKDF2 from the user's password + the credentials DB salt) and
-`logout()` calls `self.encryption.clear()` to wipe the key from memory. See
-[Credentials Encryption](./credentials_encryption.md) for the full pipeline.
+**`UserAuthService` does not touch the encryption service.** Earlier revisions
+of this document described `login()` calling `_initialize_encryption(password)`
+and `logout()` calling `self.encryption.clear()`. Neither method has ever
+existed. The Fernet key is **server-scoped**: initialised once during startup
+in `main.py` from `API_KEY_ENCRYPTION_KEY`, never derived from a user password
+and never cleared on logout. See
+[Credentials Encryption](./credentials_encryption.md) for the real pipeline.
 
 ### Auth Router (`server/routers/auth.py`)
 | Endpoint | Method | Description |
@@ -129,9 +144,19 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 ```
 
 ### Login Page (`client/src/components/auth/LoginPage.tsx`)
-- Dracula-themed login/register form
-- Switches between login and register based on `canRegister`
-- Displays errors from auth context
+- shadcn `Form` composition (react-hook-form + zod), matching `EmailPanel` —
+  schema in `components/auth/schemas/login.ts`. `FormControl` supplies
+  `aria-invalid` + `aria-describedby` per field; the form is `noValidate` so
+  zod is the single validation authority rather than native browser bubbles.
+- `canRegister` gates the footer link only; the mode itself is local state.
+- **Two error channels, deliberately distinct.** `submitError` is the server's
+  own rejection text (wrong password, duplicate email, 429) and takes
+  precedence; `error` is a bootstrap-query connectivity failure. Both render in
+  a `role="alert"` region.
+- Inputs and the submit button gate on `isSubmitting` (per-request), **not**
+  `isLoading` (bootstrap query). The latter has always settled by the time this
+  page renders, so using it disabled nothing and the form accepted unlimited
+  concurrent submits.
 
 ## Configuration
 Environment variables in `.env`:
@@ -145,8 +170,52 @@ JWT_SECRET_KEY=your-secret-key-32   # Min 32 chars
 JWT_EXPIRE_MINUTES=10080            # 7 days
 JWT_COOKIE_NAME=opencompany_token
 JWT_COOKIE_SECURE=false             # true for HTTPS
-JWT_COOKIE_SAMESITE=lax
+JWT_COOKIE_SAMESITE=lax             # 'none' REQUIRES SECURE=true (enforced)
+
+# Login/registration throttling (core/rate_limit.py)
+AUTH_RATE_LIMIT_ENABLED=true
+AUTH_RATE_LIMIT_ATTEMPTS=10         # per window, per (client IP, email)
+AUTH_RATE_LIMIT_WINDOW=300          # seconds
 ```
+
+`cookie_posture_warnings(settings)` (in `core/config.py`, beside
+`dev_secret_offenders`) logs a non-fatal banner at startup for an insecure
+cookie outside `DEPLOYMENT_MODE=local`, and for `"*"` in `CORS_ORIGINS` while
+credentialed CORS is on. Warnings rather than failures on purpose: `company
+deploy` intentionally sets `JWT_COOKIE_SECURE=false` because the VM is reached
+over plain HTTP on its IP, so raising would break every LAN/IP deployment with
+the worst possible symptom — login appearing to succeed, then immediately
+logging out. The one combination that *does* hard-fail is
+`JWT_COOKIE_SAMESITE=none` with `JWT_COOKIE_SECURE=false`, which no browser
+accepts.
+
+## Known Limitations
+
+Recorded explicitly because each of these is easy to assume is handled.
+
+- **`AUTH_MODE=multi` provides authentication, not isolation.**
+  `middleware/auth.py` writes `request.state.user_id` / `user_email` /
+  `is_owner`, and **no file in `server/` reads them** — the only `user_id` in
+  the data layer is the literal `"default"`. Every registered user therefore
+  shares one workflow store and one credential store, and `is_owner` is
+  decorative. Real per-user scoping touches the whole data layer and needs its
+  own design pass; until then treat `multi` as "several people who fully trust
+  each other".
+- **No CSRF token.** The API is cookie-authenticated and `SameSite` is the only
+  defence. Mitigated by every mutating endpoint being `POST` under `/api/` and
+  by `SameSite=none` + insecure being rejected at startup. A real double-submit
+  scheme would touch every `fetch` and the WebSocket handshake.
+- **No token revocation.** `logout` clears the cookie; there is no `jti`
+  denylist, so a token captured beforehand stays valid until `exp` (default 7
+  days). The practical lever is `User.is_active`, enforced in
+  `get_current_user`.
+- **Rate-limit counters are per-process** — see `core/rate_limit.py`.
+- **`/docs`, `/redoc`, `/openapi.json` are served only when auth is disabled or
+  `DEPLOYMENT_MODE=local`.** They were previously public on every deployment
+  because `AuthMiddleware` gates by exclusion: any GET/HEAD outside `/api/` and
+  `/ws/` is unauthenticated so the SPA shell can load pre-login. That rule is
+  safe only while every router lives under `/api/`; the invariant test in
+  `tests/auth/test_auth_middleware.py` fails if a new router breaks it.
 
 `core/config.py` carries the `vite_auth_enabled` field (required because
 Pydantic Settings uses `extra="forbid"`). It also exposes `DEV_SECRET_LITERALS`

@@ -26,28 +26,6 @@
     "baseline_page_size": 50
   },
 
-  "config_template": [
-    "[accounts.{account}]",
-    "email = \"{email}\"",
-    "display-name = \"{display_name}\"",
-    "",
-    "backend.type = \"imap\"",
-    "backend.host = \"{imap_host}\"",
-    "backend.port = {imap_port}",
-    "backend.encryption = \"{imap_encryption}\"",
-    "backend.login = \"{email}\"",
-    "backend.auth.type = \"password\"",
-    "backend.auth.raw = \"{password}\"",
-    "",
-    "message.send.backend.type = \"smtp\"",
-    "message.send.backend.host = \"{smtp_host}\"",
-    "message.send.backend.port = {smtp_port}",
-    "message.send.backend.encryption = \"{smtp_encryption}\"",
-    "message.send.backend.login = \"{email}\"",
-    "message.send.backend.auth.type = \"password\"",
-    "message.send.backend.auth.raw = \"{password}\""
-  ],
-
   "providers": {
     "gmail": {
       "name": "Gmail",
@@ -111,12 +89,13 @@
     },
     "custom": {
       "name": "Custom / Self-hosted",
+      "_comment": "Every field is blank on purpose. resolve_credentials falls through an `or` chain, so a non-empty preset value here shadows the stored email_* key and makes it unreachable — which is exactly what kept self-hosted servers pinned to 993/465/tls. Defaults live in _himalaya._toml_port / _toml_encryption instead.",
       "imap_host": "",
-      "imap_port": 993,
-      "imap_encryption": "tls",
+      "imap_port": "",
+      "imap_encryption": "",
       "smtp_host": "",
-      "smtp_port": 465,
-      "smtp_encryption": "tls",
+      "smtp_port": "",
+      "smtp_encryption": "",
       "auth_note": "Enter your mail server details"
     }
   }

@@ -1,122 +1,180 @@
 /**
  * Login/Register Page.
- * Shows login form, or register form if registration is available.
+ *
+ * Built on react-hook-form + zod through the shadcn `Form` primitives, the
+ * same composition `EmailPanel` uses. That is not cosmetic: `FormControl`
+ * emits `aria-invalid` and wires `aria-describedby` to the matching
+ * `FormMessage`, which the previous hand-rolled markup did not do.
+ *
+ * Two failure signals are displayed, and they are not the same thing:
+ * `submitError` is the server's rejection ("Invalid email or password"),
+ * `error` is a connectivity failure from the bootstrap query. Before, only
+ * the latter existed on the context, so a wrong password produced no
+ * feedback whatsoever.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { createAuthFormSchema, type AuthFormValues } from './schemas/login';
 
 const LoginPage: React.FC = () => {
-  const { login, register, canRegister, error, isLoading } = useAuth();
+  const {
+    login,
+    register,
+    canRegister,
+    error,
+    submitError,
+    isSubmitting,
+    resetAuthErrors,
+  } = useAuth();
 
   const [isRegistering, setIsRegistering] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError(null);
+  const schema = useMemo(() => createAuthFormSchema(isRegistering), [isRegistering]);
 
-    if (!email || !password) {
-      setLocalError('Email and password are required');
-      return;
-    }
+  const form = useForm<AuthFormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { email: '', password: '', displayName: '' },
+    mode: 'onSubmit',
+  });
 
+  const onSubmit = async (values: AuthFormValues) => {
+    resetAuthErrors();
     if (isRegistering) {
-      if (!displayName) {
-        setLocalError('Display name is required');
-        return;
-      }
-      if (password.length < 8) {
-        setLocalError('Password must be at least 8 characters');
-        return;
-      }
-      await register(email, password, displayName);
+      await register(values.email, values.password, values.displayName ?? '');
     } else {
-      await login(email, password);
+      await login(values.email, values.password);
     }
+    // Failure text lives on `submitError`; nothing to do here. The mutation
+    // never rejects out of these wrappers.
   };
 
   const toggleMode = () => {
-    setIsRegistering(!isRegistering);
-    setLocalError(null);
+    setIsRegistering((prev) => !prev);
+    resetAuthErrors();
+    form.clearErrors();
   };
-
-  const displayError = localError || error;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-5">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold text-node-agent">OpenCompany</CardTitle>
+          {/* A real <h1>: the page previously had no heading landmark at all. */}
+          <CardTitle className="text-3xl font-bold text-node-agent">
+            <h1>OpenCompany</h1>
+          </CardTitle>
           <CardDescription>
             {isRegistering ? 'Create your account' : 'Sign in to continue'}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {displayError && (
-            <Alert variant="destructive">
-              <AlertDescription>{displayError}</AlertDescription>
+          {/* Server rejection: wrong password, duplicate email, rate limit. */}
+          {submitError && (
+            <Alert variant="destructive" aria-live="assertive">
+              <AlertDescription>{submitError}</AlertDescription>
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegistering && (
-              <div className="space-y-1.5">
-                <Label htmlFor="displayName">Display Name</Label>
-                <Input
-                  id="displayName"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your name"
-                  disabled={isLoading}
+          {/* Connectivity failure, distinct from a rejected credential. */}
+          {error && !submitError && (
+            <Alert variant="destructive" aria-live="polite">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <Form {...form}>
+            {/* noValidate: zod owns validation. Otherwise the browser's own
+                constraint check on type="email" silently blocks submit and
+                shows a native bubble, which neither matches FormMessage
+                styling nor respects the schema's rules. */}
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+              {isRegistering && (
+                <FormField
+                  control={form.control}
+                  name="displayName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Display Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Your name"
+                          autoComplete="name"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ''}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
-            )}
+              )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                disabled={isLoading}
-                autoComplete="email"
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                        disabled={isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isRegistering ? 'At least 8 characters' : 'Your password'}
-                disabled={isLoading}
-                autoComplete={isRegistering ? 'new-password' : 'current-password'}
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder={isRegistering ? 'At least 8 characters' : 'Your password'}
+                        autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                        disabled={isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading
-                ? 'Please wait...'
-                : isRegistering
-                  ? 'Create Account'
-                  : 'Sign In'}
-            </Button>
-          </form>
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting
+                  ? 'Please wait...'
+                  : isRegistering
+                    ? 'Create Account'
+                    : 'Sign In'}
+              </Button>
+            </form>
+          </Form>
         </CardContent>
 
         {canRegister && (
@@ -125,9 +183,10 @@ const LoginPage: React.FC = () => {
               {isRegistering ? 'Already have an account?' : "Don't have an account?"}
             </span>
             <Button
+              type="button"
               variant="link"
               onClick={toggleMode}
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="h-auto p-0"
             >
               {isRegistering ? 'Sign In' : 'Register'}

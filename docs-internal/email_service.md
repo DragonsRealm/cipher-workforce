@@ -9,7 +9,7 @@ IMAP/SMTP email integration via the [Himalaya CLI](https://github.com/pimalaya/h
                    │          EmailService (singleton)             │
                    │                                              │
   plugin ──────────►  resolve_credentials(params) -> dict         │
-  execute_op        │    params > preset (email_providers.json)   │
+  @Operation        │    preset (email_providers.json) > stored    │
   (nodes/email/...) │    > stored API keys (AuthService)           │
                    │                                              │
                    │  send(params)  -> dict                       │
@@ -41,14 +41,13 @@ via its `himalaya` property (lazy import).
 emailSend node
    │
    ▼
-EmailSendNode.execute_op (server/nodes/email/email_send/__init__.py)
+EmailSendNode @Operation("send") (server/nodes/email/email_send/__init__.py)
    │
    ▼
 EmailService.send(params)
    │
    ├── resolve_credentials(params)
-   │      node params > email_providers.json preset
-   │      > stored "email_*" API keys
+   │      email_providers.json preset > stored "email_*" API keys
    │
    ▼
 HimalayaService.send_email(creds, to, subject, body, ...)
@@ -69,11 +68,27 @@ For every field in the returned credentials dict:
 
 | Priority | Source | Example |
 |---|---|---|
-| 1 (highest) | **Node parameter** (per-node override) | `params["imap_host"]` |
-| 2 | **Provider preset** from `email_providers.json` | `providers.gmail.imap_host = "imap.gmail.com"` |
-| 3 (lowest) | **Stored API key** via `AuthService.get_api_key()` | `email_imap_host` |
+| 1 (highest) | **Provider preset** from `email_providers.json` | `providers.gmail.imap_host = "imap.gmail.com"` |
+| 2 (lowest) | **Stored API key** via `AuthService.get_api_key()` | `email_imap_host` |
 
-Custom/self-hosted providers rely on stored custom keys because their presets are empty. Gmail and other named presets skip the custom-key lookup because the preset always wins first.
+`provider` itself is the one field still read from node parameters, because it
+*is* declared on all three Params models.
+
+**Credentials are not readable from node parameters, by design.** There used to
+be a documented third tier above these two (`params["imap_host"]`,
+`params["password"]`, …). It never worked: the keys were not declared on any
+Params model and all three set `extra="ignore"`, so Pydantic stripped them
+before `model_dump()` and every `params.get(...)` returned `None`. Declaring
+them to revive the tier is not an option either — `ToolNode.as_tool_schema`
+dumps `Params.model_json_schema()` wholesale with no field-exclusion hook, so a
+declared `password` becomes an argument the LLM can pass to a callable tool.
+
+The `custom` provider's preset is **entirely blank**, which is what makes the
+stored keys reachable for a self-hosted server. Do not put default ports or
+encryption values back into it: `resolve_credentials` falls through an `or`
+chain, so a non-empty preset value shadows the stored key and makes it
+unsettable. That is exactly what pinned self-hosted servers to 993/465/tls.
+Defaults live in `_himalaya._toml_port` / `_toml_encryption` instead.
 
 ## Key Files
 
@@ -92,7 +107,7 @@ Self-contained plugin folder (Wave 11.I) — everything email-specific lives und
 | `server/nodes/email/email_{send,read,receive}/icon.svg` + `meta.json` | Per-plugin icon (served at `/api/schemas/nodes/<type>/icon`) + color metadata. |
 | `server/config/email_providers.json` | Provider presets (IMAP/SMTP host/port/encryption per provider) + defaults + polling config. Cached on first load. |
 | `server/constants.py` | `EMAIL_TYPES`, `EMAIL_TOOL_TYPES`, plus `emailReceive` in `POLLING_TRIGGER_TYPES` and `WORKFLOW_TRIGGER_TYPES`. |
-| `client/src/components/CredentialsModal.tsx` | Email credentials panel (provider dropdown, email/password inputs, conditional custom IMAP/SMTP section). |
+| `client/src/components/credentials/panels/EmailPanel.tsx` + `panels/schemas/email.ts` | Email credentials panel (provider dropdown, email/password/display-name inputs, conditional custom IMAP/SMTP + encryption section). |
 
 **AI tool schema** is derived automatically from each plugin's `Params` Pydantic model — there is no hand-written `EmailSendSchema` / `EmailReadSchema`. Dual-purpose dispatch goes through the generic plugin fast-path in `server/services/handlers/tools.py` (`instance.execute_as_tool(...)`), not a per-email `_execute_email_tool` branch.
 
@@ -102,20 +117,28 @@ Self-contained plugin folder (Wave 11.I) — everything email-specific lives und
 
 ### `async resolve_credentials(params: Dict) -> Dict`
 
-Async. Builds the credentials dict consumed by `HimalayaService` (reads stored keys via `AuthService.get_api_key`). Required before every operation. Raises `ValueError` if the email address or password is not set (neither in params nor stored).
+Async. Builds the credentials dict consumed by `HimalayaService` (reads stored keys via `AuthService.get_api_key`). Required before every operation. Raises `ValueError` if the stored email address or password is missing.
 
 Returned keys:
 - `email` (str, required) — account address, used as IMAP/SMTP login
 - `password` (str, required) — raw password or app password
-- `display_name` (str) — optional display name (only written to TOML if non-empty)
+- `display_name` (str) — from the stored `email_display_name` key; written to TOML only when non-empty
 - `imap_host`, `imap_port`, `imap_encryption` — resolved via precedence chain
 - `smtp_host`, `smtp_port`, `smtp_encryption` — resolved via precedence chain
 
-Ports come from any level of precedence as `int` (the internal `_coerce_port` helper converts stored string values safely).
+Stored port values arrive as strings and go through `_coerce_port`, which
+returns `None` rather than raising on garbage. **Every port and encryption key
+is always present in the returned dict, sometimes valued `None`** — which is
+why `_generate_config` must use `_toml_port(creds.get("imap_port"), 993)` and
+not `creds.get("imap_port", 993)`: the key *is* present, so `dict.get`'s
+default never fires and `backend.port = None` renders as unparseable TOML.
+
+`display_name` resolves from the stored `email_display_name` key (written by the
+credentials panel), not from node parameters.
 
 ### `send(params: Dict) -> Dict`
 
-Resolves credentials, calls `HimalayaService.send_email()`, and returns the result merged with `{"from": creds["email"]}`. Validates `to` and `subject` are non-empty.
+Resolves credentials, calls `HimalayaService.send_email()`, and returns the result merged with `{"from": creds["email"]}`.
 
 ### `read(params: Dict) -> Dict`
 
@@ -137,6 +160,17 @@ Return shape: `{"operation": ..., "folder": ..., ...data}` where `data` is merge
 
 Reads polling config from `email_providers.json` (`polling.interval`, `polling.min_interval`, `polling.max_interval`) and clamps the user-provided `poll_interval` into range. Returns `{"interval", "folder", "mark_as_read"}`.
 
+Every field is **coerced, not trusted**: `emailReceive` overrides `execute()`
+and passes raw parameters, so the Pydantic `ge=30, le=3600` guard never runs on
+that path and `poll_interval` can arrive as `None` or a string.
+`dict.get(key, default)` only substitutes when the key is *absent*, so an
+explicit `None` used to reach `min()` and raise `TypeError`. Mirrors
+`PollingTriggerNode._clamp_interval`.
+
+Note this clamp applies only to the interactive Run path. The deployment path
+re-clamps through `PollingTriggerNode._clamp_interval`, so the JSON
+`polling.interval` is not consulted there.
+
 ### Polling helpers
 
 - `poll_ids(creds, folder) -> Set[str]` — Calls `list_envelopes` with `baseline_page_size` (from JSON config), extracts envelope IDs as strings for baseline/diff.
@@ -150,12 +184,12 @@ Reads polling config from `email_providers.json` (`polling.interval`, `polling.m
 
 Every operation follows the same pattern inside `execute()`:
 
-1. `ensure_binary()` — locate `himalaya` on `PATH` via `shutil.which`. Caches the path on the singleton. Raises `RuntimeError` with install instructions if missing.
+1. `ensure_binary()` — locate `himalaya` on `PATH` via `shutil.which`. Caches the path on the singleton. Raises `RuntimeError` with install instructions if missing. Despite the name it installs nothing; see "Installation Requirement" below.
 2. `_generate_config(account_name, credentials)` — build TOML config as a single string (no template file; uses Python f-strings).
 3. `tempfile.NamedTemporaryFile(suffix=".toml", delete=False)` — write config to a temp file.
 4. `asyncio.create_subprocess_exec(binary, -c <tmp>, -a <account>, --output json, <args>)`
 5. Pipe `stdin_data` if provided (used by `send_email` to deliver the MIME message).
-6. `asyncio.wait_for(proc.communicate(...), timeout=60)` — enforces a 60s budget.
+6. Delegates to `services.events.cli.run_cli_command`, which enforces the `cli.timeout_seconds` budget from `email_providers.json` AND tree-kills the child on timeout. `asyncio.wait_for` cancels only the wrapper, so the old inline call left an orphaned process holding the temp config open -- and the `finally` unlink then raised PermissionError on Windows, masking the timeout.
 7. Parse JSON stdout (`json.loads`). Fall back to `{"raw_output": stdout_str}` on JSON decode error.
 8. `finally`: delete the temp config file with `Path.unlink(missing_ok=True)`.
 
@@ -218,7 +252,7 @@ Read/search/manage emails via IMAP. Group: `['email', 'tool']`. Two outputs (`ma
 | `flag` | flag | Seen / Answered / Flagged / Draft / Deleted |
 | `flag_action` | flag | add / remove |
 | `page` | list | default 1 |
-| `page_size` | list | default 20, max 100 |
+| `page_size` | list | default 20, max 500 |
 
 **AI tool schema:** derived from `EmailReadParams`, exposing every operation and all operation-specific fields. The LLM picks an `operation` and fills the relevant subset.
 
@@ -232,13 +266,13 @@ Group: `['email', 'trigger']`. No inputs. Single output `main` with the new emai
 | `provider` | gmail | Provider preset |
 | `folder` | INBOX | Mailbox to monitor |
 | `poll_interval` | 60 | seconds (clamped 30..3600) |
-| `filter_query` | `""` | Server-side filter (currently applied client-side in `build_email_filter`) |
+| `filter_query` | `""` | Case-insensitive substring match over subject / from / to / body, applied in `_filters.build_filter` |
 | `mark_as_read` | false | If true, adds `Seen` flag to new messages after fetch |
 
 **Baseline detection:** On first execution the handler calls `poll_ids(creds, folder)` to capture the set of currently-existing envelope IDs. The poll loop then diffs against this baseline -- only newly appearing IDs trigger the workflow. This avoids firing on existing historical mail.
 
 **Standalone event dispatch:** When a new message arrives during an interactive
-Run, `EmailReceiveNode.execute_op`:
+Run, `EmailReceiveNode.execute()` (a plain override, not an @Operation):
 1. Fetches full detail via `fetch_detail`
 2. Optionally flags it as read
 3. Calls `dispatch_email_received(email_data)` (in `_events.py`), which builds a `WorkflowEvent` (`type="com.opencompany.email.message.received"`) and routes it through `dispatch.emit`
@@ -264,7 +298,7 @@ The poll loop:
 2. Establishes the baseline via `svc.poll_ids(creds, folder)`
 3. On each iteration (clamped interval from `resolve_poll_params`):
    - Polls for current IDs and computes `new_ids = current - seen`
-   - For each new ID: fetches detail, optionally marks read, dispatches the event
+   - For each new ID, oldest UID first: fetches detail, optionally marks read, dispatches the event. The envelope returned to the canvas is the FIRST message; earlier revisions dispatched only one and dropped the rest.
    - Handles `asyncio.CancelledError` cleanly on teardown
 
 All credential resolution and IMAP access still delegate to `EmailService` —
@@ -299,7 +333,7 @@ These custom keys are **only used when the preset for the selected provider has 
 
 ### Credentials Modal UI
 
-**File:** `client/src/components/CredentialsModal.tsx`
+**File:** `client/src/components/credentials/panels/EmailPanel.tsx`
 
 The Email category appears between Productivity and Android in the sidebar. The panel provides:
 
@@ -311,7 +345,7 @@ The Email category appears between Productivity and Android in the sidebar. The 
   - IMAP host (text) + IMAP port (number, default 993)
   - SMTP host (text) + SMTP port (number, default 465)
 - **Save** button — writes `email_provider`, `email_address`, and conditionally `email_password` (only if user typed a new one) + the four custom IMAP/SMTP keys when applicable.
-- **Remove** button — clears all seven `email_*` keys.
+- **Remove** button — clears all ten `email_*` keys. Switching away from the `custom` provider also clears the six server-specific keys, which otherwise stranded a stale host that then won the `or` chain.
 
 Status is shown via `getSpecialStatus(item)` returning `{ connected: !!emailStored, label: emailAddress || 'Not configured' }`. No WebSocket connection is needed because email credentials are pure API keys (no live session like Telegram or WhatsApp).
 
@@ -366,7 +400,7 @@ Status is shown via `getSpecialStatus(item)` returning `{ connected: !!emailStor
 
 Loaded lazily by the module-level `_load_config()` in `_service.py` and cached in a module-level `_CONFIG` variable (surfaced through `EmailService.config` / `.defaults` / `.polling` properties). To add a new provider, edit only this JSON — no code changes required.
 
-**Zero magic numbers:** every default, clamp, and preset lives in this file. `resolve_poll_params` reads the polling defaults; `EmailService.read()` reads `defaults.page_size`, `defaults.flag`, etc.; the provider dropdown options in `CredentialsModal.tsx` mirror the `providers` keys.
+**Config-driven, with named exceptions.** `resolve_poll_params` reads the polling defaults, `EmailService.read()` reads `defaults.page_size` / `defaults.flag`, and `HimalayaService.execute` reads `cli.timeout_seconds`. Three values deliberately live in code rather than here: the port and encryption fallbacks in `_himalaya._toml_port` / `_toml_encryption` (they must NOT be in the `custom` preset, which would shadow the stored keys), and `EmailReceiveNode.poll_interval_clamp`, which the deployment path uses instead of the JSON clamp. The provider dropdown options and auth notes are duplicated in `panels/schemas/email.ts` with no test asserting they stay in sync with the `providers` keys.
 
 ## Installation Requirement
 
@@ -410,3 +444,35 @@ cargo install himalaya
 - [Event Waiter System](./event_waiter_system.md) — trigger registration for `emailReceive`
 - [New Service Integration](./new_service_integration.md) — end-to-end integration pattern (use Google Workspace as a richer OAuth example)
 - [Credentials Encryption](./credentials_encryption.md) — how `email_*` keys are encrypted on disk
+
+## Security notes
+
+**TOML generation escapes everything.** `_generate_config` routes every
+interpolated credential through `_toml_str` / `_toml_port` /
+`_toml_encryption`. Do not add a raw f-string interpolation: an unescaped `"`
+in a password breaks the config, and `"` plus a newline injects arbitrary
+himalaya keys — including a `backend.host` pointing at someone else's server.
+App passwords are user-chosen, so that path needs no prior compromise.
+`tests/nodes/test_email_service.py` parses the generated config with `tomllib`
+and asserts the key set, which is the actual regression guard.
+
+**CLI errors are scrubbed before they leave `execute`.** himalaya echoes the
+config path — and on a parse failure, config content — into stderr, and that
+string becomes the `RuntimeError` message, the node error envelope, a persisted
+node output, and a WebSocket broadcast. `_scrub` runs before both the log call
+and the raise.
+
+**The password still touches disk.** Each invocation writes a `0600` +
+`O_EXCL` temp TOML and unlinks it in a `finally` (now actually effective on the
+timeout path, since the child is killed first). Removing that entirely means
+switching to himalaya's `backend.auth.cmd`:
+
+```toml
+backend.auth.type = "password"
+backend.auth.cmd = "<command that prints the password>"
+```
+
+Not adopted yet: `cmd` delegates to pimalaya's process crate, which is `sh -c`
+on POSIX and `cmd /C` on Windows, and getting a value to round-trip without
+trailing-newline corruption on both shells needs verification against a real
+binary. Recorded here so the next person does not re-derive it.

@@ -149,38 +149,69 @@ class EmailReceiveNode(PollingTriggerNode):
                 f"[EmailReceive] Baseline: {len(seen)} emails in {poll['folder']}",
             )
 
+            # Wave 12 B4 + canary opt-in: route through plugin _events.py
+            # wrapper. Dual-dispatch via event_waiter (legacy collector) +
+            # dispatch.emit (Temporal-durable TriggerListenerWorkflow consumers).
+            from nodes.email import dispatch_email_received
+
+            logger = get_logger(__name__)
+
             while True:
                 await asyncio.sleep(poll["interval"])
-                new_ids = await svc.poll_ids(creds, poll["folder"]) - seen
+
+                # Per-cycle isolation, matching gmail_receive. Without it a
+                # single transient IMAP error ends the whole interactive Run
+                # instead of being retried on the next tick.
+                try:
+                    new_ids = await svc.poll_ids(creds, poll["folder"]) - seen
+                except asyncio.CancelledError:
+                    raise
+                except Exception as poll_err:
+                    logger.error(f"[EmailReceive] Poll cycle failed: {poll_err}")
+                    continue
+
                 if not new_ids:
                     continue
 
-                msg_id = next(iter(new_ids))
+                # Dispatch EVERY new message, oldest first. Taking one and
+                # marking the rest seen dropped N-1 events per cycle -- and
+                # since new_ids is a set, *which* one survived was arbitrary.
+                # IMAP UIDs are numeric; the tuple key keeps non-numeric ids
+                # sorting last instead of raising.
+                ordered = sorted(new_ids, key=lambda i: (0, int(i)) if str(i).isdigit() else (1, str(i)))
                 seen.update(new_ids)
-                email_data = await svc.fetch_detail(creds, msg_id, poll["folder"])
 
-                if poll["mark_as_read"]:
-                    d = svc.defaults
-                    await svc.himalaya.flag_message(
-                        creds,
-                        msg_id,
-                        d.get("flag"),
-                        d.get("flag_action"),
-                        poll["folder"],
-                    )
+                first_email = None
+                for msg_id in ordered:
+                    try:
+                        email_data = await svc.fetch_detail(creds, msg_id, poll["folder"])
 
-                # Wave 12 B4 + canary opt-in: route through plugin
-                # _events.py wrapper. Dual-dispatch via event_waiter
-                # (legacy collector) + dispatch.emit (Temporal-durable
-                # TriggerListenerWorkflow consumers).
-                from nodes.email import dispatch_email_received
+                        if poll["mark_as_read"]:
+                            d = svc.defaults
+                            await svc.himalaya.flag_message(
+                                creds,
+                                msg_id,
+                                d.get("flag"),
+                                d.get("flag_action"),
+                                poll["folder"],
+                            )
 
-                await dispatch_email_received(email_data)
+                        await dispatch_email_received(email_data)
+                        if first_email is None:
+                            first_email = email_data
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as msg_err:
+                        logger.error(f"[EmailReceive] Failed to handle message {msg_id}: {msg_err}")
+
+                if first_email is None:
+                    continue
+
                 return {
                     "success": True,
                     "node_id": node_id,
                     "node_type": self.type,
-                    "result": email_data,
+                    "result": first_email,
                     "execution_time": time.time() - start_time,
                     "timestamp": datetime.now().isoformat(),
                 }

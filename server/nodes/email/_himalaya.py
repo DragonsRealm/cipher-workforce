@@ -5,18 +5,90 @@ email send/receive/manage capabilities via any IMAP/SMTP provider.
 """
 
 import asyncio
-import json
+import re
 import shutil
 import tempfile
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from core.logging import get_logger
 from services.plugin.singleton import ServiceSingleton
 
 logger = get_logger(__name__)
+
+# Himalaya accepts these three transport-security values; anything else is
+# rejected at config-parse time with an error that names the config path.
+_ENCRYPTIONS = ("tls", "start-tls", "none")
+
+# TOML basic-string escapes, per the spec. Order matters: the backslash
+# substitution must run first or it would double-escape the ones below it.
+_TOML_ESCAPES = (
+    ("\\", "\\\\"),
+    ('"', '\\"'),
+    ("\b", "\\b"),
+    ("\t", "\\t"),
+    ("\n", "\\n"),
+    ("\f", "\\f"),
+    ("\r", "\\r"),
+)
+
+_TOML_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
+
+
+def _toml_str(value: Any) -> str:
+    """Render ``value`` as a quoted TOML basic string.
+
+    Returns the value *including* its surrounding quotes so call sites read
+    ``f"backend.host = {_toml_str(host)}"`` and cannot forget them.
+
+    Without this, any credential containing a ``"`` breaks the config, and a
+    ``"`` followed by a newline injects arbitrary himalaya keys -- e.g. a
+    ``backend.host`` pointing at someone else's server. App passwords are
+    user-chosen, so that is reachable without any prior compromise.
+    """
+    text = "" if value is None else str(value)
+    for raw, escaped in _TOML_ESCAPES:
+        text = text.replace(raw, escaped)
+    # Remaining C0 controls (and DEL) have no shorthand escape.
+    text = _TOML_CONTROL_RE.sub(lambda m: f"\\u{ord(m.group()):04X}", text)
+    return f'"{text}"'
+
+
+def _toml_port(value: Any, default: int) -> int:
+    """Coerce ``value`` to a valid TCP port, falling back to ``default``.
+
+    ``resolve_credentials`` always emits the port keys, sometimes valued
+    ``None`` -- so ``credentials.get("imap_port", 993)`` finds the key present
+    and never applies its default, rendering ``backend.port = None``. Ports are
+    interpolated unquoted, so that is unparseable TOML rather than a bad value.
+    """
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return default
+    return port if 1 <= port <= 65535 else default
+
+
+def _toml_encryption(value: Any, default: str = "tls") -> str:
+    """Return an allowlisted encryption mode as a quoted TOML string."""
+    text = "" if value is None else str(value).strip().lower()
+    return _toml_str(text if text in _ENCRYPTIONS else default)
+
+
+def _scrub(text: str, *secrets: str) -> str:
+    """Redact ``secrets`` from ``text``.
+
+    The himalaya error string is not log-only: it becomes the ``RuntimeError``
+    message, which becomes the node error envelope, which is persisted and
+    broadcast over the WebSocket. Scrubbing only the log would leave the secret
+    in the payload the frontend renders.
+    """
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    return text
 
 
 class HimalayaService(ServiceSingleton):
@@ -45,38 +117,57 @@ class HimalayaService(ServiceSingleton):
             "or download from https://github.com/pimalaya/himalaya/releases"
         )
 
+    def _timeout_seconds(self) -> float:
+        """Per-invocation CLI timeout, from ``cli.timeout_seconds``.
+
+        Imported lazily: ``_service`` reaches back into this module for the
+        singleton, so a module-level import would be circular.
+        """
+        from ._service import _load_config
+
+        raw = _load_config().get("cli", {}).get("timeout_seconds", 60)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 60.0
+
     def _generate_config(self, account_name: str, credentials: dict) -> str:
-        """Generate TOML config content for a himalaya account."""
+        """Generate TOML config content for a himalaya account.
+
+        Every interpolated value goes through ``_toml_str`` / ``_toml_port`` /
+        ``_toml_encryption``. Do not add a raw f-string interpolation here --
+        see the note on ``_toml_str`` for what that costs.
+        """
         email = credentials.get("email", "")
         display_name = credentials.get("display_name", "")
         password = credentials.get("password", "")
 
         imap_host = credentials.get("imap_host", "")
-        imap_port = credentials.get("imap_port", 993)
-        imap_encryption = credentials.get("imap_encryption", "tls")
+        imap_port = _toml_port(credentials.get("imap_port"), 993)
+        imap_encryption = _toml_encryption(credentials.get("imap_encryption"))
 
         smtp_host = credentials.get("smtp_host", "")
-        smtp_port = credentials.get("smtp_port", 465)
-        smtp_encryption = credentials.get("smtp_encryption", "tls")
+        smtp_port = _toml_port(credentials.get("smtp_port"), 465)
+        smtp_encryption = _toml_encryption(credentials.get("smtp_encryption"))
 
         lines = [
             f"[accounts.{account_name}]",
-            f'email = "{email}"',
+            f"email = {_toml_str(email)}",
         ]
         if display_name:
-            lines.append(f'display-name = "{display_name}"')
+            lines.append(f"display-name = {_toml_str(display_name)}")
 
         # IMAP backend
         lines.extend(
             [
                 "",
                 'backend.type = "imap"',
-                f'backend.host = "{imap_host}"',
+                f"backend.host = {_toml_str(imap_host)}",
                 f"backend.port = {imap_port}",
-                f'backend.encryption = "{imap_encryption}"',
-                f'backend.login = "{email}"',
+                f"backend.encryption = {imap_encryption}",
+                f"backend.login = {_toml_str(email)}",
                 'backend.auth.type = "password"',
-                f'backend.auth.raw = "{password}"',
+                f"backend.auth.raw = {_toml_str(password)}",
             ]
         )
 
@@ -85,12 +176,12 @@ class HimalayaService(ServiceSingleton):
             [
                 "",
                 'message.send.backend.type = "smtp"',
-                f'message.send.backend.host = "{smtp_host}"',
+                f"message.send.backend.host = {_toml_str(smtp_host)}",
                 f"message.send.backend.port = {smtp_port}",
-                f'message.send.backend.encryption = "{smtp_encryption}"',
-                f'message.send.backend.login = "{email}"',
+                f"message.send.backend.encryption = {smtp_encryption}",
+                f"message.send.backend.login = {_toml_str(email)}",
                 'message.send.backend.auth.type = "password"',
-                f'message.send.backend.auth.raw = "{password}"',
+                f"message.send.backend.auth.raw = {_toml_str(password)}",
             ]
         )
 
@@ -103,58 +194,68 @@ class HimalayaService(ServiceSingleton):
         args: List[str],
         stdin_data: Optional[str] = None,
     ) -> dict:
-        """Execute himalaya CLI command and return parsed JSON output."""
+        """Execute himalaya CLI command and return parsed JSON output.
+
+        Delegates the subprocess lifecycle to the shared ``run_cli_command``
+        so the kill-on-timeout guarantee is the same one every other CLI
+        plugin gets, then adapts the envelope back to this method's
+        raise-on-failure contract.
+        """
+        from services.events.cli import run_cli_command
+
         binary = await self.ensure_binary()
         config_content = self._generate_config(account_name, credentials)
+        timeout = self._timeout_seconds()
 
+        # NamedTemporaryFile is 0600 + O_EXCL, so the window is narrow --
+        # but it is still a plaintext password on disk for the life of the
+        # call. See docs-internal/email_service.md for the backend.auth.cmd
+        # follow-up that would remove it entirely.
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".toml", prefix="himalaya_", delete=False)
         try:
             tmp.write(config_content)
             tmp.flush()
             tmp.close()
 
-            cmd = [
-                binary,
-                "-c",
-                tmp.name,
-                "-a",
-                account_name,
-                "--output",
-                "json",
-            ] + args
-
             logger.debug(f"[Himalaya] Executing: himalaya {' '.join(args)}")
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.PIPE if stdin_data else None,
-            )
-
             stdin_bytes = stdin_data.encode("utf-8") if stdin_data else None
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_bytes),
-                timeout=60,
+            envelope = await run_cli_command(
+                binary=binary,
+                argv=["-c", tmp.name, "-a", account_name, "--output", "json", *args],
+                timeout=timeout,
+                stdin=asyncio.subprocess.PIPE if stdin_bytes else None,
+                input=stdin_bytes,
             )
 
-            stdout_str = stdout.decode("utf-8", errors="replace").strip()
-            stderr_str = stderr.decode("utf-8", errors="replace").strip()
-
-            if proc.returncode != 0:
-                error_msg = stderr_str or stdout_str or f"Exit code {proc.returncode}"
-                logger.error(f"[Himalaya] Command failed: {error_msg}")
+            if not envelope.get("success"):
+                error_msg = (
+                    envelope.get("error")
+                    or envelope.get("stderr")
+                    or envelope.get("stdout")
+                    or "unknown failure"
+                )
+                # himalaya echoes the config path -- and on a parse failure,
+                # config content -- into stderr. This string becomes the
+                # RuntimeError message, the node error envelope, a persisted
+                # node output, and a WebSocket broadcast, so scrub before it
+                # leaves this function rather than only before the log call.
+                error_msg = _scrub(error_msg, credentials.get("password", ""))
+                logger.warning(f"[Himalaya] Command failed: {error_msg}")
                 raise RuntimeError(f"himalaya error: {error_msg}")
 
+            stdout_str = envelope.get("stdout") or ""
             if not stdout_str:
                 return {}
 
-            try:
-                return json.loads(stdout_str)
-            except json.JSONDecodeError:
+            parsed = envelope.get("result")
+            if parsed is None:
                 return {"raw_output": stdout_str}
+            return parsed
 
         finally:
+            # Now actually effective on the timeout path: run_cli_command
+            # tree-kills the child first, so the handle is released.
             Path(tmp.name).unlink(missing_ok=True)
 
     # =========================================================================
@@ -299,9 +400,19 @@ class HimalayaService(ServiceSingleton):
         return await self.execute(account, credentials, ["folder", "list"])
 
     def _account_name(self, credentials: dict) -> str:
-        """Generate a consistent account name from credentials."""
-        email = credentials.get("email", "default")
-        return email.split("@")[0].replace(".", "_").replace("+", "_")
+        """Generate a consistent account name from credentials.
+
+        The result lands in two places with different rules: the TOML table
+        header ``[accounts.X]``, where only bare-key characters are legal, and
+        argv as ``-a X``, where a leading ``-`` is parsed as a flag. Email
+        local-parts legally contain ``!#$%&'*/=?^`{|}~``, none of which are
+        valid bare-key characters -- ``o'brien@x.com`` used to produce
+        ``[accounts.o'brien]`` and a config parse error.
+        """
+        email = credentials.get("email") or "default"
+        local_part = str(email).split("@")[0]
+        name = re.sub(r"[^A-Za-z0-9_-]", "_", local_part).lstrip("-")
+        return name or "default"
 
 
 def get_himalaya_service() -> HimalayaService:

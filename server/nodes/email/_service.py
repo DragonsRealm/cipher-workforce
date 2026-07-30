@@ -52,11 +52,20 @@ class EmailService(ServiceSingleton):
     # -- credentials --
 
     async def resolve_credentials(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge stored creds + provider presets + param overrides.
+        """Merge provider presets with stored credential keys.
 
-        Precedence (per field): node params > provider preset > stored custom keys.
-        Stored custom keys (email_imap_host, email_smtp_port, etc.) are used when
-        the provider is 'custom' or when a preset field is empty.
+        Precedence (per field): provider preset > stored key. Stored keys
+        (``email_imap_host``, ``email_smtp_port``, ...) apply when the preset
+        leaves the field blank, which is how the ``custom`` provider works.
+
+        Credentials are deliberately NOT readable from node parameters. They
+        used to be the documented top tier, but the fields were never declared
+        on any Params model and all three set ``extra="ignore"``, so every
+        ``params.get("password")`` silently returned None. Declaring them to
+        revive the tier is not an option either: ``ToolNode.as_tool_schema``
+        dumps ``Params.model_json_schema()`` wholesale with no field-exclusion
+        hook, so a declared ``password`` becomes an argument the LLM can pass
+        to a callable tool. ``provider`` stays because it IS declared.
         """
         from services.plugin.deps import get_auth_service
 
@@ -65,8 +74,8 @@ class EmailService(ServiceSingleton):
         provider = params.get("provider") or await auth.get_api_key("email_provider") or self.defaults.get("provider")
         preset = self._provider_preset(provider)
 
-        email = params.get("email") or await auth.get_api_key("email_address") or ""
-        password = params.get("password") or await auth.get_api_key("email_password") or ""
+        email = await auth.get_api_key("email_address") or ""
+        password = await auth.get_api_key("email_password") or ""
 
         if not email:
             raise ValueError("Email address not configured")
@@ -81,17 +90,17 @@ class EmailService(ServiceSingleton):
             except (TypeError, ValueError):
                 return None
 
-        imap_host = params.get("imap_host") or preset.get("imap_host") or await auth.get_api_key("email_imap_host") or ""
-        imap_port = params.get("imap_port") or preset.get("imap_port") or _coerce_port(await auth.get_api_key("email_imap_port"))
-        imap_encryption = params.get("imap_encryption") or preset.get("imap_encryption") or await auth.get_api_key("email_imap_encryption")
-        smtp_host = params.get("smtp_host") or preset.get("smtp_host") or await auth.get_api_key("email_smtp_host") or ""
-        smtp_port = params.get("smtp_port") or preset.get("smtp_port") or _coerce_port(await auth.get_api_key("email_smtp_port"))
-        smtp_encryption = params.get("smtp_encryption") or preset.get("smtp_encryption") or await auth.get_api_key("email_smtp_encryption")
+        imap_host = preset.get("imap_host") or await auth.get_api_key("email_imap_host") or ""
+        imap_port = preset.get("imap_port") or _coerce_port(await auth.get_api_key("email_imap_port"))
+        imap_encryption = preset.get("imap_encryption") or await auth.get_api_key("email_imap_encryption")
+        smtp_host = preset.get("smtp_host") or await auth.get_api_key("email_smtp_host") or ""
+        smtp_port = preset.get("smtp_port") or _coerce_port(await auth.get_api_key("email_smtp_port"))
+        smtp_encryption = preset.get("smtp_encryption") or await auth.get_api_key("email_smtp_encryption")
 
         return {
             "email": email,
             "password": password,
-            "display_name": params.get("display_name", ""),
+            "display_name": await auth.get_api_key("email_display_name") or "",
             "imap_host": imap_host,
             "imap_port": imap_port,
             "imap_encryption": imap_encryption,
@@ -101,14 +110,25 @@ class EmailService(ServiceSingleton):
         }
 
     def resolve_poll_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve polling parameters from node params + JSON polling config."""
+        """Resolve polling parameters from node params + JSON polling config.
+
+        Every read coerces rather than trusting the value: ``emailReceive``
+        overrides ``execute()`` and passes raw parameters, so the Pydantic
+        ``ge=30, le=3600`` guard never runs on this path and ``poll_interval``
+        can arrive as ``None`` or a string. ``dict.get(key, default)`` only
+        substitutes when the key is *absent*, so an explicit None reached
+        ``min()`` and raised TypeError. Mirrors ``PollingTriggerNode._clamp_interval``.
+        """
         p = self.polling
-        interval = params.get("poll_interval", p.get("interval"))
-        interval = max(p.get("min_interval"), min(p.get("max_interval"), interval))
+        try:
+            interval = int(params.get("poll_interval") or p.get("interval"))
+        except (TypeError, ValueError):
+            interval = int(p.get("interval"))
+        interval = max(int(p.get("min_interval")), min(int(p.get("max_interval")), interval))
         return {
             "interval": interval,
-            "folder": params.get("folder", self.defaults.get("folder")),
-            "mark_as_read": params.get("mark_as_read", False),
+            "folder": params.get("folder") or self.defaults.get("folder"),
+            "mark_as_read": bool(params.get("mark_as_read")),
         }
 
     # -- operations --

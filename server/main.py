@@ -46,7 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # [debug] ...``) because the supervisor already prepends
 # ``[HH:MM:SS.fff]`` to every aggregated line.
 _startup_log("Importing settings + logging...")
-from core.config import Settings, dev_secret_offenders
+from core.config import Settings, cookie_posture_warnings, dev_secret_offenders
 from core.logging import configure_logging, get_logger, setup_websocket_logging, shutdown_websocket_logging
 from core.tracing import init_tracing
 
@@ -93,6 +93,13 @@ async def lifespan(app: FastAPI):
             "and set them in .env (or the process environment), then restart.",
             ", ".join(offenders),
         )
+
+    # Same posture-warning pattern for the session cookie. Warnings only:
+    # `company deploy` intentionally ships JWT_COOKIE_SECURE=false because
+    # the VM is reached over plain HTTP on its IP, so raising here would
+    # brick every LAN/IP deployment.
+    for warning in cookie_posture_warnings(settings):
+        logger.warning("SECURITY: %s", warning)
 
     # Wave 10.C: discover node plugins so their register_node() calls
     # populate the four registries before any router serves NodeSpec.
@@ -455,12 +462,25 @@ async def lifespan(app: FastAPI):
     logger.info("Services shutdown complete")
 
 
+# Interactive docs and the raw OpenAPI schema are in the middleware's public
+# allowlist, so they were reachable unauthenticated on every deployment. Keep
+# them for local development, where they are genuinely useful, and switch them
+# off wherever auth is actually enforced.
+_docs_settings = Settings()
+_expose_docs = (
+    (_docs_settings.vite_auth_enabled or "").lower() == "false"
+    or _docs_settings.deployment_mode == "local"
+)
+
 # Create FastAPI app
 app = FastAPI(
     title="OpenCompany API",
     version="3.0.0",
     description="OpenCompany workflow automation backend",
     lifespan=lifespan,
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    openapi_url="/openapi.json" if _expose_docs else None,
 )
 
 # Add exception handler middleware BEFORE CORS to catch all errors

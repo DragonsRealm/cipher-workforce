@@ -24,12 +24,16 @@ class EmailReadParams(BaseModel):
         description="IMAP action. folders lists all mailbox folders (no other params needed).",
     )
 
-    # folder (used by list/search and move source; optional for others)
+    # folder — every operation forwards it (see EmailService.read), so the UI
+    # must offer it for all six. Gating it to list/search left move/delete/flag
+    # silently pinned to INBOX with no way to change the source folder.
     folder: str = Field(
         default="INBOX",
         description="Mailbox folder to query.",
         json_schema_extra={
-            "displayOptions": {"show": {"operation": ["list", "search"]}},
+            "displayOptions": {
+                "show": {"operation": ["list", "search", "read", "move", "delete", "flag"]},
+            },
         },
     )
     query: str = Field(
@@ -60,16 +64,9 @@ class EmailReadParams(BaseModel):
         json_schema_extra={"displayOptions": {"show": {"operation": ["flag"]}}},
     )
 
-    # Pagination (list / search)
-    limit: int = Field(
-        default=20,
-        ge=1,
-        le=500,
-        description="Max envelopes per page.",
-        json_schema_extra={
-            "displayOptions": {"show": {"operation": ["list", "search"]}},
-        },
-    )
+    # Pagination (list / search). `limit` and `offset` used to live here too;
+    # neither was read by EmailService.read, and because Params feeds the AI
+    # tool schema verbatim, an agent could set limit=100 and silently get 20.
     page: int = Field(
         default=1,
         ge=1,
@@ -82,15 +79,7 @@ class EmailReadParams(BaseModel):
         default=20,
         ge=1,
         le=500,
-        description="Items per page (overrides limit when paginating).",
-        json_schema_extra={
-            "displayOptions": {"show": {"operation": ["list", "search"]}},
-        },
-    )
-    offset: int = Field(
-        default=0,
-        ge=0,
-        description="Alternative to page-based pagination — skip this many messages.",
+        description="Messages per page.",
         json_schema_extra={
             "displayOptions": {"show": {"operation": ["list", "search"]}},
         },

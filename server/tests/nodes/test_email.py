@@ -34,13 +34,25 @@ def _reset_singletons():
     himalaya_service.HimalayaService._instance = None
 
 
+# Credentials come from the stored-key store only -- never from node params.
+# See TestResolveCredentials in test_email_service.py for why declaring them
+# on Params is not an option.
+STORED_CREDS = {
+    "email_provider": "gmail",
+    "email_address": "alice@example.com",
+    "email_password": "sekret",
+}
+
+
 def _base_creds_params(**overrides):
-    """Minimal params that satisfy resolve_credentials without stored keys."""
-    params = {
-        "provider": "gmail",
-        "email": "alice@example.com",
-        "password": "sekret",
-    }
+    """Node params for an email node.
+
+    Deliberately carries NO credential keys. The previous version injected
+    `email`/`password` here *and* every call site also stored them, so the
+    tests passed whichever tier the code actually read -- which is how an
+    entire dead credential tier survived unnoticed. Keep this params-only.
+    """
+    params = {"provider": "gmail"}
     params.update(overrides)
     return params
 
@@ -72,7 +84,7 @@ class TestEmailSend:
         with (
             _patch_ensure_binary(),
             patched_subprocess(stdout=stdout, returncode=0) as proc,
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -97,7 +109,7 @@ class TestEmailSend:
         with (
             _patch_ensure_binary(),
             patched_subprocess(stdout=b"{}", returncode=0),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
             patch("nodes.email._himalaya.HimalayaService.execute", new=AsyncMock(return_value={})) as mock_exec,
         ):
@@ -134,7 +146,7 @@ class TestEmailSend:
         with (
             _patch_ensure_binary(),
             patched_subprocess(stdout=b"", stderr=b"auth failed", returncode=1),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -161,7 +173,7 @@ class TestEmailRead:
         with (
             _patch_ensure_binary(),
             patch("nodes.email._himalaya.HimalayaService.execute", new=AsyncMock(return_value=envelopes)),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -180,7 +192,7 @@ class TestEmailRead:
         with (
             _patch_ensure_binary(),
             patch("nodes.email._himalaya.HimalayaService.execute", new=AsyncMock(return_value=message)),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -194,12 +206,54 @@ class TestEmailRead:
         assert payload["subject"] == "hello"
         assert payload["body"] == "world"
 
+    @pytest.mark.parametrize(
+        "params,expected_argv",
+        [
+            (
+                {"operation": "search", "query": "from:alice", "folder": "Archive"},
+                ["envelope", "list", "-f", "Archive", "--query", "from:alice"],
+            ),
+            ({"operation": "folders"}, ["folder", "list"]),
+            (
+                {"operation": "move", "message_id": "42", "target_folder": "Done", "folder": "Archive"},
+                ["message", "move", "42", "Done", "-f", "Archive"],
+            ),
+            (
+                {"operation": "delete", "message_id": "42", "folder": "Archive"},
+                ["message", "delete", "42", "-f", "Archive"],
+            ),
+            (
+                {"operation": "flag", "message_id": "42", "flag": "Flagged", "flag_action": "remove", "folder": "Archive"},
+                ["flag", "remove", "42", "--flag", "Flagged", "-f", "Archive"],
+            ),
+        ],
+        ids=["search", "folders", "move", "delete", "flag"],
+    )
+    async def test_operation_argv(self, harness, params, expected_argv):
+        """The five operations that had no coverage at all.
+
+        Asserting exact argv also pins the non-INBOX `folder` forwarding --
+        the UI used to gate `folder` to list/search only, so move/delete/flag
+        were silently stuck on INBOX with no way to change the source.
+        """
+        exec_mock = AsyncMock(return_value={})
+        with (
+            _patch_ensure_binary(),
+            patch("nodes.email._himalaya.HimalayaService.execute", exec_mock),
+            patched_container(auth_api_keys=STORED_CREDS),
+            patched_pricing(),
+        ):
+            result = await harness.execute("emailRead", _base_creds_params(**params))
+
+        harness.assert_envelope(result, success=True)
+        assert exec_mock.await_args.args[2] == expected_argv
+
     async def test_unknown_operation_returns_error(self, harness):
         # No subprocess should be spawned; router raises ValueError
         with (
             _patch_ensure_binary(),
             patched_subprocess(),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -214,7 +268,7 @@ class TestEmailRead:
         with (
             _patch_ensure_binary(),
             patched_subprocess(stdout=b"", stderr=b"folder not found", returncode=1),
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
         ):
             result = await harness.execute(
@@ -249,7 +303,7 @@ class TestEmailReceive:
         )
 
         with (
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
             patch.object(EmailService, "poll_ids", poll_ids_mock),
             patch.object(EmailService, "fetch_detail", fetch_detail_mock),
@@ -289,7 +343,7 @@ class TestEmailReceive:
         flag_mock = AsyncMock(return_value={})
 
         with (
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
             patch.object(EmailService, "poll_ids", poll_ids_mock),
             patch.object(EmailService, "fetch_detail", fetch_detail_mock),
@@ -331,7 +385,7 @@ class TestEmailReceive:
         poll_ids_mock = AsyncMock(side_effect=RuntimeError("himalaya error: connection refused"))
 
         with (
-            patched_container(auth_api_keys={"email_address": "alice@example.com", "email_password": "sekret", "email_provider": "gmail"}),
+            patched_container(auth_api_keys=STORED_CREDS),
             patched_pricing(),
             patch.object(EmailService, "poll_ids", poll_ids_mock),
             patch("asyncio.sleep", new=AsyncMock(return_value=None)),
@@ -347,3 +401,85 @@ class TestEmailReceive:
 
         harness.assert_envelope(result, success=False)
         assert "himalaya" in result["error"].lower() or "connection refused" in result["error"].lower()
+
+    async def test_every_new_message_is_dispatched(self, harness):
+        """Two messages arriving in one poll window must produce two events.
+
+        The loop used to take `next(iter(new_ids))` and mark the whole set
+        seen, so N-1 events were dropped -- and since `new_ids` is a set,
+        *which* one survived was arbitrary. The returned envelope is still
+        the first message, by UID order.
+        """
+        from nodes.email._service import EmailService
+
+        poll_ids_mock = AsyncMock(side_effect=[{"1"}, {"1", "2", "3"}])
+        fetch_detail_mock = AsyncMock(
+            side_effect=lambda creds, msg_id, folder: {
+                "message_id": msg_id,
+                "folder": folder,
+                "subject": f"msg-{msg_id}",
+            }
+        )
+
+        with (
+            patched_container(auth_api_keys=STORED_CREDS),
+            patched_pricing(),
+            patch.object(EmailService, "poll_ids", poll_ids_mock),
+            patch.object(EmailService, "fetch_detail", fetch_detail_mock),
+            patch("asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("services.status_broadcaster.get_status_broadcaster") as bcast,
+            patch("services.events.dispatch.emit") as emit_mock,
+        ):
+            bcast.return_value.update_node_status = AsyncMock(return_value=None)
+            emit_mock.return_value = None
+
+            result = await harness.execute(
+                "emailReceive",
+                _base_creds_params(folder="INBOX", poll_interval=30),
+            )
+
+        harness.assert_envelope(result, success=True)
+        assert emit_mock.call_count == 2, "both new messages must be dispatched"
+        dispatched = {c.args[0].subject for c in emit_mock.call_args_list}
+        assert dispatched == {"2", "3"}
+        # Lowest UID first, so the envelope is deterministic.
+        assert result["result"]["message_id"] == "2"
+
+    async def test_transient_poll_error_does_not_end_the_run(self, harness):
+        """One failing cycle must be retried on the next tick.
+
+        Previously any exception inside the loop propagated to the outer
+        handler and ended the interactive Run entirely.
+        """
+        from nodes.email._service import EmailService
+
+        poll_ids_mock = AsyncMock(
+            side_effect=[
+                {"1"},                                  # baseline
+                RuntimeError("temporary IMAP failure"),  # cycle 1 blows up
+                {"1", "2"},                              # cycle 2 recovers
+            ]
+        )
+        fetch_detail_mock = AsyncMock(
+            return_value={"message_id": "2", "folder": "INBOX", "subject": "after recovery"}
+        )
+
+        with (
+            patched_container(auth_api_keys=STORED_CREDS),
+            patched_pricing(),
+            patch.object(EmailService, "poll_ids", poll_ids_mock),
+            patch.object(EmailService, "fetch_detail", fetch_detail_mock),
+            patch("asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("services.status_broadcaster.get_status_broadcaster") as bcast,
+            patch("services.events.dispatch.emit"),
+        ):
+            bcast.return_value.update_node_status = AsyncMock(return_value=None)
+
+            result = await harness.execute(
+                "emailReceive",
+                _base_creds_params(folder="INBOX"),
+            )
+
+        harness.assert_envelope(result, success=True)
+        assert result["result"]["subject"] == "after recovery"
+        assert poll_ids_mock.await_count == 3
