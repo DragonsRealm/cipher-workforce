@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/035a2293-0837-4969-8b9d-8d680e023b89
 
 **Multiple specialized loop agents orchestrating ↓**
 
-https://github.com/user-attachments/assets/5798fe61-8d26-4d3a-90aa-189bf4eec79f
+https://github.com/user-attachments/assets/3d25e9a3-f7b9-4760-8b9a-6de1e5a19cad
 
 ## How It Works
 
