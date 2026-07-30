@@ -49,12 +49,8 @@
     "systemInfo",
     "wifiAutomation"
   ],
-  "disabled_groups": [
-    "email"
-  ],
+  "disabled_groups": [],
   "disabled_nodes": [],
-  "disabled_credential_categories": [
-    "email"
-  ],
+  "disabled_credential_categories": [],
   "disabled_skill_folders": []
 }
