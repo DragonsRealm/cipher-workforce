@@ -549,7 +549,7 @@ The frontend uses a layered cache + slice-subscription model so cold refreshes a
 
 ### `useAppStore` reads must be slice selectors, never whole-store destructure
 - Always `const x = useAppStore((s) => s.x)`, never `const { x } = useAppStore()`. The whole-store form re-renders the consumer on ANY mutation (sidebar toggle, unrelated workflow rename, parameter save on another node), which defeats `React.memo` + `nodePropsEqual` on the canvas. Setters are stable refs from Zustand — single-field selectors are the cheapest read.
-- Audited and converted across the canvas + parameter-panel hot paths: every node component, `Dashboard.tsx`, `useDragVariable`, `useParameterPanel`, `useReactFlowNodes`, `useWorkflowManagement`, `InputSection`, `MiddleSection`, `OutputPanel`, `ParameterRenderer`, `ToolSchemaEditor`, `ParameterPanel`, `InputNodesPanel`. New code should follow.
+- Audited and converted across the canvas + parameter-panel hot paths: every node component, `Dashboard.tsx`, `useDragVariable`, `useParameterPanel`, `useReactFlowNodes`, `useWorkflowManagement`, `InputSection`, `MiddleSection`, `OutputPanel`, `ParameterRenderer`, `ParameterPanel`. New code should follow.
 
 ### `isOpen` vs `isReady` -- gate every catalogue/spec query on `isReady` ([WebSocketContext.tsx](./client/src/contexts/WebSocketContext.tsx))
 - `isOpen` flips when the socket opens. `isReady` flips only after the init burst (api-key probes, terminal / chat / console history) settles.
@@ -622,7 +622,6 @@ AI model nodes route through `SquareNode` via `Dashboard.tsx`'s `COMPONENT_BY_KI
 - `src/hooks/useParameterPanel.ts` - Parameter management via WebSocket
 - `src/services/executionService.ts` - Node execution via WebSocket (`executeNodeViaWebSocket`)
 - `src/hooks/useApiKeys.ts` - API key management via WebSocket
-- `src/hooks/useAndroidOperations.ts` - Android device operations via WebSocket
 - `src/hooks/useWhatsApp.ts` - WhatsApp operations via WebSocket
 - `src/hooks/useDragAndDrop.ts` - Drag-and-drop functionality (palette → canvas, `application/reactflow`)
 - `src/hooks/useDragWorkspaceFile.ts` - Drag a workspace file onto another node's parameter (`workspaceFile` payload); mirrors `useDragVariable`'s dual-MIME contract — `application/json` for the structured payload, `text/plain` for the bare path
@@ -1440,7 +1439,7 @@ All pricing in `server/config/pricing.json` (user-editable):
 
 ### Frontend Display
 
-`CredentialsModal.renderApiUsagePanel()` shows per-service usage and costs.
+`credentials/sections/ApiUsageSection.tsx` shows per-service API usage and costs; `LlmUsageSection.tsx` shows per-provider token usage. Both read **precomputed** costs (`SUM(APIUsageMetric.cost)` / `TokenUsageMetric`) — neither reads `config/pricing.json`, which is consumed only server-side by `PricingService` at execution time.
 
 ## AI Agent Tool System
 
@@ -1561,11 +1560,15 @@ service_id_map = {
 The former `androidTool` gateway node (single `android_device` tool aggregating multiple Android service nodes, n8n Sub-Node / LangChain Toolkit pattern) no longer exists. Android service nodes connect straight to `input-tools`, and sub-node exclusion keys solely on AI-agent config handles (`input-context` / `input-tools` / `input-skill` / `input-teammates`) — the `TOOLKIT_NODE_TYPES` constant was deleted along with all its usage sites. Legacy `service -> androidTool -> agent` graphs are rewritten on load by `services/workflow_migrations.normalize_legacy_android_toolkit`.
 
 ### Tool Schemas (per-service customization)
-Custom LLM-visible schemas for Android service tools persist in the `tool_schemas` table and are read by the AI service at execution time. (The `ToolSchemaEditor.tsx` UI component shipped with the retired Android Toolkit node and was removed with it; the `useToolSchema` hook, WebSocket handlers, and database CRUD remain.)
+Custom LLM-visible schemas for Android service tools persist in the `tool_schemas` table and are read by the AI service at execution time.
+
+**The write path has no reachable entry point — this is a known gap, not a design.** `ToolSchemaEditor.tsx` shipped with the retired Android Toolkit node and was removed with it; the `useToolSchema` client hook was its only consumer and was deleted in turn once it had zero importers. The WebSocket handlers and database CRUD remain, but nothing reachable calls `save_tool_schema` any more: no REST route writes the table and no server-internal code calls `database.save_tool_schema` outside the WS handler itself. So rows can only survive from before the editor was removed, or be written by hand.
+
+The **read** path is live and load-bearing — do not delete it as "unused". [`services/ai.py`](./server/services/ai.py) fetches the stored row during tool construction and overrides `tool_name` / `tool_description` / `connected_services` from it, and `_build_schema_from_config` turns `schema_config["fields"]` into the actual LLM-visible tool schema. Restoring an editor means giving `save_tool_schema` a caller again; it does not require touching the read side.
 
 #### Architecture
 ```
-useToolSchema Hook (WebSocket CRUD)
+(no client writer — see above)
         ↓
   Database (tool_schemas table)
         ↓
@@ -1575,7 +1578,6 @@ useToolSchema Hook (WebSocket CRUD)
 #### Key Files
 | File | Description |
 |------|-------------|
-| `client/src/hooks/useToolSchema.ts` | WebSocket hook for schema CRUD operations |
 | `server/models/database.py` | `ToolSchema` SQLModel table definition |
 | `server/core/database.py` | Database CRUD methods for tool schemas |
 | `server/routers/websocket.py` | WebSocket handlers for schema operations |
@@ -2517,11 +2519,8 @@ Hook for API key management via WebSocket:
 const { validateApiKey, getStoredKey, saveApiKey, deleteApiKey } = useApiKeys();
 ```
 
-### useAndroidOperations (`client/src/hooks/useAndroidOperations.ts`)
-Hook for Android device operations via WebSocket:
-```typescript
-const { getDevices, executeAction, setupDevice, isConnected, deviceStatus } = useAndroidOperations();
-```
+### Android operations (no dedicated hook)
+Android work goes through the WebSocket context directly — `getAndroidDevices` / `executeAndroidAction` / `androidStatus` off `useWebSocket()`, or a raw `sendRequest('android_relay_connect', …)`. A `useAndroidOperations` hook once wrapped those context methods; every live surface bypassed it, so it was deleted.
 
 ### useParameterPanel (`client/src/hooks/useParameterPanel.ts`)
 Hook for parameter management via WebSocket:
@@ -2740,7 +2739,7 @@ This function:
 - **Auto-derived `isConfigNode` uiHint**: `_derive_auto_ui_hints(group)` in `services/plugin/base.py` automatically sets `uiHints.isConfigNode: True` on any plugin whose `group` tuple contains `memory` or `tool` (centralized as `_CONFIG_NODE_GROUPS = frozenset({"memory", "tool"})`). Explicit `cls.ui_hints` always wins (merge order: auto first, then `dict.update`). Frontend `InputSection.tsx` and `OutputPanel.tsx` consume the flag via `definition?.uiHints?.isConfigNode === true` — the old `groups.includes('memory') || groups.includes('tool')` heuristic is gone. Pytest invariant `test_ui_hints_only_carry_known_flags` locks the flag name. Adding a new auxiliary node type costs zero per-plugin code; opting out costs one line (`ui_hints = {"isConfigNode": False}`).
 - **`isMasterSkillEditor` uiHint replaces `node.type === 'masterSkill'` checks**: 6 frontend callsites (`Dashboard.tsx:98` component dispatch, `useAutoSkillEdges.ts` constant + edge filter, `MiddleSection.tsx` × 3) now read `getCachedNodeSpec(type)?.uiHints?.isMasterSkillEditor === true` instead of comparing the type string. The `MasterSkillNode` plugin already declared the hint — no backend change. Renaming the plugin's `type` is now a single backend edit followed by a NodeSpec deploy; the frontend never needs to know the string.
 - **`outputMode: "terminal"` uiHint — spec-driven CLI output rendering**: the output panel (`components/output/OutputPanel.tsx`, the active renderer — `ui/OutputDisplayPanel.tsx` is legacy/unimported) renders string responses through ReactMarkdown by default, which whitespace-collapses CLI text. CLI-wrapper plugins (`githubAction`, `vercelAction`, `shell`) declare `ui_hints = {"outputMode": "terminal"}`; the panel resolves the spec via `useNodeSpec(selectedNode?.type)` and renders their text in a `<pre>` on the per-theme `--code-*` surface, routes wholly-JSON strings to the JSON tree via the shared `tryParseJson` (`utils/formatters.ts`), and surfaces object/array `result` payloads (server-side-parsed CLI JSON; arrays survive `unwrap` un-peeled) in the Response section. Pair with the `_shape` convention: parsed JSON in `result` OR text in `stdout` — never both — empty keys omitted. Locked by `client/src/components/__tests__/OutputPanel.test.tsx` (render tests: real `\n`/`\t` preserved) + the uiHints known-set in `test_node_spec.py`. Cache note: nodeSpecs are session-sticky (`staleTime: FOREVER`, revision-busted at page load) — after a backend restart a hard browser reload is needed before new uiHints reach an open canvas.
-- **`--action-X-hover` triplet + ActionButton zero-arithmetic**: each of the 6 action roles (`run`/`stop`/`save`/`config`/`secret`/`tools`) now exposes a `-hover` variant (0.25 alpha) alongside the existing `-soft` (0.15) and `-border` (0.6). ActionButton's CVA reads `hover:bg-action-X-hover` directly; disabled state is the shadcn-idiomatic `disabled:opacity-50` on the base class. No per-token `/25`, `/40`, `/10` opacity arithmetic at any call site. Credential-modal panels (`OAuthConnect`, `EmailPanel`, `QrPairingPanel`) and the skill / tool-schema editors (`SkillEditorModal`, `ToolSchemaEditor`) consume `<ActionButton intent="...">` directly. `ActionDef` carries an `intent` key; the catalogue adapter maps server-sent `theme_color` palette strings to intents via `SERVER_COLOR_TO_INTENT`.
+- **`--action-X-hover` triplet + ActionButton zero-arithmetic**: each of the 6 action roles (`run`/`stop`/`save`/`config`/`secret`/`tools`) now exposes a `-hover` variant (0.25 alpha) alongside the existing `-soft` (0.15) and `-border` (0.6). ActionButton's CVA reads `hover:bg-action-X-hover` directly; disabled state is the shadcn-idiomatic `disabled:opacity-50` on the base class. No per-token `/25`, `/40`, `/10` opacity arithmetic at any call site. Credential-modal panels (`OAuthConnect`, `EmailPanel`, `QrPairingPanel`) and the skill editor (`MasterSkillEditor`) consume `<ActionButton intent="...">` directly. `ActionDef` carries an `intent` key; the catalogue adapter maps server-sent `theme_color` palette strings to intents via `SERVER_COLOR_TO_INTENT`.
 - **Credentials: DB as single source of truth + symmetric broadcasts + cache dedup**: `CredentialsDatabase` (encrypted SQLite) is canonical; every other layer is a derived cache with explicit invalidation. Backend `AuthService._memory_cache + _models_cache` collapsed into one `_api_key_cache: Dict[str, ApiKeyCacheEntry]` dataclass — single write/evict site. Per RFC 9700 (OAuth 2.0 BCP, 2024) the `_oauth_cache` no longer carries `refresh_token`; new `get_oauth_refresh_token(provider, customer)` reads from the encrypted DB on every call. `validate_api_key`, `save_api_key`, `delete_api_key`, `twitter_logout`, `google_logout` now broadcast symmetrically: `update_api_key_status` (in-memory map) + `broadcast_credential_event(...)` (refetch signal) wrapping `WorkflowEvent` (CloudEvents v1.0 from `services/events/envelope.py`, the same envelope the Wave 12 EventSource framework uses). The dead-letter `credential_catalogue_updated` event is finally emitted by the backend. Frontend retired the 200-LOC `client/src/components/credentials/providers.tsx` static fallback — `useCatalogueQuery` is the only source; cold-boot renders `<Skeleton>`, server-unreachable shows an explicit error state. `ApiKeyStatus.hasKey` mirror dropped (duplicated catalogue's `provider.stored`); two new selector hooks (`useProviderStored`, `useStoredProviderCount`) read the catalogue. Pytest invariant `test_credential_broadcasts.py` (14 tests) locks the broadcast contract via `inspect.getsource` introspection + the CloudEvents v1.0 envelope shape + AuthService DB-write-then-cache-update ordering + the no-refresh-token-in-cache rule.
 - **Local-LLM provider routing + per-model context**: Ollama and LM Studio are first-class providers (12 total for agents: 10 cloud + 2 local). Provider detection is driven by `detect_ai_provider` in `server/constants.py` plus the `provider` Literal in `nodes/agent/{ai_agent,chat_agent,_specialized}.py` — both MUST list `ollama` / `lmstudio` or chat-model nodes / agent dropdowns silently fall through to `'openai'` and `execute_chat` calls api.openai.com with the placeholder key. The validator at `nodes/model/_local_validator.py` probes via the official SDKs (`ollama.AsyncClient.ps()` for typed `ProcessResponse.Model`, `lmstudio.AsyncClient.llm.list_loaded()` for typed `LlmInstanceInfo`) — reads only typed fields (`context_length`, `max_context_length`, `vision`, `trained_for_tool_use`, `architecture`, `params_string`, `format`, plus Ollama's `details.{family,parameter_size,quantization_level}`). No regex, no Modelfile-parameters parsing, no `/api/show` modelinfo dict-key hunting. Per-model params persist in `EncryptedAPIKey.models["model_params"]` (via `save_api_key(model_params=...)`) AND in `model_registry.json` via `register_local_model()` — sync `get_context_length()` / `get_max_output_tokens()` find real values without async DB lookups, and entries survive process restart. `is_model_valid_for_provider` returns `True` for open-world providers (`openrouter` / `ollama` / `lmstudio`) so local model names like `qwen/qwen3.6-27b` aren't rejected by the cloud-style pattern check. Runtime path uses `OpenAIProvider(base_url={user_proxy_url}, api_key="ollama")` — traffic stays on `localhost`.
 - **Typed SDK error → `LLMError` → `NodeUserError`**: Native providers normalize SDK failures into structured `LLMError` values carrying category, retryability, HTTP status, provider code, request ID, and retry-after metadata. `ChatUnifier` translates them at the execution boundary into a user-safe `NodeUserError`; `BaseNode.execute()` logs that at WARN with one line and no stack trace. Unexpected exceptions retain the full-traceback path. In-process agent turns retry only errors marked retryable, while Temporal owns activity retries and disables the inner retry loop.

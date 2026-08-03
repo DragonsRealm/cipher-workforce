@@ -411,19 +411,24 @@ summary = await db.get_api_usage_summary(service='twitter')
 
 ## Frontend Display
 
-The CredentialsModal displays usage statistics via `renderApiUsagePanel()`:
+The credentials modal displays usage statistics through two section components, both wired via
+`credentials/useCredentialPanel.ts`:
 
 ```typescript
-// client/src/components/CredentialsModal.tsx
+// client/src/components/credentials/sections/ApiUsageSection.tsx   -> per-service API cost
+// client/src/components/credentials/sections/LlmUsageSection.tsx   -> per-provider token cost
 
-// Fetch usage data
-const { getApiUsage, apiUsage, apiUsageLoading } = usePricing();
-await getApiUsage('twitter');
-
-// Render panel
-{renderApiUsagePanel('twitter', 'Twitter')}
-{renderApiUsagePanel('google_maps', 'Google Maps')}
+const { getAPIUsageSummary, getProviderUsageSummary } = useApiKeys();
 ```
+
+**Both render precomputed costs, never the pricing config.** `get_api_usage_summary` is a
+`SUM(APIUsageMetric.cost)` GROUP BY, and the `cost` column was calculated at write time by
+`PricingService`. Nothing on the client reads or writes `pricing.json`.
+
+There is no UI for editing pricing. `PricingConfigModal` + `usePricing` existed but were never
+mounted anywhere and were deleted; the `get_pricing_config` / `save_pricing_config` WS handlers
+remain registered with no client caller. Editing `pricing.json` means editing the file. (The third
+handler in that module, `get_api_usage_summary`, IS live — `useApiKeys` calls it.)
 
 ### Display Format
 
@@ -499,12 +504,10 @@ Alternatively, for a service billed per operation, skip the helper entirely and 
 }
 ```
 
-### 4. Add Frontend Display
+### 4. Frontend Display
 
-```typescript
-// In CredentialsModal.tsx, in the relevant panel:
-{renderApiUsagePanel('new_service', 'New Service')}
-```
+Nothing to add. `ApiUsageSection` renders whatever services come back from
+`get_api_usage_summary`, so a new service appears as soon as it records its first metric.
 
 ## Key Files
 
@@ -521,5 +524,6 @@ Alternatively, for a service billed per operation, skip the helper entirely and 
 | `server/services/plugin/operation.py` | `@Operation` decorator + `OperationSpec.cost` metadata |
 | `server/models/database.py` | `APIUsageMetric`, `TokenUsageMetric` models |
 | `server/core/database.py` | `save_api_usage_metric()`, `get_api_usage_summary()` |
-| `client/src/components/CredentialsModal.tsx` | `renderApiUsagePanel()` UI component |
-| `client/src/hooks/usePricing.ts` | Frontend hook for pricing/usage data |
+| `client/src/components/credentials/sections/ApiUsageSection.tsx` | Per-service API usage + cost display |
+| `client/src/components/credentials/sections/LlmUsageSection.tsx` | Per-provider token usage + cost display |
+| `client/src/hooks/useApiKeys.ts` | `getAPIUsageSummary` / `getProviderUsageSummary` |

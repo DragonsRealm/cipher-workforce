@@ -120,7 +120,6 @@ client/src/
 │   ├── ui/
 │   │   ├── ApiKeyInput.tsx         # Composite: input + eye toggle + save/delete buttons
 │   │   ├── SettingsPanel.tsx       # Shadcn Switch + Slider + Input
-│   │   ├── PricingConfigModal.tsx  # (client/src/components/PricingConfigModal.tsx)
 │   │   ├── ConsolePanel.tsx        # Chat + console + terminal + output
 │   │   ├── Modal.tsx               # Shadcn Dialog wrapper
 │   │   ├── NodeOutputPanel.tsx     # Deleted (superseded by output/OutputPanel)
@@ -128,8 +127,6 @@ client/src/
 │   │
 │   ├── icons/                      # AI provider icons (SVG data URIs)
 │   ├── auth/                       # Login page + protected route
-│   ├── shared/
-│   │   └── JSONTreeRenderer.tsx    # Recursive JSON tree (no styled-components)
 │   ├── SquareNode.tsx, StartNode.tsx, TriggerNode.tsx, GenericNode.tsx, AIAgentNode.tsx, WhatsAppNode.tsx, ModelNode.tsx
 │   │                               # React Flow nodes with lucide icons
 │   └── APIKeyValidator.tsx         # Shadcn Input + Button + Tooltip composition
@@ -150,7 +147,7 @@ client/src/
 │   ├── useComponentPalette.ts / useDragAndDrop.ts / useDragWorkspaceFile.ts
 │   ├── useOnboarding.ts            # Reads via useUserSettingsQuery; writes via mutation
 │   ├── useParameterPanel.ts        # Thin orchestrator over useNodeParamsQuery + save mutation
-│   ├── usePricing.ts / useToolSchema.ts / useWhatsApp.ts / useAndroidOperations.ts
+│   ├── useWhatsApp.ts             # WS-based WhatsApp ops (Android ops go via useWebSocket directly)
 │   └── useCopyPaste.ts / useRename.ts
 │
 ├── store/
@@ -477,7 +474,7 @@ This is the rule that keeps the data layer schema-driven instead of imperatively
 | **`stores/nodeStatusStore.ts`** (Zustand) | Per-workflow node-execution statuses -- moved out of WebSocketContext so a status tick does not cascade through the React tree. `useNodeStatus(id)` is a slice selector; only the affected node's consumers re-render. Mirror this pattern for any new high-frequency push state. | `allStatuses[workflowId][nodeId]`, `currentWorkflowId` |
 
 **Hard rules:**
-- **Read Zustand stores via slice selectors, never whole-store destructure.** Always `const x = useAppStore((s) => s.x)`, never `const { x } = useAppStore()`. The whole-store form re-renders the consumer on ANY store mutation (sidebar toggle, unrelated workflow rename, parameter save on another node), which defeats `React.memo` + `nodePropsEqual` on the canvas. Setters are stable refs from Zustand — single-field selectors are the cheapest read. Audited and converted across the canvas + parameter-panel hot paths (every node component, `Dashboard.tsx`, `useDragVariable`, `useParameterPanel`, `useReactFlowNodes`, `useWorkflowManagement`, `InputSection`, `MiddleSection`, `OutputPanel`, `ParameterRenderer`, `ToolSchemaEditor`, `ParameterPanel`, `InputNodesPanel`).
+- **Read Zustand stores via slice selectors, never whole-store destructure.** Always `const x = useAppStore((s) => s.x)`, never `const { x } = useAppStore()`. The whole-store form re-renders the consumer on ANY store mutation (sidebar toggle, unrelated workflow rename, parameter save on another node), which defeats `React.memo` + `nodePropsEqual` on the canvas. Setters are stable refs from Zustand — single-field selectors are the cheapest read. Audited and converted across the canvas + parameter-panel hot paths (every node component, `Dashboard.tsx`, `useDragVariable`, `useParameterPanel`, `useReactFlowNodes`, `useWorkflowManagement`, `InputSection`, `MiddleSection`, `OutputPanel`, `ParameterRenderer`, `ParameterPanel`).
 - A list of server records (`workflows`, `nodeParameters`, `userSettings`, `credentialCatalogue`, `userSkills`, node output schemas) lives in TanStack Query. Never duplicate it in Zustand. Phase-1 follow-up commit `c3a7aa4` removed `savedWorkflows` from `useAppStore` for exactly this reason; Wave 3 commit `7706afb` did the same for `userSkills` in MasterSkillEditor.
 - Imperative WebSocket request/response inside a component (`useEffect` + `sendRequest` + `setState`) is a code smell — wrap it in a `useQuery` hook. Inline the hook at the top of the consuming file when there's exactly one consumer (Wave 2/3 colocation rule); promote to `client/src/hooks/` when a second consumer appears. Phase-2 commit `b2b6fba` did this for `useParameterPanel` and `useOnboarding`; Wave 3 commits `2c5f227` / `7706afb` / `327f792` followed the same pattern inline inside MiddleSection / MasterSkillEditor / InputSection.
 - After a mutation, **invalidate the corresponding query key**, don't manually patch a Zustand list or call a local refetch helper. Mutations that need it from non-React code use the `queryClient` singleton at [client/src/lib/queryClient.ts](../client/src/lib/queryClient.ts).

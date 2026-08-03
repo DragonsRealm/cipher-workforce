@@ -73,7 +73,8 @@ A second, deeper audit (4 parallel sub-agents — panel audit, library survey, N
 - Phase 6 — `ParameterRenderer` → DIY widget registry. Backend `get_node_spec` handler is the prerequisite. Frontend layout decided (4 files in `inspector/`); rollout shape decided (5 weekly slices behind `VITE_USE_NODESPEC` with parity test against legacy renderer).
 - Bulk Tailwind sweep of `GenericNode` / `BaseChatModelNode` inline `theme.dracula.*` refs. Visual-regression-prone; needs in-browser verification per file.
 - ESLint rule + bundle-budget CI assertion (Phase 7 leftovers). Both touch CI config, deferred together.
-- `MasterSkillEditor` RHF migration. The editor is a split-panel UI (skill list + content editor + folder dropdown + inline create/edit) — not the >3-field-form pattern Phase 4 targeted. The form-with-validation parts already moved to `SkillEditorModal`; the registry-style list view is genuinely different work.
+- `MasterSkillEditor` RHF migration. The editor is a split-panel UI (skill list + content editor + folder dropdown + inline create/edit) — not the >3-field-form pattern Phase 4 targeted, so the registry-style list view is genuinely different work.
+  **Corrected 2026-08:** this item used to claim "the form-with-validation parts already moved to `SkillEditorModal`". That move never landed in the render tree. `SkillEditorModal` was never imported by anything, at any point — it was a parallel implementation of the same `create_user_skill` / `update_user_skill` commands that `MasterSkillEditor` still drives from its own inline form. It was carried through four migration waves as dead weight and has now been deleted. `MasterSkillEditor` still owns 100% of skill editing, form parts included.
 
 ## Wave 3 — backend as schema source of truth (April 2026)
 
@@ -333,6 +334,45 @@ Driven by the upstream `design_handoff_machinaos_themes/` bundle expanding from 
 - **Per-component decorative class hooks** beyond `app-frame` / `canvas-host` / `modal-frame` — `.sq-node`, `.cat`, `.cmdk`, `.menu-pop` add finer-grained per-theme decorations. Each is a one-line className edit; ship as themes ship.
 - **Deeper Parameter Panel + Credentials sub-panel header migration** — body copy + form labels retint via the bridge but interior section headers (`MiddleSection` group labels, `MasterSkillEditor` split-panel heads, `ApiKeyPanel` / `OAuthPanel` / `EmailPanel` / `QrPairingPanel` section titles) don't yet carry the display-typography triplet. Apply the recipe (`font-display tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]`) when those files are next touched.
 
+## Wave 15 — frontend thinning: dead code + execution logic out of the client (August 2026)
+
+Premise: "the backend is the execution engine; the frontend is just a UI." The client was violating
+that by keeping its own copies of backend-owned facts, and the copies had gone stale enough to cause
+user-visible bugs.
+
+| Batch | What it delivers | Where |
+|---|---|---|
+| 1 — deploy gate | The "no trigger node found" check read a hardcoded 11-string array containing one type the backend registry does not define (`workflowTrigger`) and missing `stripeReceive` — so a Stripe-webhook-only workflow could not be deployed. Now reads `componentKind === 'trigger'` off the raw spec via the pre-existing `getNodeTypesWithKind()`. | `Dashboard.tsx`, `lib/nodeSpec.ts` |
+| 2 — execution budget | `BaseNode.start_to_close_timeout` is now serialized as `uiHints.executionTimeoutMs`, replacing two stale client arrays (5 of 10 triggers, 16 of 21 agents) that produced a phantom 30 s `Request timeout` on 8 node types. Rides `uiHints` because `services/node_spec.py` is a hard key whitelist. Fallback is the finite 5 min `WORKFLOW_CONTROL_REQUEST_TIMEOUT`, never "no timeout" — an unsettleable promise hangs the Run spinner with no error. Fixed `cronScheduler`, which declared 10 min while sleeping up to a month. | `services/plugin/base.py`, `WebSocketContext.tsx`, `INodeProperties.ts`, `nodes/scheduler/cron_scheduler/` |
+| 3 — dead modules (484 lines) | `popover.tsx`, `utils/nodeUtils.ts` (hardcoded the client-side node registry Wave 11 deleted), `DropCap.tsx` (its `::first-letter` rule exists in no theme), `styles/zIndex.ts`, `hooks/useExecution.ts` (dead frontend *execution* logic — the live path is `ExecutionService.executeNodeViaWebSocket`). Plus the `nodeOutput` drop branch with no producer, and the `googleChatModel` provider alias that `useAppStore` already migrates away. | client + 4 doc sites |
+| 4 — orphan sweep (1,663 lines) | `SkillEditorModal`, `JSONTreeRenderer`, `DataPanel`, `InputNodesPanel`, `PricingConfigModal`, `usePricing`, `useAndroidOperations`, `useToolSchema`, and the two unreferenced barrels (`parameterPanel/index.ts`, `maps/index.ts`). Verified by knip program-graph closure, not regex. | client + 3 doc sites |
+| 5 — guards | pytest + `inspect.getsource`, repo idiom. No client file may carry a backend node-type literal in an array/comparison context; every registered node must serialize `executionTimeoutMs`; every `TriggerNode` must report ≥ 1 h. Includes a debt ledger that can only shrink. Adversarially verified to fail on a probe — a guard never seen failing is not a guard. | `server/tests/test_frontend_no_node_type_copies.py` |
+
+**Wave 15 numbers:**
+- 2,147 lines of client code deleted across two sweeps.
+- 2 stale node-type arrays retired; 1 backend field (`executionTimeoutMs`) added to carry the truth.
+- knip closure after the sweep: 2 remaining orphans, both deliberate (`ui/tabs.tsx`, needed by
+  in-flight work; `credentials/schema/extends.ts`, retained on its documented rationale).
+- 389 client tests, typecheck, lint, and `vite build` green.
+
+**Findings worth keeping (each corrected a doc that was wrong):**
+- `SkillEditorModal` was never imported by anything. This plan previously recorded it as the place
+  MasterSkillEditor's "form-with-validation parts already moved" — that move never landed. See the
+  correction under Wave 2's deferred list.
+- `PricingConfigModal` has no entry point and no severed one to restore. `pricing.json` stays
+  load-bearing at execution time via the `PricingService` singleton; the UI was never in that path.
+- **The `tool_schemas` write path is dead while the read path is live.** `services/ai.py` reads the
+  table during tool construction to override the LLM-visible tool name/description/schema, but no
+  reachable code can write it. Deleting `useToolSchema` did not cause this and does not fix it — see
+  CLAUDE.md's Tool Schemas section.
+- `useAndroidOperations` was a wrapper over context methods that every live Android surface already
+  bypassed, documenting a signature (`setupDevice`, `deviceStatus`) the file did not export.
+
+**Deliberately not deleted:** `credentials/schema/extends.ts` — unreferenced, but its docstring names
+planned consumers and it mirrors `credential_registry._deep_merge`. Two divergences from that mirror
+were found and are worth fixing if it is ever adopted: TS adds a `statusRows` alias the Python set
+lacks, and Python treats any `key` as keyed while TS requires `typeof key === 'string'`.
+
 ## Context
 
 The OpenCompany frontend was coupled to Ant Design (40 files, 187-line theme file, `ConfigProvider` at root). Pre-migration audit + research docs (now deleted; see git history under commit `4cb3dd9` if needed) prescribed shadcn/ui (canonical components copied via CLI registry) + Radix primitives + Tailwind 4 + JSON Forms for a schema-driven inspector. Phase 0/1 commits (`2209dba`, `7ac69fe`) included hand-written primitives and a toast facade — those got deleted as part of corrected Phase 0 (`cdeebb4`).
@@ -505,7 +545,7 @@ Dependency order: 0 → {1, 2, 3} parallelizable → 4 → 5 → 7; 6 can overla
 **Goal:** delete the old stack. Bundle shrinks ~200-400 KB gzipped.
 
 - Verify zero `from 'antd'` imports remain.
-- Migrate [client/src/components/shared/JSONTreeRenderer.tsx](../client/src/components/shared/JSONTreeRenderer.tsx) — rewrite styled-components as Tailwind classes.
+- ~~Migrate `client/src/components/shared/JSONTreeRenderer.tsx` — rewrite styled-components as Tailwind classes.~~ Moot: it was migrated off styled-components, then found to have zero importers (the live JSON viewer is `@uiw/react-json-view` inside `output/OutputPanel.tsx`) and deleted 2026-08.
 - Delete: `client/src/config/antdTheme.ts` (deleted in Phase 7); `ConfigProvider` wrapper in [client/src/App.tsx](../client/src/App.tsx); antd reset CSS import in `main.tsx`. Inline remaining [client/src/styles/theme.ts](../client/src/styles/theme.ts) usages against CSS vars then delete.
 - Remove from [client/package.json](../client/package.json): `antd`, `@ant-design/icons`, `styled-components`, `@types/styled-components`.
 - Broaden React Compiler scope to whole `src/`.
@@ -538,7 +578,7 @@ No test runner. Before Phase 5, decide:
 - [client/src/components/credentials/](../client/src/components/credentials/) — exemplar for Phase 5 and 6
 - [client/src/components/output/OutputPanel.tsx](../client/src/components/output/OutputPanel.tsx) — `_uiHints` wiring in Phase 6
 - [client/src/components/ui/Modal.tsx](../client/src/components/ui/Modal.tsx) — replaced by shadcn `Dialog` in Phase 3
-- [client/src/components/shared/JSONTreeRenderer.tsx](../client/src/components/shared/JSONTreeRenderer.tsx) — last styled-components site
+- ~~`client/src/components/shared/JSONTreeRenderer.tsx` — last styled-components site~~ (deleted 2026-08, unreferenced)
 
 ### Rollout / rollback
 Each phase behind no flag except Phase 6 (`VITE_USE_NODESPEC`). Rollback = single-PR revert; antd coexists with new stack until Phase 7.
