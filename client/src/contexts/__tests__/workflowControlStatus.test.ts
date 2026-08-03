@@ -10,6 +10,7 @@ import {
   type WorkflowControlMutationAction,
   type WorkflowControlState,
   type WorkflowControlStatus,
+  type WorkflowStartResult,
 } from '../WebSocketContext';
 
 const status = (
@@ -97,6 +98,33 @@ describe('workflow control mutation responses', () => {
   it('returns successful status payloads unchanged', () => {
     const response = { success: true, generation: 2, revision: 3 };
     expect(assertWorkflowControlMutationSucceeded(response)).toBe(response);
+  });
+
+  it('preserves a successful Start graph and aliases in the typed snapshot', () => {
+    const response = {
+      success: true,
+      workflow_id: 'workflow-1',
+      generation: 2,
+      state: 'running',
+      revision: 3,
+      graph: {
+        graphVersion: 2,
+        nodes: [{ id: 'workflow-1:context:1', type: 'context' }],
+        edges: [{
+          id: 'context-edge',
+          source: 'workflow-1:context:1',
+          target: 'workflow-1:agent:1',
+        }],
+      },
+      aliases: {
+        'legacy-agent': 'workflow-1:agent:1',
+      },
+    };
+
+    const snapshot: WorkflowStartResult = normalizeWorkflowControlStatus(response);
+
+    expect(snapshot.graph).toEqual(response.graph);
+    expect(snapshot.aliases).toEqual(response.aliases);
   });
 
   it('extracts the authoritative snapshot carried by a success:false response', () => {

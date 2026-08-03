@@ -62,11 +62,14 @@ class OpenAIProvider:
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         model = self._clean_model(model)
         policy = self._model_policy(model, thinking)
         if policy["use_responses"] and (
-            tools or self._has_responses_state(messages)
+            tools
+            or self._has_responses_state(messages)
+            or context_management
         ):
             return await self._chat_responses(
                 messages=messages,
@@ -74,6 +77,7 @@ class OpenAIProvider:
                 max_tokens=max_tokens,
                 thinking=thinking,
                 tools=tools,
+                context_management=context_management,
             )
 
         params: Dict[str, Any] = {
@@ -128,6 +132,7 @@ class OpenAIProvider:
         max_tokens: int,
         thinking: Optional[ThinkingConfig],
         tools: Optional[List[ToolDef]],
+        context_management: Optional[Dict[str, Any]],
     ) -> LLMResponse:
         """Run a self-contained Responses API turn for reasoning tool use."""
 
@@ -148,6 +153,20 @@ class OpenAIProvider:
             params["tools"] = [
                 self._to_responses_tool(tool) for tool in tools
             ]
+        if (
+            isinstance(context_management, dict)
+            and context_management.get("type") == "compaction"
+        ):
+            threshold = int(
+                context_management.get("compact_threshold") or 0
+            )
+            if threshold > 0:
+                params["context_management"] = [
+                    {
+                        "type": "compaction",
+                        "compact_threshold": threshold,
+                    }
+                ]
         response = await self._client.responses.create(**params)
         return self._normalize_responses(response, model)
 

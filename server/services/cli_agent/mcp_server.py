@@ -59,6 +59,7 @@ class BatchContext:
     node_id: str
     workspace_dir: Path
     execution_id: Optional[str] = None
+    user_id: str = "owner"
     connected_skill_names: Set[str] = field(default_factory=set)
     connected_skill_descriptors: List[Dict[str, Any]] = field(default_factory=list)
     allowed_credentials: Set[str] = field(default_factory=set)
@@ -85,10 +86,12 @@ def issue_token() -> str:
 
 
 def _validate_connected_tool_names(connected_tools: List[Dict[str, Any]]) -> None:
-    """Reject ambiguous node-type dispatch within one CLI agent surface."""
+    """Reject ambiguous canonical names within one CLI agent surface."""
+    from services.cli_agent.workflow_tools import _connected_tool_name
+
     ensure_unique_tool_names(
         {
-            "name": tool["node_type"],
+            "name": _connected_tool_name(tool),
             "node_id": tool.get("node_id") or "",
             "label": tool.get("label") or tool["node_type"],
         }
@@ -110,8 +113,9 @@ def register_batch(token: str, ctx: BatchContext) -> None:
     # physical nodes of the same effective name would otherwise select the
     # first one silently.
     _validate_connected_tool_names(ctx.connected_tools)
-    _active_tokens[token] = ctx
-    tool_names = [t.get("node_type") for t in ctx.connected_tools]
+    from services.cli_agent.workflow_tools import _connected_tool_name
+
+    tool_names = [_connected_tool_name(t) for t in ctx.connected_tools]
     logger.info(
         "[CC-Agent MCP register_batch] node=%s wf=%s token=%s... " "skills=%d tools=%d creds=%d %s",
         ctx.node_id,
@@ -125,7 +129,11 @@ def register_batch(token: str, ctx: BatchContext) -> None:
     # Per-batch workflow-tool exposure lives in workflow_tools.py.
     from services.cli_agent.workflow_tools import expose_workflow_tools
 
+    # Schema compatibility is checked before the bearer token becomes
+    # callable. A conflicting global FastMCP name must leave no half-
+    # registered batch behind.
     expose_workflow_tools(ctx.connected_tools)
+    _active_tokens[token] = ctx
 
 
 def unregister_batch(token: str) -> None:
@@ -196,14 +204,23 @@ def rebind_batch(
         ctx.broadcaster = broadcaster
     if connected_tools is not None:
         from services.cli_agent.workflow_tools import (
+            _connected_tool_name,
             expose_workflow_tools,
             unexpose_workflow_tools,
         )
 
-        old_by_type = {t.get("node_type"): t for t in ctx.connected_tools if t.get("node_type")}
-        new_by_type = {t.get("node_type"): t for t in connected_tools if t.get("node_type")}
-        added = [v for k, v in new_by_type.items() if k not in old_by_type]
-        removed = [v for k, v in old_by_type.items() if k not in new_by_type]
+        old_by_name = {
+            _connected_tool_name(t): t
+            for t in ctx.connected_tools
+            if _connected_tool_name(t)
+        }
+        new_by_name = {
+            _connected_tool_name(t): t
+            for t in connected_tools
+            if _connected_tool_name(t)
+        }
+        added = [v for k, v in new_by_name.items() if k not in old_by_name]
+        removed = [v for k, v in old_by_name.items() if k not in new_by_name]
         if removed:
             unexpose_workflow_tools(removed)
         if added:
@@ -216,7 +233,7 @@ def rebind_batch(
             token[:8],
             len(added),
             len(removed),
-            len(old_by_type.keys() & new_by_type.keys()),
+            len(old_by_name.keys() & new_by_name.keys()),
             len(ctx.connected_tools),
         )
     if connected_skill_names is not None:

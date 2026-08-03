@@ -10,7 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from core.logging import get_logger
-from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
+from services.plugin import (
+    ActionNode,
+    NodeContext,
+    Operation,
+    RetryPolicy,
+    TaskQueue,
+)
 from services.plugin.edge_walker import (
     collect_agent_connections,
     format_task_context,
@@ -29,11 +35,13 @@ class RLMAgentNode(ActionNode):
     group = ("agent",)
     description = "Recursive Language Model agent (REPL-based)"
     component_kind = "agent"
+    requires_context = True
     tool_description = "ONE-SHOT delegation to RLM Agent. Call ONCE per task, returns task_id. Uses recursive REPL-based reasoning with code execution - do NOT re-call."
     handles = std_agent_handles()
     ui_hints = STD_AGENT_HINTS
     annotations = {"destructive": True, "readonly": False, "open_world": True}
     task_queue = TaskQueue.AI_HEAVY
+    retry_policy = RetryPolicy(maximum_attempts=1)
 
     Params = SpecializedAgentParams
     Output = SpecializedAgentOutput
@@ -50,12 +58,18 @@ class RLMAgentNode(ActionNode):
         payload = params.model_dump()
 
         # 1. Edge-walk for memory / skill / tool / input / task connections.
-        memory_data, skill_data, tool_data, input_data, task_data = await collect_agent_connections(
+        context_data, skill_data, tool_data, input_data, task_data = await collect_agent_connections(
             node_id,
             ctx.raw,
             database,
             log_prefix="[RLM Agent]",
         )
+        context_v2 = (
+            context_data
+            if (context_data or {}).get("kind") == "context"
+            else None
+        )
+        memory_data = context_data if context_data and not context_v2 else None
 
         # 2. Inject task-completion context into the prompt.
         if task_data:
@@ -87,12 +101,14 @@ class RLMAgentNode(ActionNode):
             node_id,
             payload,
             memory_data=memory_data,
+            context_data=context_v2,
             skill_data=skill_data if skill_data else None,
             tool_data=tool_data if tool_data else None,
             broadcaster=get_status_broadcaster(),
             workflow_id=workflow_id,
             context=ctx.raw,
             database=database,
+            ai_service=ai_service,
         )
         if response.get("success") is False:
             raise RuntimeError(response.get("error") or "rlm_agent execution failed")

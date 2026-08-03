@@ -167,6 +167,23 @@ export interface WorkflowControlStatus {
   error?: string | null;
 }
 
+export interface WorkflowStartGraph {
+  graphVersion?: number;
+  nodes: any[];
+  edges: any[];
+}
+
+/**
+ * Successful Start responses carry the backend-admitted graph in addition to
+ * the lifecycle snapshot. The graph is optional because timeout recovery can
+ * complete from a later status read, which has no graph payload.
+ */
+export interface WorkflowStartResult extends WorkflowControlStatus {
+  graph?: WorkflowStartGraph;
+  aliases?: Record<string, string>;
+  migration_warnings?: string[];
+}
+
 export type WorkflowControlMutationAction = 'start' | 'pause' | 'resume' | 'reset';
 export type WorkflowControlTransitionState = Extract<
   WorkflowControlState,
@@ -465,7 +482,10 @@ interface WebSocketContextValue {
 
   // Node Parameters
   getNodeParameters: (nodeId: string) => Promise<NodeParameters | null>;
-  getAllNodeParameters: (nodeIds: string[]) => Promise<Record<string, NodeParameters>>;
+  getAllNodeParameters: (
+    nodeIds: string[],
+    options?: { purpose?: 'export'; workflowId?: string },
+  ) => Promise<Record<string, NodeParameters>>;
   saveNodeParameters: (nodeId: string, parameters: Record<string, any>, version?: number) => Promise<boolean>;
   deleteNodeParameters: (nodeId: string) => Promise<boolean>;
 
@@ -483,7 +503,7 @@ interface WebSocketContextValue {
   getDeploymentStatus: (workflowId?: string) => Promise<{ isRunning: boolean; activeRuns: number; settings?: any; workflow_id?: string }>;
   cancelExecution: (workflowId: string, nodeId?: string) => Promise<any>;
   getWorkflowStatus: (workflowId: string) => Promise<{ executing: boolean }>;
-  startWorkflow: (workflowId: string, nodes: any[], edges: any[], sessionId?: string, expectedRevision?: number) => Promise<WorkflowControlStatus>;
+  startWorkflow: (workflowId: string, nodes: any[], edges: any[], sessionId?: string, expectedRevision?: number) => Promise<WorkflowStartResult>;
   pauseWorkflow: (workflowId: string, expectedRevision: number) => Promise<WorkflowControlStatus>;
   resumeWorkflow: (workflowId: string, expectedRevision: number) => Promise<WorkflowControlStatus>;
   resetWorkflow: (workflowId: string, expectedRevision: number) => Promise<WorkflowControlStatus>;
@@ -2523,10 +2543,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [sendRequest]);
 
-  const getAllNodeParametersAsync = useCallback(async (nodeIds: string[]): Promise<Record<string, NodeParameters>> => {
+  const getAllNodeParametersAsync = useCallback(async (
+    nodeIds: string[],
+    options?: { purpose?: 'export'; workflowId?: string },
+  ): Promise<Record<string, NodeParameters>> => {
     if (!nodeIds.length) return {};
     try {
-      const response = await sendRequest<any>('get_all_node_parameters', { node_ids: nodeIds });
+      const response = await sendRequest<any>('get_all_node_parameters', {
+        node_ids: nodeIds,
+        purpose: options?.purpose,
+        workflow_id: options?.workflowId,
+      });
       const result: Record<string, NodeParameters> = {};
 
       if (response.parameters) {
@@ -2536,8 +2563,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             version: data.version || 0,
           };
         }
-        // Update local cache with all parameters
-        setNodeParameters(prev => ({ ...prev, ...result }));
+        // Export responses are server-redacted and must not replace the
+        // editor's normal parameter cache.
+        if (options?.purpose !== 'export') {
+          setNodeParameters(prev => ({ ...prev, ...result }));
+        }
       }
       return result;
     } catch (error) {
@@ -2774,7 +2804,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     type: WorkflowControlMutationRequest,
     workflowId: string,
     data: Record<string, any>,
-  ): Promise<WorkflowControlStatus> => {
+  ): Promise<WorkflowStartResult> => {
     if (workflowControlPendingRef.current.has(workflowId)) {
       throw new Error('A workflow lifecycle change is already in progress');
     }
@@ -2785,7 +2815,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const sendMutationAttempt = async (
       attemptData: Record<string, any>,
-    ): Promise<WorkflowControlStatus> => {
+    ): Promise<WorkflowStartResult> => {
       const response = await sendRequest<any>(type, {
         ...attemptData,
         workflow_id: workflowId,
@@ -2802,7 +2832,21 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ? applyWorkflowControlStatus(workflowId, snapshot)
         : undefined;
       assertWorkflowControlMutationSucceeded(response);
-      return acceptedSnapshot ?? applyWorkflowControlStatus(workflowId, response);
+      const acceptedStatus = acceptedSnapshot
+        ?? applyWorkflowControlStatus(workflowId, response);
+      if (type !== 'start_workflow') return acceptedStatus;
+
+      // Lifecycle status is merged independently, but Start also returns the
+      // exact graph admitted by backend normalization. Preserve that transport
+      // metadata for the UI caller even when the status was nested.
+      return {
+        ...acceptedStatus,
+        ...(response?.graph ? { graph: response.graph } : {}),
+        ...(response?.aliases ? { aliases: response.aliases } : {}),
+        ...(response?.migration_warnings
+          ? { migration_warnings: response.migration_warnings }
+          : {}),
+      };
     };
 
     try {
@@ -2859,7 +2903,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [applyWorkflowControlStatus, requestWorkflowControlStatus, sendRequest]);
 
   const graphEnvelope = (nodes: any[], edges: any[]) => ({
-    nodes: nodes.map((node) => ({ id: node.id, type: node.type || '', data: node.data || {} })),
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      type: node.type || '',
+      position: node.position,
+      data: node.data || {},
+    })),
     edges: edges.map((edge) => ({
       id: edge.id, source: edge.source, target: edge.target,
       sourceHandle: edge.sourceHandle || undefined,
@@ -2867,7 +2916,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     })),
   });
 
-  const startWorkflowAsync = useCallback((workflowId: string, nodes: any[], edges: any[], sessionId?: string, expectedRevision = 0) =>
+  const startWorkflowAsync = useCallback((
+    workflowId: string,
+    nodes: any[],
+    edges: any[],
+    sessionId?: string,
+    expectedRevision = 0,
+  ): Promise<WorkflowStartResult> =>
     controlMutation('start_workflow', workflowId, {
       ...graphEnvelope(nodes, edges), session_id: sessionId || 'default', expected_revision: expectedRevision,
     }), [controlMutation]);

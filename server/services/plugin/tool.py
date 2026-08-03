@@ -7,8 +7,11 @@ JSON Schema the LLM sees — derived from :class:`Params` automatically.
 
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import Any, ClassVar, Dict, Optional
+from copy import copy, deepcopy
+from functools import lru_cache
+from typing import Any, ClassVar, Dict, FrozenSet, Optional, Type
+
+from pydantic import BaseModel, ConfigDict, create_model
 
 from core.logging import get_logger
 from services.plugin.base import BaseNode
@@ -116,15 +119,71 @@ class ToolNode(BaseNode, abstract=True):
         "open_world": False,
     }
 
+    # ``Params`` describes persisted, operator-controlled node
+    # configuration. ``ToolInput`` describes arguments an LLM is allowed to
+    # supply for a single invocation. Existing tools keep their historical
+    # contract automatically: when a subclass does not declare ToolInput,
+    # ``__init_subclass__`` aliases it to that subclass's Params model.
+    #
+    # Keeping these as distinct models is a security boundary. In particular,
+    # a model must never be able to smuggle workflow/node scope or overwrite a
+    # server-controlled setting merely because both dictionaries happened to
+    # be merged before validation.
+    ToolInput: ClassVar[Optional[Type[BaseModel]]] = None
+    server_controlled_fields: ClassVar[FrozenSet[str]] = frozenset()
+
+    # Some first-party tools have a security-sensitive public schema. Their
+    # ToolInput must win over a stale/custom ToolSchema row saved by an older
+    # client. Simple Memory opts into this contract.
+    tool_schema_locked: ClassVar[bool] = False
+
+    def __init_subclass__(cls, abstract: bool = False, **kwargs):
+        if not abstract and "ToolInput" not in cls.__dict__:
+            cls.ToolInput = cls.Params
+        super().__init_subclass__(abstract=abstract, **kwargs)
+
+    @classmethod
+    def tool_input_model(cls) -> Type[BaseModel]:
+        """Return the invocation model, defaulting to persisted ``Params``."""
+        return cls.ToolInput or cls.Params
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def partial_config_model(cls) -> Type[BaseModel]:
+        """Model used to validate the persisted subset for legacy tools.
+
+        Historically a ToolNode's Params mixed operator configuration with
+        required invocation arguments, so a saved node may legitimately omit
+        fields the LLM must provide. This derived model keeps every field's
+        type/constraints and extra-field policy while making absence valid.
+        """
+        partial_fields: Dict[str, tuple[Any, Any]] = {}
+        for field_name, field_info in cls.Params.model_fields.items():
+            optional_info = copy(field_info)
+            optional_info.default = None
+            optional_info.default_factory = None
+            partial_fields[field_name] = (field_info.annotation, optional_info)
+        return create_model(
+            f"{cls.Params.__name__}PersistedConfig",
+            __config__=ConfigDict(
+                extra=cls.Params.model_config.get("extra", "ignore")
+            ),
+            **partial_fields,
+        )
+
     @classmethod
     def as_tool_schema(cls) -> Dict[str, Any]:
         """LLM-visible schema: ``{name, description, parameters}`` where
-        ``parameters`` is the Pydantic JSON schema of :class:`Params`."""
+        ``parameters`` is the Pydantic JSON schema of :class:`ToolInput`."""
         # Inline $defs / $ref — LLM function-calling doesn't cope with
         # indirection, and a bare strip would leave dangling $ref.
-        schema = inline_schema_refs(cls.Params.model_json_schema())
+        schema = inline_schema_refs(cls.tool_input_model().model_json_schema())
         return {
-            "name": cls.type,
+            "name": (
+                cls.tool_name
+                if cls.tool_schema_locked and cls.tool_name
+                else cls.type
+            ),
             "description": cls.description or cls.display_name or cls.type,
             "parameters": schema,
         }

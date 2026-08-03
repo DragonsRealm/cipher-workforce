@@ -171,6 +171,16 @@ def canonicalize_node_ids(
             if isinstance(value, str) and value in mapping:
                 item[key] = mapping[value]
         normalized_edges.append(item)
+    # System-managed companions retain their owner link as UI metadata so the
+    # backend can repair a deleted required edge. It is topology identity and
+    # must follow the same alias map as edge endpoints.
+    for node in normalized_nodes:
+        data = node.get("data")
+        if not isinstance(data, dict):
+            continue
+        owner_id = data.get("agentNodeId")
+        if isinstance(owner_id, str) and owner_id in mapping:
+            node["data"] = {**data, "agentNodeId": mapping[owner_id]}
     return normalized_nodes, normalized_edges, mapping
 
 

@@ -17,9 +17,34 @@ from temporalio.common import (
 )
 
 from core.logging import get_logger
-from .workflow import MachinaWorkflow
+from .workflow import (
+    MachinaWorkflow,
+    TEMPORAL_ROUTING_INPUT_KEY,
+    TEMPORAL_ROUTING_INPUT_VERSION,
+)
 
 logger = get_logger(__name__)
+
+
+def capture_temporal_routing_input() -> Dict[str, Any]:
+    """Capture command-shaping flags before entering workflow execution."""
+    from core.config import Settings
+
+    settings = Settings()
+    return {
+        TEMPORAL_ROUTING_INPUT_KEY: {
+            "version": TEMPORAL_ROUTING_INPUT_VERSION,
+            "agent_workflow_enabled": bool(
+                getattr(settings, "temporal_agent_workflow_enabled", False)
+            ),
+            "per_type_dispatch_enabled": bool(
+                getattr(settings, "temporal_per_type_dispatch", False)
+            ),
+            "worker_pool_enabled": bool(
+                getattr(settings, "temporal_worker_pool_enabled", False)
+            ),
+        }
+    }
 
 
 class TemporalExecutor:
@@ -54,6 +79,9 @@ class TemporalExecutor:
         session_id: str = "default",
         enable_caching: bool = True,
         workflow_slug: Optional[str] = None,
+        graph_version: int = 0,
+        generation: int = 0,
+        user_id: str = "owner",
     ) -> Dict[str, Any]:
         """Execute a workflow using Temporal.
 
@@ -66,6 +94,9 @@ class TemporalExecutor:
             workflow_slug: Human-readable slug used in the Temporal Web UI
                 listing prefix. Optional — falls back to ``"workflow"`` for
                 one-off Runs without a saved DB row.
+            graph_version: Normalized graph version for Context V2
+            generation: Durable workflow-control generation for Context V2
+            user_id: Authenticated server-owned user identity
 
         Returns:
             Dict with success, outputs, execution_trace, and timing info
@@ -90,16 +121,28 @@ class TemporalExecutor:
 
         try:
             # Execute workflow via Temporal
+            workflow_payload = {
+                "nodes": nodes,
+                "edges": edges,
+                "session_id": session_id,
+                "workflow_id": workflow_id,
+                "workflow_slug": workflow_slug,
+                "execution_id": execution_id,
+                "user_id": str(user_id or "owner"),
+                **capture_temporal_routing_input(),
+            }
+            if int(graph_version or 0) >= 2 and int(generation or 0) > 0:
+                workflow_payload.update(
+                    {
+                        "graphVersion": int(graph_version),
+                        "generation": int(generation),
+                        "root_execution_id": execution_id,
+                    }
+                )
+
             result = await self.client.execute_workflow(
                 MachinaWorkflow.run,
-                {
-                    "nodes": nodes,
-                    "edges": edges,
-                    "session_id": session_id,
-                    "workflow_id": workflow_id,
-                    "workflow_slug": workflow_slug,
-                    "execution_id": execution_id,
-                },
+                workflow_payload,
                 id=execution_id,
                 task_queue=self.task_queue,
                 search_attributes=TypedSearchAttributes(

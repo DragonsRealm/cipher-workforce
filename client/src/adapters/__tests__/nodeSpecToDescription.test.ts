@@ -229,7 +229,7 @@ describe('nodeSpecToDescription contract', () => {
     ]);
   });
 
-  it('always emits a single main input and output handle', () => {
+  it('falls back to a single main input and output without declared handles', () => {
     const def = nodeSpecToDescription({
       type: 'handleNode',
       displayName: 'Handle Node',
@@ -239,6 +239,70 @@ describe('nodeSpecToDescription contract', () => {
     });
     expect(def.inputs).toEqual(['main']);
     expect(def.outputs).toEqual(['main']);
+  });
+
+  it('retains declared handles, roles, labels, positions, and connection ids', () => {
+    const handles = [
+      {
+        name: 'input-context',
+        kind: 'input' as const,
+        position: 'left' as const,
+        offset: '50%',
+        label: 'Context',
+        role: 'context',
+      },
+      {
+        name: 'input-tools',
+        kind: 'input' as const,
+        position: 'bottom' as const,
+        offset: '75%',
+        label: 'Tools',
+        role: 'tools',
+      },
+      {
+        name: 'output-main',
+        kind: 'output' as const,
+        position: 'right' as const,
+        label: 'Output',
+        role: 'main',
+      },
+    ];
+    const def = nodeSpecToDescription({
+      type: 'contextAgent',
+      displayName: 'Context Agent',
+      icon: '🧠',
+      group: ['agent'],
+      version: 2,
+      handles,
+    });
+
+    expect(def.inputs).toEqual(['input-context', 'input-tools']);
+    expect(def.outputs).toEqual(['output-main']);
+    expect(def.handles).toEqual(handles);
+    expect(def.handles).not.toBe(handles);
+  });
+
+  it('retains Context V2 capability and panel hints', () => {
+    const def = nodeSpecToDescription({
+      type: 'contextNode',
+      displayName: 'Context',
+      icon: '🧠',
+      group: ['context'],
+      version: 2,
+      uiHints: {
+        requiresContext: false,
+        systemManaged: true,
+        isContextPanel: true,
+        isMemoryToolPanel: false,
+      },
+    });
+
+    expect(def.uiHints).toMatchObject({
+      requiresContext: false,
+      systemManaged: true,
+      isContextPanel: true,
+      isMemoryToolPanel: false,
+    });
   });
 
   it('preserves uiHints object as-is on the description', () => {

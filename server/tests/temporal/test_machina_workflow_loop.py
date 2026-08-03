@@ -87,7 +87,11 @@ class TestSkippedTriggerUnblocksDownstream:
         monkeypatch.setattr(
             MachinaWorkflow,
             "_resolve_dispatch",
-            lambda self, node_type: {"kind": "activity", "name": f"node.{node_type}.v1", "queue": None},
+            lambda self, node_type, **_kwargs: {
+                "kind": "activity",
+                "name": f"node.{node_type}.v1",
+                "queue": None,
+            },
         )
 
         wf = MachinaWorkflow()

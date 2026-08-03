@@ -167,11 +167,11 @@ class TestWorkflowBranchContract:
         llm_calls: list[tuple[dict, dict]] = []
 
         async def fake_execute_activity(name, *, args, **kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _payload(native=True)
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_calls.append((args[0], kwargs))
                 return {
                     "kind": "final",
@@ -179,9 +179,9 @@ class TestWorkflowBranchContract:
                     "thinking": None,
                     "usage": {"input_tokens": 3, "output_tokens": 1},
                 }
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -230,11 +230,11 @@ class TestWorkflowBranchContract:
 
         async def fake_execute_activity(name, *, args, **_kwargs):
             nonlocal llm_turn, compaction_calls
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return prepared
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_turn += 1
                 if llm_turn == 1:
                     return {
@@ -262,7 +262,7 @@ class TestWorkflowBranchContract:
                         "total_tokens": 6,
                     },
                 }
-            if name == "agent.compact_memory.v1":
+            if name == "agent.compact_memory":
                 compaction_calls += 1
                 return {
                     "success": True,
@@ -275,9 +275,9 @@ class TestWorkflowBranchContract:
                         "total_tokens": 6,
                     },
                 }
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -319,11 +319,11 @@ class TestWorkflowBranchContract:
 
         async def fake_execute_activity(name, *, args, **_kwargs):
             nonlocal llm_turn
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return prepared
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_turn += 1
                 if llm_turn == 1:
                     return {
@@ -352,7 +352,7 @@ class TestWorkflowBranchContract:
                         "total_tokens": 3,
                     },
                 }
-            if name == "agent.compact_memory.v1":
+            if name == "agent.compact_memory":
                 compact_payloads.append(args[0])
                 return {
                     "success": True,
@@ -365,9 +365,9 @@ class TestWorkflowBranchContract:
                         "total_tokens": 500,
                     },
                 }
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -416,11 +416,11 @@ class TestWorkflowBranchContract:
         )
 
         async def fake_execute_activity(name, *, args, **_kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return prepared
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 return {
                     "kind": "tool_calls",
                     "calls": [
@@ -437,13 +437,13 @@ class TestWorkflowBranchContract:
                         "cache_read_tokens": 50,
                     },
                 }
-            if name == "agent.compact_memory.v1":
+            if name == "agent.compact_memory":
                 raise AssertionError(
                     "markerless threshold must use input + output only"
                 )
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -468,15 +468,15 @@ class TestWorkflowBranchContract:
         from services.temporal.agent_workflow import AgentWorkflow
 
         async def fake_execute_activity(name, *, args, **_kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _payload(native=False)
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 failure = RuntimeError("outer activity failure")
                 failure.cause = RuntimeError("legacy raw provider detail")
                 raise failure
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -506,11 +506,11 @@ class TestWorkflowBranchContract:
         llm_calls: list[tuple[dict, dict]] = []
 
         async def fake_execute_activity(name, *, args, **kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _payload(native=False)
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_calls.append((args[0], kwargs))
                 return {
                     "kind": "final",
@@ -518,9 +518,9 @@ class TestWorkflowBranchContract:
                     "thinking": None,
                     "usage": {},
                 }
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -569,12 +569,12 @@ class TestWorkflowBranchContract:
         llm_calls: list[tuple[dict, dict]] = []
 
         async def fake_execute_activity(name, *, args, **kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 assert "api_key" not in prepared_payload
                 return prepared_payload
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_calls.append((args[0], kwargs))
                 return {
                     "kind": "final",
@@ -582,9 +582,9 @@ class TestWorkflowBranchContract:
                     "thinking": None,
                     "usage": {},
                 }
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 

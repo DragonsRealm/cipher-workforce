@@ -111,36 +111,12 @@ def _default_max_iterations() -> int:
 # failures inside the LLM step fail fast instead of burning 3 retries.
 AGENT_ACTIVITY_RETRY: RetryPolicy = DEFAULT_ACTIVITY_RETRY
 
-# Temporal patch marker for per-call command identity and duplicate-name
-# validation. Existing histories must retain their recorded activity/child
-# ids and last-wins tool index; new histories take the isolated path.
-TOOL_CALL_IDENTITY_V2_PATCH = "agent-tool-call-identity-v2"
-TASK_MANAGER_DELEGATION_PATCH = "agent-task-manager-delegation-v1"
-COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
-    "agent-cooperative-pause-scheduling-v1"
-)
-DELEGATED_TASK_COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
-    "delegated-task-cooperative-pause-scheduling-v1"
-)
-DELEGATION_PERMIT_CLEANUP_PATCH = "agent-delegation-permit-cleanup-v1"
-DELEGATION_ACQUIRE_CANCELLATION_PATCH = (
-    "agent-delegation-acquire-cancellation-v1"
-)
-DELEGATED_TASK_CANCELLATION_TERMINAL_PATCH = (
-    "delegated-task-cancellation-terminal-v1"
-)
-DELEGATED_TASK_SEARCH_ATTRIBUTES_PATCH = (
-    "agent-delegated-task-search-attributes-v1"
-)
-# Agent/delegated children used to carry 1-2h execution/run timeouts and
-# the permit wait a ~3h total retry budget. Runs may execute — or stay
+# Agent/delegated children start with NO execution/run timeout, and the
+# permit wait retries indefinitely. Runs may execute — or stay
 # cooperatively paused — for months, and Temporal's timeout timers keep
-# ticking through a pause, so the caps silently terminated long/paused
-# work (skipping the compensation blocks: leaked permits, stuck task
-# rows). New executions start children unbounded and wait for permits
-# indefinitely; the patch keeps replay compatibility for histories
-# recorded with the old caps.
-UNBOUNDED_LIFETIMES_PATCH = "agent-unbounded-lifetimes-v1"
+# ticking through a pause, so any lifetime cap silently terminated
+# long/paused work (skipping the compensation blocks: leaked permits,
+# stuck task rows). Liveness is the activity heartbeat's job.
 DUPLICATE_TOOL_NAME_ERROR_TYPE = "DuplicateToolNameError"
 
 
@@ -221,12 +197,12 @@ def _native_assistant_thinking(message: Any) -> Optional[str]:
     return "\n\n".join(parts) or None
 
 
-def _tool_activity_id_v2(tool_node_id: str, iteration: int, call_index: int) -> str:
+def _tool_activity_id(tool_node_id: str, iteration: int, call_index: int) -> str:
     """Return a stable, unique id for one tool call in one agent turn."""
     return f"tool-{tool_node_id}-{iteration + 1}-{call_index + 1}"
 
 
-def _delegation_child_id_v2(
+def _delegation_child_id(
     agent_workflow_id: str,
     tool_node_id: str,
     iteration: int,
@@ -236,9 +212,43 @@ def _delegation_child_id_v2(
     return f"{agent_workflow_id}-delegate-{tool_node_id}-{iteration + 1}-{call_index + 1}"
 
 
-def _refresh_tools_activity_id_v2(tool_node_id: str, iteration: int, call_index: int) -> str:
+def _refresh_tools_activity_id(tool_node_id: str, iteration: int, call_index: int) -> str:
     """Return a stable id for the hot-refresh owned by one tool call."""
     return f"refresh-tools-{tool_node_id}-{iteration + 1}-{call_index + 1}"
+
+
+# Keys that identify the durable scope a run executes in. They are injected
+# into a root node's context by MachinaWorkflow and must be inherited by
+# delegated children: without them a subagent resolves no context of its own
+# and its turns are silently never journalled. Forwarded verbatim — the
+# framework does not interpret any of them.
+_INHERITED_SCOPE_KEYS = (
+    "graphVersion",
+    "generation",
+    "data_scope_id",
+    "context_execution_id",
+    "context_session_id",
+    "user_id",
+    "workspace_dir",
+    "temporal_worker_pool_enabled",
+)
+
+
+# Roll the agent run over before Temporal's ~51,200-event hard terminate.
+# The loop carries the transcript and a growing tool list, so a long agent
+# run reaches that ceiling; the server's own suggestion is the primary
+# signal and this soft cap is the deterministic backstop.
+_AGENT_HISTORY_SOFT_CAP = 10_000
+
+# State carried across a rollover. Deliberately all O(1) or bounded: the
+# transcript is NOT carried -- a journal-backed run reconstructs it from
+# the Context store, which is the whole point of holding refs.
+_RESUME_MARKER = "_agent_resume"
+
+
+def _inherited_scope(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the scope keys a delegated child must inherit from its parent."""
+    return {key: context[key] for key in _INHERITED_SCOPE_KEYS if key in context}
 
 
 def _tool_call_metadata(
@@ -328,25 +338,11 @@ class DelegatedTaskWorkflow:
 
     @workflow.run
     async def run(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        use_cooperative_pause_schedule_gate = workflow.patched(
-            DELEGATED_TASK_COOPERATIVE_PAUSE_SCHEDULING_PATCH
-        )
-        use_acquire_cancellation_completion = workflow.patched(
-            DELEGATION_ACQUIRE_CANCELLATION_PATCH
-        )
-        use_cancellation_terminal = workflow.patched(
-            DELEGATED_TASK_CANCELLATION_TERMINAL_PATCH
-        )
-        use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
-        acquire_cancellation_options = (
-            {
-                "cancellation_type": (
-                    ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
-                )
-            }
-            if use_acquire_cancellation_completion
-            else {}
-        )
+        acquire_cancellation_options = {
+            "cancellation_type": (
+                ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
+            )
+        }
         lifecycle = request["lifecycle"]
         task_id = lifecycle["team_task_id"]
         root_id = lifecycle["root_execution_id"]
@@ -356,7 +352,7 @@ class DelegatedTaskWorkflow:
             await self._wait_until_resumed()
             info = workflow.info()
             await workflow.execute_activity(
-                "agent.register_task_execution.v1",
+                "agent.register_task_execution",
                 args=[{**lifecycle, "runner_workflow_id": info.workflow_id,
                        "runner_run_id": info.run_id,
                        "child_workflow_id": request["child_workflow_id"]}],
@@ -364,56 +360,43 @@ class DelegatedTaskWorkflow:
                 retry_policy=AGENT_ACTIVITY_RETRY,
                 **acquire_cancellation_options,
             )
-            if use_cooperative_pause_schedule_gate:
-                await self._wait_until_resumed()
+            await self._wait_until_resumed()
             acquire_payload = {
                 "root_execution_id": root_id,
                 "permit_id": task_id,
                 "limit": request.get("limit", 3),
+                "lease_version": 2,
             }
-            if use_acquire_cancellation_completion:
-                acquire_payload["lease_version"] = 2
             acquire_result = await workflow.execute_activity(
-                "agent.acquire_subagent_permit.v1",
+                "agent.acquire_subagent_permit",
                 args=[acquire_payload],
                 start_to_close_timeout=timedelta(hours=1),
                 heartbeat_timeout=timedelta(seconds=10),
-                # Unlimited attempts on the patched path — a queued
-                # delegation waits as long as admission takes.
-                retry_policy=(
-                    PERMIT_WAIT_RETRY if use_unbounded_lifetimes else AGENT_ACTIVITY_RETRY
-                ),
+                # Unlimited attempts — a queued delegation waits as long
+                # as admission takes.
+                retry_policy=PERMIT_WAIT_RETRY,
                 **acquire_cancellation_options,
             )
             acquired_permit_id = str(
                 (acquire_result or {}).get("lease_id")
                 or task_id
             )
-            if use_cooperative_pause_schedule_gate:
-                await self._wait_until_resumed()
+            await self._wait_until_resumed()
             await workflow.execute_activity(
-                "agent.begin_delegation.v1", args=[lifecycle],
+                "agent.begin_delegation", args=[lifecycle],
                 start_to_close_timeout=PERSIST_TURN_TIMEOUT,
                 retry_policy=AGENT_ACTIVITY_RETRY,
                 **acquire_cancellation_options,
             )
             began = True
             await self._wait_until_resumed()
-            if use_acquire_cancellation_completion:
-                request["child_context"]["team_permit_id"] = (
-                    acquired_permit_id
-                )
-            runner_child_kwargs: Dict[str, Any] = {"id": request["child_workflow_id"]}
-            if not use_unbounded_lifetimes:
-                # Replay-only: pre-patch histories recorded 1h caps.
-                runner_child_kwargs["execution_timeout"] = timedelta(hours=1)
-                runner_child_kwargs["run_timeout"] = timedelta(hours=1)
+            request["child_context"]["team_permit_id"] = acquired_permit_id
             child_handle = await workflow.start_child_workflow(
                 "AgentWorkflow", args=[request["child_context"]],
-                **runner_child_kwargs,
+                id=request["child_workflow_id"],
             )
             await workflow.execute_activity(
-                "agent.register_task_execution.v1",
+                "agent.register_task_execution",
                 args=[{**lifecycle, "runner_workflow_id": info.workflow_id,
                        "runner_run_id": info.run_id,
                        "child_workflow_id": child_handle.id,
@@ -425,7 +408,7 @@ class DelegatedTaskWorkflow:
             succeeded = bool(result.get("success", True)) if isinstance(result, dict) else True
             _response, summary = _normalise_delegated_result(result)
             return await workflow.execute_activity(
-                "agent.finish_delegation.v1",
+                "agent.finish_delegation",
                 args=[{**lifecycle, "success": succeeded, "result": summary,
                        "error": result.get("error") if isinstance(result, dict) else None,
                        "terminal_event_id": f"{task_id}:terminal"}],
@@ -433,77 +416,76 @@ class DelegatedTaskWorkflow:
                 retry_policy=AGENT_ACTIVITY_RETRY,
             )
         except asyncio.CancelledError:
-            if use_cancellation_terminal:
-                if began:
-                    try:
-                        await workflow.execute_activity(
-                            "agent.cancel_delegation.v1",
-                            args=[{
-                                **lifecycle,
-                                "reason": (
-                                    "Delegated task workflow cancelled"
-                                ),
-                                "terminal_event_id": f"{task_id}:terminal",
-                            }],
-                            activity_id="cancel-delegation",
-                            start_to_close_timeout=PERSIST_TURN_TIMEOUT,
-                            retry_policy=DELEGATION_CLEANUP_RETRY,
-                            **acquire_cancellation_options,
-                        )
-                    except Exception as cleanup_exc:  # noqa: BLE001
-                        workflow.logger.error(
-                            "DelegatedTaskWorkflow failed to persist "
-                            f"cancellation for {task_id}: {cleanup_exc}"
-                        )
-                else:
-                    # Queue/acquire/begin may have completed even when their
-                    # result lost the cancellation race. The dedicated
-                    # transition is idempotent for absent/already-terminal
-                    # tasks and never invokes the normal failure/requeue path.
-                    try:
-                        await workflow.execute_activity(
-                            "agent.cancel_delegation.v1",
-                            args=[{
-                                **lifecycle,
-                                "reason": (
-                                    "Delegated task workflow cancelled"
-                                ),
-                                "terminal_event_id": f"{task_id}:terminal",
-                            }],
-                            activity_id="cancel-delegation-before-begin",
-                            start_to_close_timeout=PERSIST_TURN_TIMEOUT,
-                            retry_policy=DELEGATION_CLEANUP_RETRY,
-                            **acquire_cancellation_options,
-                        )
-                    except Exception as cleanup_exc:  # noqa: BLE001
-                        workflow.logger.error(
-                            "DelegatedTaskWorkflow failed to persist early "
-                            f"cancellation for {task_id}: {cleanup_exc}"
-                        )
-                if acquired_permit_id:
-                    try:
-                        await workflow.execute_activity(
-                            "agent.release_subagent_permit.v1",
-                            args=[{
-                                "root_execution_id": root_id,
-                                "permit_id": acquired_permit_id,
-                            }],
-                            activity_id="release-permit-cancelled",
-                            start_to_close_timeout=PERSIST_TURN_TIMEOUT,
-                            retry_policy=DELEGATION_CLEANUP_RETRY,
-                            **acquire_cancellation_options,
-                        )
-                        acquired_permit_id = None
-                    except Exception as cleanup_exc:  # noqa: BLE001
-                        workflow.logger.error(
-                            "DelegatedTaskWorkflow failed to release "
-                            f"cancelled permit {task_id}: {cleanup_exc}"
-                        )
+            if began:
+                try:
+                    await workflow.execute_activity(
+                        "agent.cancel_delegation",
+                        args=[{
+                            **lifecycle,
+                            "reason": (
+                                "Delegated task workflow cancelled"
+                            ),
+                            "terminal_event_id": f"{task_id}:terminal",
+                        }],
+                        activity_id="cancel-delegation",
+                        start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                        retry_policy=DELEGATION_CLEANUP_RETRY,
+                        **acquire_cancellation_options,
+                    )
+                except Exception as cleanup_exc:  # noqa: BLE001
+                    workflow.logger.error(
+                        "DelegatedTaskWorkflow failed to persist "
+                        f"cancellation for {task_id}: {cleanup_exc}"
+                    )
+            else:
+                # Queue/acquire/begin may have completed even when their
+                # result lost the cancellation race. The dedicated
+                # transition is idempotent for absent/already-terminal
+                # tasks and never invokes the normal failure/requeue path.
+                try:
+                    await workflow.execute_activity(
+                        "agent.cancel_delegation",
+                        args=[{
+                            **lifecycle,
+                            "reason": (
+                                "Delegated task workflow cancelled"
+                            ),
+                            "terminal_event_id": f"{task_id}:terminal",
+                        }],
+                        activity_id="cancel-delegation-before-begin",
+                        start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                        retry_policy=DELEGATION_CLEANUP_RETRY,
+                        **acquire_cancellation_options,
+                    )
+                except Exception as cleanup_exc:  # noqa: BLE001
+                    workflow.logger.error(
+                        "DelegatedTaskWorkflow failed to persist early "
+                        f"cancellation for {task_id}: {cleanup_exc}"
+                    )
+            if acquired_permit_id:
+                try:
+                    await workflow.execute_activity(
+                        "agent.release_subagent_permit",
+                        args=[{
+                            "root_execution_id": root_id,
+                            "permit_id": acquired_permit_id,
+                        }],
+                        activity_id="release-permit-cancelled",
+                        start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                        retry_policy=DELEGATION_CLEANUP_RETRY,
+                        **acquire_cancellation_options,
+                    )
+                    acquired_permit_id = None
+                except Exception as cleanup_exc:  # noqa: BLE001
+                    workflow.logger.error(
+                        "DelegatedTaskWorkflow failed to release "
+                        f"cancelled permit {task_id}: {cleanup_exc}"
+                    )
             raise
         except Exception as exc:
             if began:
                 await workflow.execute_activity(
-                    "agent.finish_delegation.v1",
+                    "agent.finish_delegation",
                     args=[{**lifecycle, "success": False,
                            "error": f"{type(exc).__name__}: {exc}",
                            "terminal_event_id": f"{task_id}:terminal"}],
@@ -513,28 +495,19 @@ class DelegatedTaskWorkflow:
             raise
         finally:
             if acquired_permit_id:
-                release_options = (
-                    {
-                        "activity_id": "release-permit-final",
-                        "retry_policy": DELEGATION_CLEANUP_RETRY,
-                    }
-                    if use_cancellation_terminal
-                    else {"retry_policy": AGENT_ACTIVITY_RETRY}
-                )
                 try:
                     await workflow.execute_activity(
-                        "agent.release_subagent_permit.v1",
+                        "agent.release_subagent_permit",
                         args=[{
                             "root_execution_id": root_id,
                             "permit_id": acquired_permit_id,
                         }],
+                        activity_id="release-permit-final",
                         start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                        retry_policy=DELEGATION_CLEANUP_RETRY,
                         **acquire_cancellation_options,
-                        **release_options,
                     )
                 except Exception as release_exc:
-                    if not use_cancellation_terminal:
-                        raise
                     workflow.logger.error(
                         "DelegatedTaskWorkflow final permit release failed "
                         f"for {task_id}: {release_exc}"
@@ -636,37 +609,17 @@ class AgentWorkflow:
         ``services/ai.py:execute_agent`` returns today so downstream
         code (OutputPanel, edge inputs, etc.) doesn't change.
         """
-        # Activity inputs and command ids are recorded in Temporal Event
-        # History. Old histories take the exact legacy branches below; new
-        # runs record this marker and receive per-call command identity plus
-        # deterministic duplicate-name validation.
-        use_tool_call_identity_v2 = workflow.patched(TOOL_CALL_IDENTITY_V2_PATCH)
-        use_task_manager_delegation = workflow.patched(TASK_MANAGER_DELEGATION_PATCH)
-        use_cooperative_pause_schedule_gate = workflow.patched(
-            COOPERATIVE_PAUSE_SCHEDULING_PATCH
-        )
-        use_delegation_permit_cleanup = workflow.patched(
-            DELEGATION_PERMIT_CLEANUP_PATCH
-        )
-        use_unbounded_lifetimes = workflow.patched(UNBOUNDED_LIFETIMES_PATCH)
-        use_acquire_cancellation_completion = workflow.patched(
-            DELEGATION_ACQUIRE_CANCELLATION_PATCH
-        )
-        acquire_cancellation_options = (
-            {
-                "cancellation_type": (
-                    ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
-                )
-            }
-            if use_acquire_cancellation_completion
-            else {}
-        )
+        acquire_cancellation_options = {
+            "cancellation_type": (
+                ActivityCancellationType.WAIT_CANCELLATION_COMPLETED
+            )
+        }
 
         # ---- Step 0: Resolve payload via the prep activity --------------
         # DB lookups + edge walking + tool schema build happen here, NOT
         # in the workflow body (workflows must be deterministic).
         payload = await workflow.execute_activity(
-            "agent.prepare_payload.v1",
+            "agent.prepare_payload",
             args=[context],
             activity_id="prepare-payload",
             start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,  # 60s default
@@ -690,7 +643,15 @@ class AgentWorkflow:
         # (node_executor.py fallback). Delegation children inherit it via
         # the ``child_context`` spread below. ``workflow.info().run_id``
         # is deterministic — safe inside workflow code.
-        execution_id = str(context.get("execution_id") or "") or workflow.info().run_id[:8]
+        resume = dict(context.get(_RESUME_MARKER) or {})
+        # run_id CHANGES on continue-as-new, so a resumed run would mint a
+        # different execution id and break browser-session reuse, permit
+        # scoping and root_execution_id fallback. Carry it explicitly.
+        execution_id = (
+            str(resume.get("execution_id") or "")
+            or str(context.get("execution_id") or "")
+            or workflow.info().run_id[:8]
+        )
         task_scope_execution_id = str(
             payload.get("team_execution_id") or execution_id
         )
@@ -710,16 +671,11 @@ class AgentWorkflow:
         self._root_execution_id = root_execution_id
         self._provider = str(payload.get("provider") or "")
 
-        # The provider-visible name is the dispatch key. The legacy dict
-        # comprehension silently selected the last connected node when two
-        # tools shared a name. New histories fail before the first billed LLM
-        # call and identify every conflicting canvas node.
+        # The provider-visible name is the dispatch key. Duplicate names fail
+        # before the first billed LLM call and identify every conflicting
+        # canvas node, instead of silently selecting the last connected one.
         tools = payload.get("tools") or []
-        duplicate_tool_error = (
-            _duplicate_visible_tool_name_error(tools)
-            if use_tool_call_identity_v2
-            else None
-        )
+        duplicate_tool_error = _duplicate_visible_tool_name_error(tools)
         duplicate_tool_conflicts = (
             _duplicate_visible_tool_name_conflicts(tools)
             if duplicate_tool_error
@@ -753,6 +709,36 @@ class AgentWorkflow:
         # ---- Build initial message list ---------------------------------
         # Native executions use the SDK-neutral v2 wire codec. Legacy
         # histories keep the legacy canonical {type, data} shape exactly.
+        # ---- Context journal -------------------------------------------
+        # A Context node on the agent's input makes the backend journal the
+        # source of truth for the transcript: the LLM activity reconstructs
+        # from the store rather than from `messages`, so a run resumes the
+        # prior conversation instead of starting empty. The workflow holds
+        # only references.
+        context_ref: Optional[Dict[str, Any]] = None
+        runtime_config_ref = ""
+        journalled = 0
+        if payload.get("context_descriptor"):
+            await self._wait_until_resumed()
+            prepared_context = await workflow.execute_activity(
+                "agent.prepare_context",
+                args=[{"context": context, "operation_id": f"{execution_id}:prepare"}],
+                activity_id="prepare-context",
+                start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,
+                retry_policy=AGENT_ACTIVITY_RETRY,
+            )
+            context_ref = prepared_context.get("context_ref")
+            runtime_config_ref = str(
+                prepared_context.get("runtime_config_ref") or ""
+            )
+        if resume:
+            # A resumed run reconstructs its transcript from the journal, so
+            # only references and counters cross the rollover boundary.
+            context_ref = resume.get("context_ref") or context_ref
+            runtime_config_ref = (
+                str(resume.get("runtime_config_ref") or "") or runtime_config_ref
+            )
+
         messages: List[Dict[str, Any]] = []
 
         system = payload.get("system_message") or ""
@@ -817,9 +803,38 @@ class AgentWorkflow:
         )
 
         # ---- Main loop --------------------------------------------------
-        for iteration in range(max_iterations):
+        iteration_offset = int(resume.get("iteration") or 0)
+        for iteration in range(iteration_offset, max_iterations):
             await self._wait_until_resumed()
             workflow.logger.info(f"AgentWorkflow iteration {iteration} " f"(messages={len(messages)} tools={len(tools)})")
+
+            # Commit anything produced since the last turn — tool results
+            # above all. Tools run through this workflow's own per-type and
+            # delegation paths, which never touch the journal, so without
+            # this the next reconstruction replays an assistant turn whose
+            # tool calls have no answers.
+            if context_ref and len(messages) > journalled:
+                pending_messages = messages[journalled:]
+                appended = await workflow.execute_activity(
+                    "agent.append_context",
+                    args=[
+                        {
+                            "action": "append_messages",
+                            "context_ref": context_ref,
+                            "runtime_config_ref": runtime_config_ref,
+                            "messages": pending_messages,
+                            "iteration": iteration,
+                            "operation_id": (
+                                f"{execution_id}:iter:{iteration}:append"
+                            ),
+                        }
+                    ],
+                    activity_id=f"append-context-{iteration + 1}",
+                    start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                    retry_policy=AGENT_ACTIVITY_RETRY,
+                )
+                context_ref = appended.get("context_ref") or context_ref
+                journalled = len(messages)
 
             # CloudEvents-shaped agent_progress per LLM turn. Mirrors the
             # the in-process agent loop's per-turn broadcast (RFC §6.4).
@@ -832,8 +847,7 @@ class AgentWorkflow:
                 max_iterations,
                 phase="llm_step",
             )
-            if use_cooperative_pause_schedule_gate:
-                await self._wait_until_resumed()
+            await self._wait_until_resumed()
 
             # Strip per-turn fields the activity doesn't need. Native turns
             # receive only provider-neutral JSON tool definitions. Legacy
@@ -857,6 +871,22 @@ class AgentWorkflow:
                     "thinking_config": payload.get("thinking_config"),
                     "llm_engine": NATIVE_LLM_ENGINE,
                     "message_wire_version": message_wire_version,
+                    # Present only for journal-backed agents; the activity
+                    # reconstructs the transcript from the store instead of
+                    # trusting `messages`.
+                    **(
+                        {
+                            "context_ref": context_ref,
+                            "runtime_config_ref": runtime_config_ref,
+                        }
+                        if context_ref
+                        else {}
+                    ),
+                    # A provider may stop a turn to compact rather than to
+                    # answer. Without the finish reason that response is
+                    # indistinguishable from a normal completion and gets
+                    # returned to the user as a truncated final answer.
+                    "include_finish_reason": True,
                 }
             else:
                 if not has_recorded_engine:
@@ -906,7 +936,7 @@ class AgentWorkflow:
             try:
                 if has_recorded_engine:
                     step_result = await workflow.execute_activity(
-                        "agent.execute_llm_step.v1",
+                        "agent.execute_llm_step",
                         args=[llm_payload],
                         activity_id=f"llm-step-{iteration + 1}",
                         start_to_close_timeout=LLM_STEP_TIMEOUT,
@@ -915,7 +945,7 @@ class AgentWorkflow:
                     )
                 else:
                     step_result = await workflow.execute_activity(
-                        "agent.execute_llm_step.v1",
+                        "agent.execute_llm_step",
                         args=[llm_payload],
                         activity_id=f"llm-step-{iteration + 1}",
                         start_to_close_timeout=LLM_STEP_TIMEOUT,
@@ -964,7 +994,7 @@ class AgentWorkflow:
                 # stuck on its last capability while the workflow has already
                 # ended.  Keep the public event free of provider error text.
                 await workflow.execute_activity(
-                    "agent.skill.clear.v1",
+                    "agent.skill.clear",
                     args=[{
                         "workflow_id": payload.get("workflow_id"),
                         "execution_id": task_scope_execution_id,
@@ -1024,6 +1054,23 @@ class AgentWorkflow:
             assistant_message = step_result.get("assistant_message")
             if assistant_message:
                 messages.append(assistant_message)
+            if context_ref and step_result.get("context_ref"):
+                # The step committed the assistant turn; nothing for the
+                # delta journaller below to re-append.
+                context_ref = step_result["context_ref"]
+                journalled = len(messages)
+
+            # A provider that stops to compact has not answered. It carries
+            # no tool calls, so it would otherwise be classified "final" and
+            # its truncated content returned to the user as the response.
+            # Treat it as a no-op turn and let the loop request again.
+            finish_reason = str(step_result.get("finish_reason") or "").strip().lower()
+            if kind != "tool_calls" and finish_reason == "compaction":
+                workflow.logger.info(
+                    f"Provider paused to compact at iteration {iteration + 1}; "
+                    "continuing without treating the stop as a final answer"
+                )
+                continue
 
             if kind == "final":
                 final_content = step_result.get("content", "")
@@ -1034,7 +1081,7 @@ class AgentWorkflow:
                     # invocation to wait. Completion will emit taskTrigger and
                     # start the separately scoped review invocation.
                     await workflow.execute_activity(
-                        "agent.finalize_team.v1",
+                        "agent.finalize_team",
                         args=[{"team_id": team_id}],
                         activity_id="finalize-agent-team",
                         start_to_close_timeout=PERSIST_TURN_TIMEOUT,
@@ -1048,11 +1095,10 @@ class AgentWorkflow:
                 break
 
             # ---- Schedule tool activities -------------------------------
-            if use_cooperative_pause_schedule_gate:
-                # The LLM activity and phase broadcasts yield long enough for
-                # a pause signal to arrive after the iteration-level check.
-                # Admit the resulting tool/delegation command batch afresh.
-                await self._wait_until_resumed()
+            # The LLM activity and phase broadcasts yield long enough for
+            # a pause signal to arrive after the iteration-level check.
+            # Admit the resulting tool/delegation command batch afresh.
+            await self._wait_until_resumed()
             calls = step_result.get("calls") or []
             workflow.logger.info(f"AgentWorkflow scheduling {len(calls)} tool call(s)")
 
@@ -1107,18 +1153,14 @@ class AgentWorkflow:
                     release_attempt + 1
                 )
                 await workflow.execute_activity(
-                    "agent.release_subagent_permit.v1",
+                    "agent.release_subagent_permit",
                     args=[{
                         "root_execution_id": root_execution_id,
                         "permit_id": permit_id,
                     }],
                     activity_id=release_activity_id,
                     start_to_close_timeout=PERSIST_TURN_TIMEOUT,
-                    retry_policy=(
-                        DELEGATION_CLEANUP_RETRY
-                        if use_delegation_permit_cleanup
-                        else AGENT_ACTIVITY_RETRY
-                    ),
+                    retry_policy=DELEGATION_CLEANUP_RETRY,
                 )
                 delegation_permits.pop(call_index, None)
 
@@ -1150,7 +1192,7 @@ class AgentWorkflow:
                     lifecycle = delegation_lifecycles[pending_index]
                     try:
                         await workflow.execute_activity(
-                            "agent.cancel_delegation.v1",
+                            "agent.cancel_delegation",
                             args=[{
                                 **lifecycle,
                                 "reason": (
@@ -1198,7 +1240,7 @@ class AgentWorkflow:
             )
             if delegation_call_indices and own_permit_id:
                 await workflow.execute_activity(
-                    "agent.release_subagent_permit.v1",
+                    "agent.release_subagent_permit",
                     args=[{
                         "root_execution_id": root_execution_id,
                         "permit_id": own_permit_id,
@@ -1215,17 +1257,15 @@ class AgentWorkflow:
                 candidate_args = candidate.get("args") or {}
                 task = str(candidate_args.get("task", "") or "")
                 task_context = str(candidate_args.get("context", "") or "")
-                call_metadata = (
-                    _tool_call_metadata(
-                        agent_node_id=agent_node_id,
-                        iteration=iteration,
-                        call_index=call_index,
-                        call=candidate,
-                    )
-                    if use_tool_call_identity_v2
-                    else {}
+                call_metadata = _tool_call_metadata(
+                    agent_node_id=agent_node_id,
+                    iteration=iteration,
+                    call_index=call_index,
+                    call=candidate,
                 )
                 child_context = {
+                    # Inherited scope first: explicit keys below win.
+                    **_inherited_scope(context),
                     "node_id": candidate_tool["tool_node_id"],
                     "node_type": candidate_tool["node_type"],
                     "node_data": {
@@ -1280,10 +1320,9 @@ class AgentWorkflow:
                     delegation_lifecycles[call_index] = (
                         lifecycle_payload
                     )
-                    if use_cooperative_pause_schedule_gate:
-                        await self._wait_until_resumed()
+                    await self._wait_until_resumed()
                     await workflow.execute_activity(
-                        "agent.queue_delegation.v1",
+                        "agent.queue_delegation",
                         args=[{
                             **lifecycle_payload,
                             "queued_event_id": (
@@ -1297,46 +1336,40 @@ class AgentWorkflow:
                         retry_policy=AGENT_ACTIVITY_RETRY,
                         **acquire_cancellation_options,
                     )
-                    if use_cooperative_pause_schedule_gate:
-                        await self._wait_until_resumed()
+                    await self._wait_until_resumed()
                     acquire_payload = {
                         "root_execution_id": root_execution_id,
                         "permit_id": permit_id,
                         "limit": max_concurrent_subagents,
+                        "lease_version": 2,
                     }
-                    if use_acquire_cancellation_completion:
-                        acquire_payload["lease_version"] = 2
                     acquire_result = await workflow.execute_activity(
-                        "agent.acquire_subagent_permit.v1",
+                        "agent.acquire_subagent_permit",
                         args=[acquire_payload],
                         activity_id=(
                             f"acquire-permit-{iteration + 1}-{call_index + 1}"
                         ),
                         start_to_close_timeout=timedelta(hours=1),
                         heartbeat_timeout=timedelta(seconds=10),
-                        # Unlimited attempts on the patched path — a queued
-                        # delegation waits as long as admission takes.
-                        retry_policy=(
-                            PERMIT_WAIT_RETRY if use_unbounded_lifetimes else AGENT_ACTIVITY_RETRY
-                        ),
+                        # Unlimited attempts — a queued delegation waits as
+                        # long as admission takes.
+                        retry_policy=PERMIT_WAIT_RETRY,
                         **acquire_cancellation_options,
                     )
                     delegation_permits[call_index] = str(
                         (acquire_result or {}).get("lease_id")
                         or permit_id
                     )
-                    if use_acquire_cancellation_completion:
-                        child_context["team_permit_id"] = (
-                            delegation_permits[call_index]
-                        )
+                    child_context["team_permit_id"] = (
+                        delegation_permits[call_index]
+                    )
                     # Claim only after admission. Persistence failure still
                     # prevents child startup and the task remains pending
                     # while the coordinator queues it.
                     try:
-                        if use_cooperative_pause_schedule_gate:
-                            await self._wait_until_resumed()
+                        await self._wait_until_resumed()
                         await workflow.execute_activity(
-                            "agent.begin_delegation.v1",
+                            "agent.begin_delegation",
                             args=[lifecycle_payload],
                             activity_id=(
                                 f"begin-delegation-{iteration + 1}-{call_index + 1}"
@@ -1346,39 +1379,30 @@ class AgentWorkflow:
                             **acquire_cancellation_options,
                         )
                     except asyncio.CancelledError:
-                        if not use_delegation_permit_cleanup:
-                            await _release_delegation_permit(call_index)
+                        # Cancellation cleanup is owned by the caller's
+                        # _cleanup_cancelled_delegations() sweep; releasing
+                        # here as well would double-release the permit.
                         raise
                     except BaseException:
                         await _release_delegation_permit(call_index)
                         raise
-                child_id = (
-                    _delegation_child_id_v2(
-                        workflow.info().workflow_id,
-                        candidate_tool["tool_node_id"],
-                        iteration,
-                        call_index,
-                    )
-                    if use_tool_call_identity_v2
-                    else f"{workflow.info().workflow_id}-delegate-{candidate_tool['tool_node_id']}-{iteration}"
+                child_id = _delegation_child_id(
+                    workflow.info().workflow_id,
+                    candidate_tool["tool_node_id"],
+                    iteration,
+                    call_index,
                 )
                 try:
-                    if use_cooperative_pause_schedule_gate:
-                        await self._wait_until_resumed()
-                    delegation_child_kwargs: Dict[str, Any] = {"id": child_id}
-                    if not use_unbounded_lifetimes:
-                        # Replay-only: pre-patch histories recorded 1h caps.
-                        delegation_child_kwargs["execution_timeout"] = timedelta(hours=1)
-                        delegation_child_kwargs["run_timeout"] = timedelta(hours=1)
+                    await self._wait_until_resumed()
                     delegation_handles[call_index] = await workflow.start_child_workflow(
                         "AgentWorkflow",
                         args=[child_context],
-                        **delegation_child_kwargs,
+                        id=child_id,
                     )
                     if team_id:
                         child_handle = delegation_handles[call_index]
                         await workflow.execute_activity(
-                            "agent.register_task_execution.v1",
+                            "agent.register_task_execution",
                             args=[{**lifecycle_payload,
                                    "child_workflow_id": child_handle.id,
                                    "child_run_id": child_handle.first_execution_run_id}],
@@ -1388,12 +1412,8 @@ class AgentWorkflow:
                             **acquire_cancellation_options,
                         )
                 except asyncio.CancelledError:
-                    if (
-                        not use_delegation_permit_cleanup
-                        and team_id
-                        and call_index in delegation_permits
-                    ):
-                        await _release_delegation_permit(call_index)
+                    # Cancellation cleanup is owned by the caller's
+                    # _cleanup_cancelled_delegations() sweep.
                     raise
                 except BaseException:
                     if team_id and call_index in delegation_permits:
@@ -1440,7 +1460,7 @@ class AgentWorkflow:
                 # root-wide slot is occupied by leads assigning descendants.
                 if own_permit_id and not yielded_own_permit:
                     await workflow.execute_activity(
-                        "agent.release_subagent_permit.v1",
+                        "agent.release_subagent_permit",
                         args=[{"root_execution_id": root_execution_id, "permit_id": own_permit_id}],
                         activity_id=f"yield-own-permit-task-manager-{iteration + 1}",
                         start_to_close_timeout=PERSIST_TURN_TIMEOUT,
@@ -1475,10 +1495,9 @@ class AgentWorkflow:
                 # queue_delegation is intentionally retained: it is
                 # idempotent for the pre-created task and records the same
                 # lifecycle event as direct delegation without duplicating it.
-                if use_cooperative_pause_schedule_gate:
-                    await self._wait_until_resumed()
+                await self._wait_until_resumed()
                 await workflow.execute_activity(
-                    "agent.queue_delegation.v1",
+                    "agent.queue_delegation",
                     args=[{**lifecycle, "queued_event_id": f"{task_id}:queued"}],
                     activity_id=f"queue-task-manager-{iteration + 1}-{call_index + 1}",
                     start_to_close_timeout=PERSIST_TURN_TIMEOUT,
@@ -1486,6 +1505,8 @@ class AgentWorkflow:
                 )
                 context_text = request_context if isinstance(request_context, str) else _serialise_tool_result(request_context)
                 child_context = {
+                    # Inherited scope first: explicit keys below win.
+                    **_inherited_scope(context),
                     "node_id": assignee_id, "node_type": delegate["node_type"],
                     "node_data": {**(delegate.get("parameters") or {}),
                                   "system_message": mission, "prompt": context_text or mission},
@@ -1497,37 +1518,26 @@ class AgentWorkflow:
                     "nodes": context.get("nodes") or [], "edges": context.get("edges") or [],
                     "invocation": {"task": mission, "context": context_text},
                 }
-                child_id = _delegation_child_id_v2(
+                child_id = _delegation_child_id(
                     workflow.info().workflow_id, assignee_id, iteration, call_index
                 ) + f"-{task_id}"
                 runner_id = f"{child_id}-runner"
-                if use_cooperative_pause_schedule_gate:
-                    await self._wait_until_resumed()
+                await self._wait_until_resumed()
                 delegated_task_options: Dict[str, Any] = {
                     "id": runner_id,
                     "parent_close_policy": ParentClosePolicy.ABANDON,
                 }
-                if not use_unbounded_lifetimes:
-                    # Replay-only: pre-patch histories recorded 2h caps.
-                    # A capped runner that timed out skipped its finally
-                    # compensation (leaked permit + stuck task row).
-                    delegated_task_options["execution_timeout"] = timedelta(hours=2)
-                    delegated_task_options["run_timeout"] = timedelta(hours=2)
-                use_delegated_task_search_attributes = workflow.patched(
-                    DELEGATED_TASK_SEARCH_ATTRIBUTES_PATCH
+                from services.temporal.trigger_listener_workflow import (
+                    event_workflow_search_attributes,
                 )
-                if use_delegated_task_search_attributes:
-                    from services.temporal.trigger_listener_workflow import (
-                        event_workflow_search_attributes,
-                    )
 
-                    search_attributes = event_workflow_search_attributes(
-                        payload.get("workflow_id")
+                search_attributes = event_workflow_search_attributes(
+                    payload.get("workflow_id")
+                )
+                if search_attributes is not None:
+                    delegated_task_options["search_attributes"] = (
+                        search_attributes
                     )
-                    if search_attributes is not None:
-                        delegated_task_options["search_attributes"] = (
-                            search_attributes
-                        )
                 await workflow.start_child_workflow(
                     "DelegatedTaskWorkflow",
                     args=[{"lifecycle": lifecycle, "child_context": child_context,
@@ -1542,63 +1552,55 @@ class AgentWorkflow:
             # are allowed to reach the child-workflow bridge below.
             task_manager_preflight_indices: List[int] = []
             task_manager_preflight_handles: List[Any] = []
-            if use_task_manager_delegation:
-                for preflight_index, preflight_call in enumerate(calls):
-                    preflight_tool = tool_index.get(preflight_call.get("name", ""))
-                    preflight_args = preflight_call.get("args") or {}
-                    if (
-                        preflight_tool
-                        and preflight_tool.get("node_type") == "taskManager"
-                        and preflight_args.get("operation") == "assign_task"
-                    ):
-                        preflight_metadata = (
-                            _tool_call_metadata(
-                                agent_node_id=agent_node_id,
-                                iteration=iteration,
-                                call_index=preflight_index,
-                                call=preflight_call,
-                            )
-                            if use_tool_call_identity_v2
-                            else {}
+            for preflight_index, preflight_call in enumerate(calls):
+                preflight_tool = tool_index.get(preflight_call.get("name", ""))
+                preflight_args = preflight_call.get("args") or {}
+                if (
+                    preflight_tool
+                    and preflight_tool.get("node_type") == "taskManager"
+                    and preflight_args.get("operation") == "assign_task"
+                ):
+                    preflight_metadata = _tool_call_metadata(
+                        agent_node_id=agent_node_id,
+                        iteration=iteration,
+                        call_index=preflight_index,
+                        call=preflight_call,
+                    )
+                    preflight_payload = {
+                        "node_id": preflight_tool["tool_node_id"],
+                        "node_type": "taskManager",
+                        "node_data": {
+                            **(preflight_tool.get("parameters") or {}),
+                            **preflight_args,
+                        },
+                        "inputs": {},
+                        "workflow_id": payload.get("workflow_id"),
+                        "session_id": payload.get("session_id", "default"),
+                        "execution_id": task_scope_execution_id,
+                        "root_execution_id": root_execution_id,
+                        "parent_node_id": agent_node_id,
+                        "team_lead_node_id": agent_node_id,
+                        "nodes": context.get("nodes") or [],
+                        "edges": context.get("edges") or [],
+                        **preflight_metadata,
+                    }
+                    task_manager_preflight_indices.append(preflight_index)
+                    if not task_manager_preflight_handles:
+                        # ``start_activity`` does not yield; one admission
+                        # check protects this whole concurrent batch.
+                        await self._wait_until_resumed()
+                    task_manager_preflight_handles.append(
+                        workflow.start_activity(
+                            f"node.taskManager.v{preflight_tool['version']}",
+                            args=[preflight_payload],
+                            activity_id=(
+                                f"task-manager-preflight-{iteration + 1}-"
+                                f"{preflight_index + 1}"
+                            ),
+                            start_to_close_timeout=TOOL_STEP_TIMEOUT,
+                            heartbeat_timeout=TOOL_HEARTBEAT_TIMEOUT,
                         )
-                        preflight_payload = {
-                            "node_id": preflight_tool["tool_node_id"],
-                            "node_type": "taskManager",
-                            "node_data": {
-                                **(preflight_tool.get("parameters") or {}),
-                                **preflight_args,
-                            },
-                            "inputs": {},
-                            "workflow_id": payload.get("workflow_id"),
-                            "session_id": payload.get("session_id", "default"),
-                            "execution_id": task_scope_execution_id,
-                            "root_execution_id": root_execution_id,
-                            "parent_node_id": agent_node_id,
-                            "team_lead_node_id": agent_node_id,
-                            "nodes": context.get("nodes") or [],
-                            "edges": context.get("edges") or [],
-                            **preflight_metadata,
-                        }
-                        task_manager_preflight_indices.append(preflight_index)
-                        if (
-                            not task_manager_preflight_handles
-                            and use_cooperative_pause_schedule_gate
-                        ):
-                            # ``start_activity`` does not yield; one admission
-                            # check protects this whole concurrent batch.
-                            await self._wait_until_resumed()
-                        task_manager_preflight_handles.append(
-                            workflow.start_activity(
-                                f"node.taskManager.v{preflight_tool['version']}",
-                                args=[preflight_payload],
-                                activity_id=(
-                                    f"task-manager-preflight-{iteration + 1}-"
-                                    f"{preflight_index + 1}"
-                                ),
-                                start_to_close_timeout=TOOL_STEP_TIMEOUT,
-                                heartbeat_timeout=TOOL_HEARTBEAT_TIMEOUT,
-                            )
-                        )
+                    )
 
             task_manager_preflight_results: Dict[int, Any] = {}
             task_manager_delegation_tasks: Dict[int, asyncio.Task[Any]] = {}
@@ -1615,7 +1617,7 @@ class AgentWorkflow:
                 # assignment coroutines contend for root-wide permits.
                 if own_permit_id and not yielded_own_permit:
                     await workflow.execute_activity(
-                        "agent.release_subagent_permit.v1",
+                        "agent.release_subagent_permit",
                         args=[{
                             "root_execution_id": root_execution_id,
                             "permit_id": own_permit_id,
@@ -1648,8 +1650,7 @@ class AgentWorkflow:
                     await _start_delegation(delegation_index)
                     next_delegation_to_start += 1
             except BaseException:
-                if use_delegation_permit_cleanup:
-                    await _cleanup_cancelled_delegations()
+                await _cleanup_cancelled_delegations()
                 raise
 
             for call_index, call in enumerate(calls):
@@ -1776,15 +1777,11 @@ class AgentWorkflow:
                         child_nodes = []
                         child_edges = []
 
-                call_metadata = (
-                    _tool_call_metadata(
-                        agent_node_id=agent_node_id,
-                        iteration=iteration,
-                        call_index=call_index,
-                        call=call,
-                    )
-                    if use_tool_call_identity_v2
-                    else {}
+                call_metadata = _tool_call_metadata(
+                    agent_node_id=agent_node_id,
+                    iteration=iteration,
+                    call_index=call_index,
+                    call=call,
                 )
                 tool_payload = {
                     "node_id": tool_info["tool_node_id"],
@@ -1815,7 +1812,7 @@ class AgentWorkflow:
                 }
 
                 tool_activity_name = (
-                    "agent.skill.invoke.v1"
+                    "agent.skill.invoke"
                     if tool_info["node_type"] == "_builtin_skill"
                     else f"node.{tool_info['node_type']}.v{tool_info['version']}"
                 )
@@ -1837,8 +1834,7 @@ class AgentWorkflow:
                         },
                     )
                 except asyncio.CancelledError:
-                    if use_delegation_permit_cleanup:
-                        await _cleanup_cancelled_delegations()
+                    await _cleanup_cancelled_delegations()
                     raise
 
                 try:
@@ -1847,8 +1843,8 @@ class AgentWorkflow:
                         try:
                             tool_result = await handle
                         except asyncio.CancelledError:
-                            if not use_delegation_permit_cleanup:
-                                await _release_delegation_permit(call_index)
+                            # Cancellation cleanup is owned by the outer
+                            # _cleanup_cancelled_delegations() sweep.
                             raise
                         except BaseException:
                             await _release_delegation_permit(call_index)
@@ -1873,7 +1869,7 @@ class AgentWorkflow:
                                 f"{iteration + 1}-{call_index + 1}"
                             )
                             await workflow.execute_activity(
-                                "agent.finish_delegation.v1",
+                                "agent.finish_delegation",
                                 args=[{
                                     "team_id": team_id,
                                     "team_task_id": task_id,
@@ -1916,22 +1912,17 @@ class AgentWorkflow:
                             )
                             next_delegation_to_start += 1
                     else:
-                        tool_activity_id = (
-                            _tool_activity_id_v2(
-                                tool_info["tool_node_id"],
-                                iteration,
-                                call_index,
-                            )
-                            if use_tool_call_identity_v2
-                            else f"tool-{tool_info['tool_node_id']}-{iteration + 1}"
+                        tool_activity_id = _tool_activity_id(
+                            tool_info["tool_node_id"],
+                            iteration,
+                            call_index,
                         )
                         if call_index in task_manager_preflight_results:
                             tool_result = task_manager_preflight_results[call_index]
                             if isinstance(tool_result, BaseException):
                                 raise tool_result
                         else:
-                            if use_cooperative_pause_schedule_gate:
-                                await self._wait_until_resumed()
+                            await self._wait_until_resumed()
                             tool_result = await workflow.execute_activity(
                                 tool_activity_name,
                                 args=[tool_payload],
@@ -1940,8 +1931,7 @@ class AgentWorkflow:
                                 heartbeat_timeout=TOOL_HEARTBEAT_TIMEOUT,
                             )
                         if (
-                            use_task_manager_delegation
-                            and tool_info["node_type"] == "taskManager"
+                            tool_info["node_type"] == "taskManager"
                             and isinstance(tool_result, dict)
                             and isinstance(tool_result.get("delegation_request"), dict)
                         ):
@@ -1992,34 +1982,27 @@ class AgentWorkflow:
                             # step's one-shot LLM_STEP_RETRY): rebuilding
                             # the tool surface from canvas state is fully
                             # idempotent, so retries are free.
-                            refresh_activity_id = (
-                                _refresh_tools_activity_id_v2(
-                                    tool_info["tool_node_id"],
-                                    iteration,
-                                    call_index,
-                                )
-                                if use_tool_call_identity_v2
-                                else f"refresh-tools-{tool_info['tool_node_id']}-{iteration + 1}"
+                            refresh_activity_id = _refresh_tools_activity_id(
+                                tool_info["tool_node_id"],
+                                iteration,
+                                call_index,
                             )
                             refresh_payload = {
                                 "operations": ops_from_tool,
                                 "agent_node_type": payload.get("node_type") or context.get("node_type"),
                                 **call_metadata,
                             }
-                            if use_cooperative_pause_schedule_gate:
-                                await self._wait_until_resumed()
+                            await self._wait_until_resumed()
                             refresh_result = await workflow.execute_activity(
-                                "agent.refresh_tools.v1",
+                                "agent.refresh_tools",
                                 args=[refresh_payload],
                                 activity_id=refresh_activity_id,
                                 start_to_close_timeout=timedelta(seconds=30),
                                 retry_policy=AGENT_ACTIVITY_RETRY,
                             )
                             added_tools = refresh_result.get("tools") or []
-                            refresh_duplicate_error = (
-                                _duplicate_visible_tool_name_error([*tools, *added_tools])
-                                if use_tool_call_identity_v2
-                                else None
+                            refresh_duplicate_error = _duplicate_visible_tool_name_error(
+                                [*tools, *added_tools]
                             )
                             refresh_duplicate_conflicts = (
                                 _duplicate_visible_tool_name_conflicts([*tools, *added_tools])
@@ -2062,8 +2045,7 @@ class AgentWorkflow:
                                     len(tools),
                                 )
                 except asyncio.CancelledError:
-                    if use_delegation_permit_cleanup:
-                        await _cleanup_cancelled_delegations()
+                    await _cleanup_cancelled_delegations()
                     raise
                 except Exception as e:  # noqa: BLE001 — Temporal handles retries
                     # After all retries exhausted, surface the error to
@@ -2078,7 +2060,7 @@ class AgentWorkflow:
                         )
                         try:
                             await workflow.execute_activity(
-                                "agent.finish_delegation.v1",
+                                "agent.finish_delegation",
                                 args=[{
                                     "team_id": team_id,
                                     "team_task_id": task_id,
@@ -2113,8 +2095,7 @@ class AgentWorkflow:
                                 None,
                             )
                         except asyncio.CancelledError:
-                            if use_delegation_permit_cleanup:
-                                await _cleanup_cancelled_delegations()
+                            await _cleanup_cancelled_delegations()
                             raise
                     tool_content = f'{{"error": "{type(e).__name__}: {e}"}}'
                     try:
@@ -2139,8 +2120,7 @@ class AgentWorkflow:
                             },
                         )
                     except asyncio.CancelledError:
-                        if use_delegation_permit_cleanup:
-                            await _cleanup_cancelled_delegations()
+                        await _cleanup_cancelled_delegations()
                         raise
 
                 _append_tool_result_message(
@@ -2152,10 +2132,9 @@ class AgentWorkflow:
                 )
 
             if yielded_own_permit:
-                if use_cooperative_pause_schedule_gate:
-                    await self._wait_until_resumed()
+                await self._wait_until_resumed()
                 await workflow.execute_activity(
-                    "agent.acquire_subagent_permit.v1",
+                    "agent.acquire_subagent_permit",
                     args=[{
                         "root_execution_id": root_execution_id,
                         "permit_id": own_permit_id,
@@ -2224,10 +2203,9 @@ class AgentWorkflow:
                         "api_key": payload["api_key"],
                         "model": payload["model"],
                     }
-                if use_cooperative_pause_schedule_gate:
-                    await self._wait_until_resumed()
+                await self._wait_until_resumed()
                 compact_result = await workflow.execute_activity(
-                    "agent.compact_memory.v1",
+                    "agent.compact_memory",
                     args=[compact_payload],
                     activity_id=f"compact-memory-{iteration + 1}",
                     start_to_close_timeout=COMPACT_MEMORY_TIMEOUT,
@@ -2298,6 +2276,39 @@ class AgentWorkflow:
                             # Exact pre-cutover completion shape.
                             usage_total = {}
 
+            # ---- Continue-as-new -------------------------------------
+            # Only at a clean turn boundary, and never while a delegation
+            # is in flight: delegation_handles and the Task-Manager task
+            # map hold live ChildWorkflowHandle / asyncio.Task objects
+            # that cannot cross the boundary. The own-permit reacquire
+            # above is the permit-safe point.
+            from services.temporal.trigger_listener_workflow import (
+                _history_pressure,
+            )
+
+            if context_ref and _history_pressure(_AGENT_HISTORY_SOFT_CAP):
+                delegations_live = bool(
+                    delegation_handles or task_manager_delegation_tasks
+                )
+                if not delegations_live:
+                    workflow.logger.info(
+                        f"AgentWorkflow continue_as_new at iteration "
+                        f"{iteration + 1} (history pressure)"
+                    )
+                    workflow.continue_as_new(
+                        args=[
+                            {
+                                **context,
+                                _RESUME_MARKER: {
+                                    "context_ref": context_ref,
+                                    "runtime_config_ref": runtime_config_ref,
+                                    "iteration": iteration + 1,
+                                    "execution_id": execution_id,
+                                },
+                            }
+                        ]
+                    )
+
         else:
             # Loop exited without break -- hit max_iterations.
             workflow.logger.warning(f"AgentWorkflow hit max_iterations={max_iterations}; truncating")
@@ -2322,7 +2333,7 @@ class AgentWorkflow:
         # NodeExecutor; F4.B needs an explicit activity because we
         # bypass NodeExecutor entirely.
         await workflow.execute_activity(
-            "agent.store_output.v1",
+            "agent.store_output",
             args=[
                 {
                     "node_id": agent_node_id,
@@ -2336,7 +2347,7 @@ class AgentWorkflow:
         )
 
         await workflow.execute_activity(
-            "agent.skill.clear.v1",
+            "agent.skill.clear",
             args=[{"workflow_id": payload.get("workflow_id"), "execution_id": task_scope_execution_id,
                    "agent_node_id": agent_node_id}],
             activity_id="clear-active-skills",
@@ -2379,7 +2390,7 @@ class AgentWorkflow:
         parent's canvas badge advances alongside the child.
         """
         await workflow.execute_activity(
-            "agent.broadcast_progress.v1",
+            "agent.broadcast_progress",
             args=[
                 {
                     "node_id": node_id,
@@ -2408,7 +2419,7 @@ class AgentWorkflow:
             # this phase-only event merely indicates that descendant work is
             # advancing.
             await workflow.execute_activity(
-                "agent.broadcast_progress.v1",
+                "agent.broadcast_progress",
                 args=[
                     {
                         "node_id": self._parent_node_id,
@@ -2443,7 +2454,7 @@ class AgentWorkflow:
         if interim and not assistant_text:
             return
         await workflow.execute_activity(
-            "agent.persist_turn.v1",
+            "agent.persist_turn",
             args=[
                 {
                     "memory_node_id": memory_node_id,

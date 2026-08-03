@@ -45,59 +45,6 @@ SERVER_DIR = Path(__file__).resolve().parents[2]
 # ---------------------------------------------------------------------------
 
 
-def test_durability_changes_are_replay_patch_guarded():
-    from nodes.scheduler.cron_scheduler import _workflow as cron_module
-    from services.temporal import agent_workflow as agent_module
-    from services.temporal import polling_trigger_workflow as polling_module
-    from services.temporal import trigger_listener_workflow as trigger_module
-    from services.temporal import workflow as machina_module
-    from services.temporal import workflow_control_workflow as control_module
-    from services.temporal.agent_workflow import AgentWorkflow, DelegatedTaskWorkflow
-    from services.temporal.workflow import MachinaWorkflow
-    from nodes.scheduler.cron_scheduler._workflow import CronTriggerWorkflow
-
-    expected = {
-        machina_module.UNBOUNDED_LIFETIMES_PATCH: inspect.getsource(MachinaWorkflow.run),
-        machina_module.PAUSE_ON_FAILURE_PATCH: inspect.getsource(MachinaWorkflow.run),
-        agent_module.UNBOUNDED_LIFETIMES_PATCH: inspect.getsource(AgentWorkflow.run),
-        trigger_module.UNBOUNDED_CHILD_RUNS_PATCH: inspect.getsource(
-            TriggerListenerWorkflow._spawn_child_run
-        ),
-        polling_module.UNBOUNDED_CHILD_RUNS_PATCH: inspect.getsource(
-            PollingTriggerWorkflow._spawn_child_run
-        ),
-        cron_module.UNBOUNDED_CHILD_RUNS_PATCH: inspect.getsource(CronTriggerWorkflow.run),
-        trigger_module.HISTORY_BOUNDED_CAN_PATCH: inspect.getsource(
-            TriggerListenerWorkflow.run
-        ),
-        polling_module.HISTORY_BOUNDED_CAN_PATCH: inspect.getsource(
-            PollingTriggerWorkflow.run
-        ),
-        control_module.CONTINUE_AS_NEW_PATCH: inspect.getsource(
-            WorkflowControlWorkflow.run
-        ),
-        trigger_module.BOUNDED_STATUS_BROADCASTS_PATCH: inspect.getsource(
-            TriggerListenerWorkflow._spawn_child_run
-        ),
-    }
-
-    assert set(expected) == {
-        "machina-unbounded-lifetimes-v1",
-        "machina-pause-on-failure-v1",
-        "agent-unbounded-lifetimes-v1",
-        "trigger-unbounded-child-runs-v1",
-        "polling-unbounded-child-runs-v1",
-        "cron-unbounded-child-runs-v1",
-        "trigger-history-bounded-can-v1",
-        "polling-history-bounded-can-v1",
-        "workflow-control-continue-as-new-v1",
-        "trigger-bounded-status-broadcasts-v1",
-    }
-    # DelegatedTaskWorkflow shares agent_module's marker.
-    assert "UNBOUNDED_LIFETIMES_PATCH" in inspect.getsource(DelegatedTaskWorkflow.run)
-    for patch_id, source in expected.items():
-        assert "workflow.patched(" in source
-        assert patch_id.endswith("-v1")
 
 
 # ---------------------------------------------------------------------------
@@ -120,20 +67,24 @@ def _listener_data() -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("patched_on", [True, False])
-async def test_listener_child_lifetime_caps_are_patch_gated(monkeypatch, patched_on):
+async def test_listener_child_runs_carry_no_lifetime_caps(monkeypatch):
+    """Child runs must start unbounded.
+
+    Temporal's execution/run timers keep ticking through a cooperative
+    pause, so any lifetime cap silently terminates a run that is paused
+    longer than the cap. Liveness is the heartbeat timeout's job.
+    """
     from services.temporal import trigger_listener_workflow as trigger_module
 
     temporal_workflow = trigger_module.workflow
     monkeypatch.setattr(temporal_workflow, "logger", MagicMock())
-    flags = {
-        trigger_module.UNBOUNDED_CHILD_RUNS_PATCH: patched_on,
-        trigger_module.BOUNDED_STATUS_BROADCASTS_PATCH: patched_on,
-    }
+    # The spawn path refreshes the graph for uncontrolled deployments;
+    # ``found: False`` keeps the listener's own nodes/edges in play.
     monkeypatch.setattr(
-        temporal_workflow, "patched", lambda pid: flags.get(pid, False)
+        temporal_workflow,
+        "execute_activity",
+        AsyncMock(return_value={"found": False}),
     )
-    monkeypatch.setattr(temporal_workflow, "execute_activity", AsyncMock())
 
     captured: dict = {}
 
@@ -147,12 +98,8 @@ async def test_listener_child_lifetime_caps_are_patch_gated(monkeypatch, patched
     await listener._spawn_child_run({"id": "evt-1", "data": {}}, _listener_data())
 
     assert captured["name"] == "MachinaWorkflow"
-    if patched_on:
-        assert "execution_timeout" not in captured
-        assert "run_timeout" not in captured
-    else:
-        assert captured["execution_timeout"] == timedelta(hours=1)
-        assert captured["run_timeout"] == timedelta(hours=1)
+    assert "execution_timeout" not in captured
+    assert "run_timeout" not in captured
 
 
 @pytest.mark.asyncio
@@ -783,6 +730,7 @@ async def test_rearm_restores_paused_posture_from_snapshot(monkeypatch):
     deploy_data = deploy.await_args.args[0]
     assert deploy_data["workflow_id"] == "wf"
     assert deploy_data["nodes"] == control.graph_snapshot["nodes"]
+    assert deploy_data["graphVersion"] == 0
     # Generation-scoped persistence, same contract as handle_start_workflow.
     assert deploy_data["session_id"] == "execution-1"
     workflow_service.pause_deployment.assert_called_once_with("wf")
@@ -1254,7 +1202,7 @@ async def test_machina_failure_schedules_the_circuit_breaker_activity(monkeypatc
 
     # Trigger-spawned run -> schedules the breaker.
     await instance._pause_deployment_on_failure({"workflow_id": "wf"}, nodes, errors)
-    assert captured["name"] == "workflow_control.pause_on_failure.v1"
+    assert captured["name"] == "workflow_control.pause_on_failure"
     assert captured["payload"] == {
         "workflow_id": "wf",
         "reason": "credential expired",

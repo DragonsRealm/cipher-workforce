@@ -6,11 +6,11 @@ Every in-process and durable agent execution goes through
 
 from __future__ import annotations
 
-import functools
+import hashlib
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Awaitable, Dict, Any, List, Optional, Callable, Type, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Type, TYPE_CHECKING
 
 import json
 
@@ -61,8 +61,6 @@ from services.llm.config import (
     resolve_max_tokens as native_resolve_max_tokens,
     resolve_temperature as native_resolve_temperature,
 )
-from services.llm.vertex import is_vertex_express_key
-from services.llm.messages import filter_empty_messages as _filter_native_messages
 from services.agent_runtime import AgentToolSpec, run_native_agent_loop
 
 
@@ -295,6 +293,20 @@ def _build_skill_system_prompt(skill_data: List[Dict[str, Any]], log_prefix: str
     return build_skill_system_prompt(skill_data, log_prefix)
 
 
+@dataclass
+class _AgentContextRuntime:
+    """Backend-only execution binding for one visible Context node."""
+
+    store: Any
+    writer: Any
+    policy: Any
+    request_options: Optional[Dict[str, Any]]
+    operation_id: str
+    history: List[NativeMessage]
+    provider: str
+    model: str
+
+
 class AIService:
     """AI model service backed by the native provider SDK layer."""
 
@@ -325,6 +337,436 @@ class AIService:
     def detect_provider(self, model: str) -> str:
         """Detect AI provider from model name."""
         return detect_provider_from_model(model)
+
+    async def _prepare_context(
+        self,
+        *,
+        node_id: str,
+        context_data: Optional[Dict[str, Any]],
+        execution_context: Optional[Dict[str, Any]],
+        workflow_id: Optional[str],
+        provider: str,
+        model: str,
+        database: Any,
+    ) -> Optional["_AgentContextRuntime"]:
+        """Resolve one backend-owned Context thread and reconstruct replay."""
+
+        if not context_data or context_data.get("kind") != "context":
+            return None
+
+        from services.agent_context import (
+            AgentContextStore,
+            AgentContextTransitionWriter,
+            ContextCompactionPolicy,
+            import_generation_zero_handoff,
+            provider_context_request_options,
+            reconstruct_message_wire_v2,
+        )
+        from services.llm.protocol import (
+            Message,
+            message_from_wire,
+            message_to_wire,
+        )
+
+        raw_context = execution_context or {}
+        admitted_workflow_id = str(
+            workflow_id or raw_context.get("workflow_id") or ""
+        )
+        descriptor_workflow_id = str(context_data.get("workflow_id") or "")
+        if (
+            admitted_workflow_id
+            and descriptor_workflow_id
+            and admitted_workflow_id != descriptor_workflow_id
+        ):
+            raise ValueError("Context V2 workflow scope mismatch")
+        resolved_workflow_id = (
+            admitted_workflow_id or descriptor_workflow_id
+        )
+        context_node_id = str(
+            context_data.get("context_node_id")
+            or context_data.get("node_id")
+            or ""
+        )
+        if not resolved_workflow_id or not context_node_id:
+            raise ValueError(
+                "Context V2 requires workflow_id and context_node_id"
+            )
+        admitted_generation = int(
+            raw_context.get("generation")
+            or raw_context.get("workflow_generation")
+            or 0
+        )
+        descriptor_generation = int(context_data.get("generation") or 0)
+        if (
+            admitted_generation
+            and descriptor_generation
+            and admitted_generation != descriptor_generation
+        ):
+            raise ValueError("Context V2 generation scope mismatch")
+        generation = admitted_generation or descriptor_generation
+        if generation <= 0:
+            raise ValueError(
+                "Context V2 requires an admitted workflow generation"
+            )
+        execution_id = str(
+            raw_context.get("execution_id")
+            or context_data.get("execution_id")
+            or ""
+        )
+        delegated_task_id = str(
+            raw_context.get("delegated_task_id")
+            or raw_context.get("parent_task_id")
+            or raw_context.get("team_task_id")
+            or context_data.get("delegated_task_id")
+            or ""
+        )
+        session_id = str(context_data.get("session_id") or "")
+        if not (execution_id or delegated_task_id or session_id):
+            raise ValueError(
+                "Context V2 requires an execution, delegated task, or "
+                "explicit session identity"
+            )
+
+        store = AgentContextStore(database)
+        ref = await store.resolve_thread(
+            workflow_id=resolved_workflow_id,
+            context_node_id=context_node_id,
+            generation=generation,
+            session_id=session_id or None,
+            delegated_task_id=delegated_task_id or None,
+            execution_id=execution_id or None,
+        )
+        ref = await import_generation_zero_handoff(store, ref)
+
+        # A provider transition is an epoch boundary.  Opaque state remains
+        # archived while the observable MessageWireV2 replay is handed off.
+        summary = await store.load_thread_summary(ref)
+        if (
+            summary.provider
+            and summary.provider != provider
+        ):
+            _, handoff_wires = await reconstruct_message_wire_v2(store, ref)
+            portable_handoff_wires: list[dict[str, Any]] = []
+            for handoff_wire in handoff_wires:
+                source_message = message_from_wire(handoff_wire)
+                if (
+                    source_message.provider_state
+                    and source_message.role == "assistant"
+                    and not source_message.content
+                    and not source_message.tool_calls
+                ):
+                    # A native compaction marker is replayable only by its
+                    # issuing provider. Forking it as "portable" would silently
+                    # erase the compacted prefix for the destination provider.
+                    raise ValueError(
+                        "Provider change requires a portable Context "
+                        "checkpoint; the active checkpoint is provider-native"
+                    )
+                portable_message = Message(
+                    role=source_message.role,
+                    content=source_message.content,
+                    tool_calls=list(source_message.tool_calls),
+                    tool_call_id=source_message.tool_call_id,
+                    name=source_message.name,
+                )
+                portable_handoff_wires.append(
+                    dict(message_to_wire(portable_message))
+                )
+            handoff_ref = await store.put_blob(
+                {
+                    "format": "agent-context-portable-handoff-v1",
+                    "source_provider": summary.provider,
+                    "target_provider": provider,
+                    "messages": portable_handoff_wires,
+                }
+            )
+            ref = await store.fork_provider(
+                ref,
+                provider=provider,
+                operation_id=(
+                    f"context-provider-fork:{generation}:"
+                    f"{ref.thread_id}:epoch-{ref.epoch}:"
+                    f"{summary.provider}-to-{provider}"
+                ),
+                portable_handoff_ref=handoff_ref,
+            )
+            try:
+                from nodes.context._events import (
+                    dispatch_context_epoch_started,
+                )
+
+                await dispatch_context_epoch_started(
+                    workflow_id=resolved_workflow_id,
+                    context_node_id=context_node_id,
+                    thread_id=ref.thread_id,
+                    epoch=ref.epoch,
+                    revision=ref.revision,
+                    provider=provider,
+                    reason="provider_change",
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[Context] provider epoch event failed: %s",
+                    exc,
+                )
+
+        ref, history_wires = await reconstruct_message_wire_v2(store, ref)
+        history = [message_from_wire(wire) for wire in history_wires]
+        policy = ContextCompactionPolicy.from_mapping(
+            context_data.get("policy")
+            if isinstance(context_data.get("policy"), dict)
+            else None
+        )
+        request_options = provider_context_request_options(
+            provider=provider,
+            model=model,
+            policy=policy,
+        )
+        identity = (
+            execution_id
+            or delegated_task_id
+            or session_id
+            or ref.thread_id
+        )
+        material = (
+            f"{resolved_workflow_id}:{context_node_id}:{generation}:"
+            f"{ref.thread_id}:{ref.epoch}:{ref.revision}:{identity}:{node_id}"
+        )
+        operation_id = (
+            "agent-context:"
+            + hashlib.sha256(material.encode("utf-8")).hexdigest()
+        )
+        return _AgentContextRuntime(
+            store=store,
+            writer=AgentContextTransitionWriter(store, ref),
+            policy=policy,
+            request_options=request_options,
+            operation_id=operation_id,
+            history=history,
+            provider=provider,
+            model=model,
+        )
+
+    async def _portable_context_candidate(
+        self,
+        wires: list[dict[str, Any]],
+        _policy: Any,
+        *,
+        provider: str,
+        api_key: str,
+        model: str,
+    ) -> Any:
+        """Create a structured portable checkpoint from observable replay."""
+
+        from services.agent_context import ContextCompactionCandidate
+        from services.agent_runtime import run_native_llm_step
+        from services.llm.protocol import Message, message_from_wire, message_to_wire
+        from services.model_registry import get_model_registry
+
+        transcript: list[str] = []
+        for wire in wires:
+            message = message_from_wire(wire)
+            line = f"{message.role.upper()}: {message.content}"
+            if message.tool_calls:
+                line += "\nTOOL_CALLS: " + json.dumps(
+                    [
+                        {
+                            "id": call.id,
+                            "name": call.name,
+                            "args": call.args,
+                            "raw_arguments": call.raw_arguments,
+                            "parse_error": call.parse_error,
+                        }
+                        for call in message.tool_calls
+                    ],
+                    ensure_ascii=False,
+                    default=str,
+                )
+            if message.tool_call_id:
+                line += (
+                    f"\nTOOL_RESULT_FOR: {message.tool_call_id}"
+                    f" ({message.name or 'tool'})"
+                )
+            transcript.append(line)
+        prompt = (
+            "Create a compact, provider-portable continuation checkpoint for "
+            "the agent transcript below. Preserve resolved instructions, "
+            "durable facts, exact identifiers, completed and pending tool "
+            "work, decisions, errors, constraints, open questions, and the "
+            "next action. Never claim a tool ran unless its result appears. "
+            "Do not include commentary about summarizing.\n\n"
+            + "\n\n".join(transcript)
+        )
+        max_summary_tokens = min(
+            4096,
+            get_model_registry().get_max_output_tokens(model, provider),
+        )
+        response = await run_native_llm_step(
+            self.chat_unifier,
+            provider=provider,
+            api_key=api_key,
+            messages=[Message(role="user", content=prompt)],
+            model=model,
+            temperature=0.2,
+            max_tokens=max_summary_tokens,
+            sdk_max_retries=0,
+            explicit_max_retries=0,
+        )
+        summary_message = Message(
+            role="user",
+            content=(
+                "<agent_context_checkpoint>\n"
+                f"{response.content}\n"
+                "</agent_context_checkpoint>"
+            ),
+        )
+        summary_wire = dict(message_to_wire(summary_message))
+        return ContextCompactionCandidate(
+            strategy="portable_structured",
+            replay_payload={
+                "format": "agent-context-portable-v1",
+                "messages": [summary_wire],
+            },
+            active_token_count=max(
+                1,
+                (len(summary_message.content.encode("utf-8")) + 2) // 3,
+            ),
+            lifetime_usage=asdict(
+                response.billing_usage or response.usage
+            ),
+        )
+
+    async def _finalize_context(
+        self,
+        runtime: Optional["_AgentContextRuntime"],
+        *,
+        final_state: Dict[str, Any],
+        api_key: str,
+        max_tokens: int,
+        operation_suffix: str = "finalize",
+    ) -> Optional[Any]:
+        if runtime is None:
+            return None
+        from services.agent_context import AgentContextCompactionService
+        from services.llm.protocol import message_to_wire
+
+        response = final_state.get("response")
+        active_usage = getattr(response, "usage", None)
+        active_input = int(
+            getattr(active_usage, "input_tokens", 0) or 0
+        ) + int(getattr(active_usage, "output_tokens", 0) or 0)
+        rendered_messages = [
+            dict(message_to_wire(message))
+            for message in list(final_state.get("messages") or [])
+        ]
+        try:
+            result = await AgentContextCompactionService(
+                runtime.store
+            ).update_pressure_and_compact(
+                runtime.writer.ref,
+                operation_id=(
+                    f"{runtime.operation_id}:{operation_suffix}"
+                ),
+                provider=runtime.provider,
+                model=runtime.model,
+                policy=runtime.policy,
+                active_input_tokens=active_input,
+                output_headroom=max_tokens,
+                rendered_request=rendered_messages,
+                portable_compactor=lambda wires, policy: (
+                    self._portable_context_candidate(
+                        wires,
+                        policy,
+                        provider=runtime.provider,
+                        api_key=api_key,
+                        model=runtime.model,
+                    )
+                ),
+            )
+            runtime.writer.ref = result.ref
+            if result.lifetime_usage:
+                final_state["usage"] = _coerce_native_usage(
+                    final_state.get("usage")
+                ) + _coerce_native_usage(result.lifetime_usage)
+            try:
+                from nodes.context._events import (
+                    dispatch_context_compacted,
+                    dispatch_context_updated,
+                )
+
+                await dispatch_context_updated(
+                    workflow_id=result.ref.workflow_id,
+                    context_node_id=result.ref.context_node_id,
+                    thread_id=result.ref.thread_id,
+                    epoch=result.ref.epoch,
+                    revision=result.ref.revision,
+                    provider=runtime.provider,
+                    active_token_count=result.pressure_tokens,
+                )
+                if result.compacted and result.checkpoint is not None:
+                    await dispatch_context_compacted(
+                        workflow_id=result.ref.workflow_id,
+                        context_node_id=result.ref.context_node_id,
+                        thread_id=result.ref.thread_id,
+                        epoch=result.ref.epoch,
+                        revision=result.ref.revision,
+                        provider=runtime.provider,
+                        strategy=result.checkpoint.strategy,
+                        covers_through_sequence=(
+                            result.checkpoint.covers_through_sequence
+                        ),
+                        active_token_count=result.pressure_tokens,
+                    )
+            except Exception as exc:
+                logger.debug("[Context] metadata event failed: %s", exc)
+            return result
+        except Exception as exc:
+            # A failed candidate never replaces the prior checkpoint.  The
+            # completed model response remains successful and replayable.
+            logger.warning("[Context] compaction skipped: %s", exc)
+            return None
+
+    async def _commit_context_compaction_pause(
+        self,
+        runtime: Optional["_AgentContextRuntime"],
+        *,
+        iteration: int,
+        response: LLMResponse,
+        messages: List[NativeMessage],
+        api_key: str,
+        max_tokens: int,
+    ) -> Optional[List[NativeMessage]]:
+        """Durably activate a provider pause before the next model request."""
+
+        if runtime is None:
+            return None
+        result = await self._finalize_context(
+            runtime,
+            final_state={
+                "response": response,
+                "usage": response.billing_usage or response.usage,
+            },
+            api_key=api_key,
+            max_tokens=max_tokens,
+            operation_suffix=f"compaction-pause:{iteration}",
+        )
+        if result is None or not result.compacted:
+            return messages
+        from services.agent_context import reconstruct_messages
+
+        current_ref, replay = await reconstruct_messages(
+            runtime.store,
+            runtime.writer.ref,
+        )
+        runtime.writer.ref = current_ref
+        # Provider compaction checkpoints replace conversation replay, not the
+        # effective request instruction. Anthropic's durability pause occurs
+        # mid-loop, so dropping the system message here would silently change
+        # the agent's contract on the very next request.
+        system_messages = [
+            message for message in messages if message.role == "system"
+        ]
+        return [*system_messages, *replay]
 
     def _extract_text_content(self, content, ai_response=None) -> str:
         """Extract text content from various response formats.
@@ -860,6 +1302,20 @@ class AIService:
             # Broadcast: Initializing model
             await broadcast_status("initializing", {"message": f"Initializing {provider} model...", "provider": provider, "model": model, "active_skills": [], "last_skills": [], "last_tool_name": None, "last_capability": None})
 
+            context_runtime = await self._prepare_context(
+                node_id=node_id,
+                context_data=memory_data,
+                execution_context=context,
+                workflow_id=workflow_id,
+                provider=provider,
+                model=model,
+                database=database or self.database,
+            )
+            if context_runtime is not None:
+                # Simple Memory is an explicit tool in V2.  Legacy automatic
+                # recall/persistence remains only for immutable V1 snapshots.
+                memory_data = None
+
             # Build initial messages for state. The SystemMessage is
             # PREPENDED after tool building (below), because the
             # delegation-guidance block at the end of the tool-building
@@ -870,7 +1326,15 @@ class AIService:
             # and the LLM would never see the delegation contract,
             # which is exactly what previously broke ``aiAgent``-driven
             # delegation through the ``input-tools`` handle.
-            initial_messages: List[NativeMessage] = []
+            initial_messages: List[NativeMessage] = (
+                [
+                    message
+                    for message in context_runtime.history
+                    if message.role != "system"
+                ]
+                if context_runtime is not None
+                else []
+            )
 
             # Add memory history from connected simpleMemory node (markdown-based)
             session_id = None
@@ -1057,6 +1521,7 @@ class AIService:
                     config["nodes"] = context.get("nodes", [])
                     config["edges"] = context.get("edges", [])
                     config["workspace_dir"] = context.get("workspace_dir", "")
+                    config["user_id"] = context.get("user_id", "owner")
                     # Stable per-run id so session-keyed tools (browser)
                     # reuse one instance across the agent loop.
                     config["execution_id"] = context.get("execution_id")
@@ -1273,6 +1738,44 @@ class AIService:
                 max_iterations=recursion_limit,
                 progress_callback=_emit_progress if broadcaster else None,
                 rebind_from_operations=_rebind_from_operations if auto_rebind_enabled else None,
+                context_management=(
+                    context_runtime.request_options
+                    if context_runtime is not None
+                    else None
+                ),
+                compaction_pause_callback=(
+                    (
+                        lambda iteration, response, messages: (
+                            self._commit_context_compaction_pause(
+                                context_runtime,
+                                iteration=iteration,
+                                response=response,
+                                messages=messages,
+                                api_key=api_key,
+                                max_tokens=max_tokens,
+                            )
+                        )
+                    )
+                    if context_runtime is not None
+                    else None
+                ),
+                context_transition_sink=(
+                    context_runtime.writer
+                    if context_runtime is not None
+                    else None
+                ),
+                context_operation_id=(
+                    context_runtime.operation_id
+                    if context_runtime is not None
+                    else None
+                ),
+            )
+
+            context_result = await self._finalize_context(
+                context_runtime,
+                final_state=final_state,
+                api_key=api_key,
+                max_tokens=max_tokens,
             )
 
             # Extract the AI response (last message in the accumulated messages)
@@ -1394,6 +1897,16 @@ class AIService:
             # Add memory info if used
             if session_id:
                 result["memory"] = {"session_id": session_id, "history_loaded": history_count}
+            if context_runtime is not None:
+                result["context"] = {
+                    "context_node_id": context_runtime.writer.ref.context_node_id,
+                    "thread_id": context_runtime.writer.ref.thread_id,
+                    "epoch": context_runtime.writer.ref.epoch,
+                    "revision": context_runtime.writer.ref.revision,
+                    "compacted": bool(
+                        context_result and context_result.compacted
+                    ),
+                }
 
             log_execution_time(logger, "ai_agent_loop", start_time, time.time())
             log_api_call(logger, provider, model, "agent", True)
@@ -1636,10 +2149,33 @@ class AIService:
             # Broadcast: Initializing
             await broadcast_status("initializing", {"message": f"Initializing {provider} model...", "provider": provider, "model": model, "active_skills": [], "last_skills": [], "last_tool_name": None, "last_capability": None})
 
+            context_runtime = await self._prepare_context(
+                node_id=node_id,
+                context_data=memory_data,
+                execution_context=context,
+                workflow_id=workflow_id,
+                provider=provider,
+                model=model,
+                database=database or self.database,
+            )
+            if context_runtime is not None:
+                memory_data = None
+
             # Build messages
-            messages: List[NativeMessage] = []
+            messages: List[NativeMessage] = (
+                [
+                    message
+                    for message in context_runtime.history
+                    if message.role != "system"
+                ]
+                if context_runtime is not None
+                else []
+            )
             if system_message:
-                messages.append(NativeMessage(role="system", content=system_message))
+                messages.insert(
+                    0,
+                    NativeMessage(role="system", content=system_message),
+                )
 
             # Load memory history if connected (markdown-based like AI Agent)
             session_id = None
@@ -1762,6 +2298,7 @@ class AIService:
                         config["nodes"] = context.get("nodes", [])
                         config["edges"] = context.get("edges", [])
                         config["workspace_dir"] = context.get("workspace_dir", "")
+                        config["user_id"] = context.get("user_id", "owner")
                         # Stable per-run id so session-keyed tools (browser)
                         # reuse one instance across the agent loop.
                         config["execution_id"] = context.get("execution_id")
@@ -1921,6 +2458,37 @@ class AIService:
                     max_iterations=recursion_limit,
                     progress_callback=_emit_progress if broadcaster else None,
                     rebind_from_operations=_rebind_from_operations if auto_rebind_enabled else None,
+                    context_management=(
+                        context_runtime.request_options
+                        if context_runtime is not None
+                        else None
+                    ),
+                    compaction_pause_callback=(
+                        (
+                            lambda iteration, response, current_messages: (
+                                self._commit_context_compaction_pause(
+                                    context_runtime,
+                                    iteration=iteration,
+                                    response=response,
+                                    messages=current_messages,
+                                    api_key=api_key,
+                                    max_tokens=max_tokens,
+                                )
+                            )
+                        )
+                        if context_runtime is not None
+                        else None
+                    ),
+                    context_transition_sink=(
+                        context_runtime.writer
+                        if context_runtime is not None
+                        else None
+                    ),
+                    context_operation_id=(
+                        context_runtime.operation_id
+                        if context_runtime is not None
+                        else None
+                    ),
                 )
 
                 # Extract response
@@ -1944,6 +2512,37 @@ class AIService:
                     thinking=thinking_config,
                     initial_messages=messages,
                     max_iterations=1,
+                    context_management=(
+                        context_runtime.request_options
+                        if context_runtime is not None
+                        else None
+                    ),
+                    compaction_pause_callback=(
+                        (
+                            lambda iteration, response, current_messages: (
+                                self._commit_context_compaction_pause(
+                                    context_runtime,
+                                    iteration=iteration,
+                                    response=response,
+                                    messages=current_messages,
+                                    api_key=api_key,
+                                    max_tokens=max_tokens,
+                                )
+                            )
+                        )
+                        if context_runtime is not None
+                        else None
+                    ),
+                    context_transition_sink=(
+                        context_runtime.writer
+                        if context_runtime is not None
+                        else None
+                    ),
+                    context_operation_id=(
+                        context_runtime.operation_id
+                        if context_runtime is not None
+                        else None
+                    ),
                 )
                 all_messages = final_state["messages"]
                 ai_response = all_messages[-1] if all_messages else None
@@ -1954,6 +2553,13 @@ class AIService:
                     ai_response,
                 )
                 thinking_content = final_state.get("thinking_content")
+
+            context_result = await self._finalize_context(
+                context_runtime,
+                final_state=final_state,
+                api_key=api_key,
+                max_tokens=max_tokens,
+            )
 
             logger.info(f"[ChatAgent] Response generated, thinking={'yes' if thinking_content else 'no'}, iterations={iterations}")
 
@@ -2057,6 +2663,16 @@ class AIService:
 
             if session_id:
                 result["memory"] = {"session_id": session_id, "history_loaded": history_count}
+            if context_runtime is not None:
+                result["context"] = {
+                    "context_node_id": context_runtime.writer.ref.context_node_id,
+                    "thread_id": context_runtime.writer.ref.thread_id,
+                    "epoch": context_runtime.writer.ref.epoch,
+                    "revision": context_runtime.writer.ref.revision,
+                    "compacted": bool(
+                        context_result and context_result.compacted
+                    ),
+                }
 
             if skill_data:
                 result["skills"] = {
@@ -2185,6 +2801,13 @@ class AIService:
             connected_services = tool_info.get("connected_services", [])
 
             default_tool_name, default_tool_description = _resolve_default_tool_name_description(node_type)
+            from services.node_registry import get_node_class
+
+            plugin_cls = get_node_class(node_type)
+            schema_locked = bool(
+                plugin_cls is not None
+                and getattr(plugin_cls, "tool_schema_locked", False)
+            )
             # Team-handle expansion assigns a per-node identity to custom
             # aiAgent delegates. It intentionally outranks schemas and class
             # defaults because those are type-wide and would collide.
@@ -2193,7 +2816,16 @@ class AIService:
             # Check database for stored schema (source of truth)
             db_schema = await self.database.get_tool_schema(node_id) if node_id else None
 
-            if db_schema:
+            if schema_locked:
+                # Security-sensitive first-party tools own both their
+                # canonical name and invocation schema. A stale/custom row
+                # from the generic Tool editor must not replace that
+                # contract.
+                tool_name = default_tool_name or node_type
+                tool_description = (
+                    default_tool_description or f"Execute {node_label} node"
+                )
+            elif db_schema:
                 # Use database schema as source of truth
                 logger.debug(f"[Agent] Using DB schema for tool node {node_id}")
                 tool_name = delegated_name or db_schema.get("tool_name", default_tool_name or f"tool_{node_label}")
@@ -2244,7 +2876,11 @@ class AIService:
             schema_params = dict(node_params)
             if connected_services:
                 schema_params["connected_services"] = connected_services
-            if db_schema and db_schema.get("schema_config"):
+            if (
+                not schema_locked
+                and db_schema
+                and db_schema.get("schema_config")
+            ):
                 schema_params["db_schema_config"] = db_schema["schema_config"]
             schema = self._get_tool_schema(node_type, schema_params)
 
@@ -2291,6 +2927,15 @@ class AIService:
             Pydantic BaseModel class for the tool's arguments
         """
         from pydantic import BaseModel, Field
+
+        # Plugin-locked ToolInput is authoritative even when an older client
+        # left a custom ToolSchema row in the database.
+        from services.node_registry import get_node_class
+
+        plugin_cls = get_node_class(node_type)
+        if plugin_cls is not None and getattr(plugin_cls, "tool_schema_locked", False):
+            tool_input_model = getattr(plugin_cls, "tool_input_model", None)
+            return tool_input_model() if callable(tool_input_model) else plugin_cls.Params
 
         # Check if we have a database-stored schema config (source of truth)
         db_schema_config = params.get("db_schema_config")
@@ -2380,10 +3025,10 @@ class AIService:
         # AI-tool-usable plugin is covered by this lookup (contract invariant
         # test_fast_path_covers_every_plugin_tool). Wave 11.D.13 stripped the
         # per-type ad-hoc schemas that used to live below this gate.
-        from services.node_registry import get_node_class
-
-        plugin_cls = get_node_class(node_type)
         if plugin_cls is not None and hasattr(plugin_cls, "Params"):
+            tool_input_model = getattr(plugin_cls, "tool_input_model", None)
+            if callable(tool_input_model):
+                return tool_input_model()
             return plugin_cls.Params
 
         # Generic schema for other nodes

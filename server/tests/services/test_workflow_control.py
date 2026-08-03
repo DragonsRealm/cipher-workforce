@@ -108,6 +108,53 @@ async def test_generation_atomically_creates_and_archives_isolated_data_scope(co
 
 
 @pytest.mark.asyncio
+async def test_active_generation_scope_redacts_context_runtime_payloads(
+    control_database,
+):
+    await control_database.save_node_parameters(
+        "memory-1",
+        {
+            "reset_policy": "preserve",
+            "memory_content": "private legacy transcript",
+            "provider_bindings": {"session_uuid": "private-binding"},
+            "thought_signature": "private-signature",
+        },
+    )
+    service = WorkflowControlService(control_database)
+    control, _ = await service.begin_generation(
+        workflow_id="wf-safe-scope",
+        nodes=[
+            {
+                "id": "memory-1",
+                "type": "simpleMemory",
+                "data": {
+                    "label": "Memory",
+                    "contextJournal": [{"content": "private journal"}],
+                    "providerState": {"opaque": "private-state"},
+                },
+            }
+        ],
+        edges=[],
+        session_id="browser-session",
+        idempotency_key="safe-scope-1",
+        graph_version=2,
+    )
+
+    scope = await control_database.get_workflow_run_data_scope(
+        control.data_scope_id
+    )
+    serialized = str(scope.node_data) + str(scope.runtime_data)
+    assert "private legacy transcript" not in serialized
+    assert "private-binding" not in serialized
+    assert "private-signature" not in serialized
+    assert "private journal" not in serialized
+    assert "private-state" not in serialized
+    assert scope.runtime_data["nodes"]["memory-1"]["parameters"] == {
+        "reset_policy": "preserve"
+    }
+
+
+@pytest.mark.asyncio
 async def test_reset_archives_every_node_then_calls_plugin_lifecycle(monkeypatch):
     database = AsyncMock()
     database.get_node_parameters.side_effect = [

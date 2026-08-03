@@ -422,6 +422,13 @@ class TestPollingTriggerWorkflowBody:
             "edges": [{"source": "gm-1", "target": "agent-1", "targetHandle": "input-main"}],
             "session_id": "sess",
             "seen_ids": [],
+            "_temporal_routing_v1": {
+                "version": 1,
+                "agent_workflow_enabled": True,
+                "per_type_dispatch_enabled": True,
+                "worker_pool_enabled": False,
+            },
+            "user_id": "user-9",
         }
 
         with pytest.raises(_StopLoop):
@@ -438,6 +445,12 @@ class TestPollingTriggerWorkflowBody:
         # when listener_data omits them (this test does).
         spawn_ids = [c["id"] for c in spawn_calls]
         assert spawn_ids == ["wf-1-gm-1-c", "wf-1-gm-1-d"]
+        for call in spawn_calls:
+            child_payload = call["args"][0]
+            assert child_payload["_temporal_routing_v1"] == (
+                listener_data["_temporal_routing_v1"]
+            )
+            assert child_payload["user_id"] == "user-9"
 
     @pytest.mark.asyncio
     async def test_cycle_failure_does_not_break_loop(self, monkeypatch):
@@ -452,6 +465,11 @@ class TestPollingTriggerWorkflowBody:
             # count them against the poll-cycle script.
             if name == "broadcast_trigger_status_activity":
                 return None
+            # Same for the spawn-path graph refresh: it is infrastructure,
+            # not a poll cycle. ``found: False`` keeps the listener's own
+            # nodes/edges in play so the spawn behaves as before.
+            if name == "load_persisted_workflow_graph_activity":
+                return {"found": False}
             call_count[0] += 1
             if call_count[0] == 2:  # second call fails
                 raise RuntimeError("transient API timeout")

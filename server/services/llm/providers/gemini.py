@@ -78,7 +78,9 @@ class GeminiProvider:
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
+        del context_management  # Gemini stays on portable Context checkpoints.
         from google.genai import types
 
         system_instruction, contents = self._split_system_and_contents(messages)

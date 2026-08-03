@@ -33,6 +33,8 @@ import TaskManagerPanel from './TaskManagerPanel';
 import TeamMonitorPanel from './TeamMonitorPanel';
 import ProcessManagerPanel from './ProcessManagerPanel';
 import GalleryPanel from './GalleryPanel';
+import ContextPanel from './ContextPanel';
+import MemoryToolPanel from './MemoryToolPanel';
 import { useAppStore } from '../../store/useAppStore';
 import { useNodeStatus, useWebSocket, CompactionStats } from '../../contexts/WebSocketContext';
 import { useUserSettingsQuery } from '../../hooks/useUserSettingsQuery';
@@ -188,8 +190,13 @@ const MiddleSection: React.FC<MiddleSectionProps> = ({
   // node's own module emits.
   const hints = nodeDefinition.uiHints ?? {};
   const isMasterSkillNode = hints.isMasterSkillEditor === true;
-  const isMemoryNode = hints.isMemoryPanel === true;
-  const needsCodeEditorLayout = hints.hasCodeEditor === true;
+  const isContextNode = hints.isContextPanel === true;
+  const isMemoryToolNode = hints.isMemoryToolPanel === true;
+  // Legacy combined Markdown/transcript panel remains available while
+  // normalize_workflow_graph upgrades input-memory graphs.
+  const isMemoryNode = hints.isMemoryPanel === true && !isMemoryToolNode;
+  const needsCodeEditorLayout =
+    hints.hasCodeEditor === true && !isContextNode && !isMemoryToolNode;
   const isCodeExecutorNode = needsCodeEditorLayout && !isMemoryNode && !isMasterSkillNode;
   // No seedable skills today besides masterSkill (handled via its own
   // editor). The reset-skill branch used to fire for SKILL_NODE_TYPES
@@ -540,7 +547,7 @@ const MiddleSection: React.FC<MiddleSectionProps> = ({
     <div className="relative flex h-full flex-1 flex-col overflow-hidden">
       {/* Description - hide for code editor nodes (Python, Skill), masterSkill,
           and the todo editor (each renders its own full-panel header). */}
-      {!needsCodeEditorLayout && !isMasterSkillNode && !isTodoEditorNode && !isTaskManagerNode && !isMonitorNode && !isProcessManagerNode && !isGalleryNode && (
+      {!needsCodeEditorLayout && !isMasterSkillNode && !isContextNode && !isMemoryToolNode && !isTodoEditorNode && !isTaskManagerNode && !isMonitorNode && !isProcessManagerNode && !isGalleryNode && (
         <div className="shrink-0 border-b border-border-default bg-bg-panel px-6 pt-4 pb-2">
           <p className="m-0 text-base leading-[1.5] text-fg-muted">
             {nodeDefinition.description}
@@ -584,6 +591,18 @@ const MiddleSection: React.FC<MiddleSectionProps> = ({
           // pinning sets `selection`. So it replaces the generic list
           // rather than sitting alongside a second, drifting copy of it.
           <GalleryPanel
+            workflowId={currentWorkflow?.id}
+            parameters={parameters}
+            onParameterChange={onParameterChange}
+          />
+        ) : isContextNode ? (
+          <ContextPanel
+            nodeId={nodeId}
+            workflowId={currentWorkflow?.id}
+          />
+        ) : isMemoryToolNode ? (
+          <MemoryToolPanel
+            nodeId={nodeId}
             workflowId={currentWorkflow?.id}
             parameters={parameters}
             onParameterChange={onParameterChange}

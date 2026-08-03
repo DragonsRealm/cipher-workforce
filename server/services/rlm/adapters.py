@@ -6,8 +6,19 @@
 """
 
 import asyncio
+import inspect
 import re
-from typing import Dict, Any, List, Tuple, Optional
+import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 from core.logging import get_logger
 from .constants import PROVIDER_TO_BACKEND, PROVIDER_BASE_URLS
@@ -76,6 +87,10 @@ class ToolBridgeAdapter:
     RLM's synchronous exec() REPL thread.
     """
 
+    TOOL_TIMEOUT_SECONDS = 60.0
+    CANCELLATION_GRACE_SECONDS = 1.0
+    CONTEXT_EVENT_TIMEOUT_SECONDS = 10.0
+
     # Brief descriptions for common tool types (used in RLM REPL context)
     TOOL_DESCRIPTIONS = {
         "calculatorTool": "Math operations: add, subtract, multiply, divide, power, sqrt, mod, abs. Args: operation, a, b",
@@ -103,6 +118,9 @@ class ToolBridgeAdapter:
         tool_data: Optional[List[Dict[str, Any]]], context: Optional[Dict] = None, loop: Optional[asyncio.AbstractEventLoop] = None,
         broadcaster=None, parent_node_id: Optional[str] = None, workflow_id: Optional[str] = None,
         provider: Optional[str] = None,
+        ambiguous_outcome_sink: Optional[
+            Callable[[Dict[str, Any]], Awaitable[None]]
+        ] = None,
     ) -> Dict[str, Dict]:
         from constants import AI_AGENT_TYPES, AI_CHAT_MODEL_TYPES
         from services.handlers.tools import execute_tool
@@ -123,13 +141,48 @@ class ToolBridgeAdapter:
             node_id = tool_info.get("node_id", "")
             label = tool_info.get("label", node_type)
             params = tool_info.get("parameters", {})
-            # Provider-visible name is the capability identity shown to the
-            # model and UI. Human labels remain descriptions only.
-            tool_name = re.sub(r"[^a-zA-Z0-9_]", "_", label.lower().replace(" ", "_"))
+            tool_name = tool_info.get("_agent_tool_name")
+            input_model = tool_info.get("_agent_tool_input_model")
+            if not tool_name or input_model is None:
+                from services.node_registry import get_node_class
 
-            def _make_sync_wrapper(t_type, t_id, t_params, t_label, t_name):
+                node_cls = get_node_class(node_type)
+                if node_cls is not None:
+                    tool_name = tool_name or (
+                        getattr(node_cls, "tool_name", "") or node_type
+                    )
+                    model_factory = getattr(
+                        node_cls, "tool_input_model", None
+                    )
+                    input_model = (
+                        model_factory()
+                        if callable(model_factory)
+                        else getattr(node_cls, "Params", None)
+                    )
+            if not tool_name:
+                tool_name = re.sub(
+                    r"[^a-zA-Z0-9_]",
+                    "_",
+                    label.lower().replace(" ", "_"),
+                )
+            if tool_name in tools:
+                raise ValueError(
+                    f"Duplicate canonical tool name {tool_name!r}"
+                )
+
+            def _make_sync_wrapper(
+                t_type,
+                t_id,
+                t_params,
+                t_label,
+                t_name,
+                t_input_model,
+                t_execution,
+                t_ambiguous_outcome_sink,
+            ):
                 def wrapper(**kwargs):
                     config = {
+                        **dict(t_execution or {}),
                         "node_type": t_type,
                         "node_id": t_id,
                         "parameters": t_params,
@@ -143,6 +196,22 @@ class ToolBridgeAdapter:
                         config["edges"] = context.get("edges", [])
                         config["execution_id"] = context.get("execution_id")
                         config["root_execution_id"] = context.get("root_execution_id")
+                        config["user_id"] = context.get("user_id", "owner")
+
+                    if t_input_model is not None:
+                        try:
+                            validated = t_input_model.model_validate(kwargs)
+                            tool_args = validated.model_dump(
+                                mode="json",
+                                exclude_unset=True,
+                            )
+                        except Exception as exc:
+                            return {
+                                "error": "Invalid tool arguments",
+                                "details": str(exc),
+                            }
+                    else:
+                        tool_args = dict(kwargs)
 
                     async def execute_with_parent_status():
                         if broadcaster and parent_node_id:
@@ -166,7 +235,11 @@ class ToolBridgeAdapter:
                                     invocation_source="rlm",
                                 )
                         try:
-                            result = await execute_tool(t_label, kwargs, config)
+                            result = await execute_tool(
+                                t_name,
+                                tool_args,
+                                config,
+                            )
                             if broadcaster and parent_node_id:
                                 await broadcaster.update_node_status(
                                     parent_node_id,
@@ -217,15 +290,125 @@ class ToolBridgeAdapter:
                                     )
                             raise
 
-                    future = asyncio.run_coroutine_threadsafe(execute_with_parent_status(), main_loop)
-                    return future.result(timeout=60)
+                    execution_finished = threading.Event()
 
+                    async def execute_with_completion():
+                        try:
+                            return await execute_with_parent_status()
+                        finally:
+                            execution_finished.set()
+
+                    future = asyncio.run_coroutine_threadsafe(
+                        execute_with_completion(),
+                        main_loop,
+                    )
+                    try:
+                        return future.result(
+                            timeout=(
+                                ToolBridgeAdapter.TOOL_TIMEOUT_SECONDS
+                            )
+                        )
+                    except FutureTimeoutError as exc:
+                        # A tool may itself raise TimeoutError. In that case
+                        # the concurrent future is already complete and its
+                        # exception is an exact failure, not our wait limit.
+                        if future.done():
+                            return future.result()
+                        cancel_requested = future.cancel()
+                        cancellation_observed = execution_finished.wait(
+                            ToolBridgeAdapter.CANCELLATION_GRACE_SECONDS
+                        )
+                        ambiguous = {
+                            "outcome": "ambiguous",
+                            "reason": "tool_timeout",
+                            "tool_name": t_name,
+                            "tool_node_id": t_id,
+                            "tool_node_type": t_type,
+                            "arguments": tool_args,
+                            "timeout_seconds": (
+                                ToolBridgeAdapter.TOOL_TIMEOUT_SECONDS
+                            ),
+                            "cancel_requested": cancel_requested,
+                            "cancellation_observed": (
+                                cancellation_observed
+                            ),
+                        }
+                        if t_ambiguous_outcome_sink is not None:
+                            receipt = asyncio.run_coroutine_threadsafe(
+                                t_ambiguous_outcome_sink(ambiguous),
+                                main_loop,
+                            )
+                            try:
+                                receipt.result(
+                                    timeout=(
+                                        ToolBridgeAdapter
+                                        .CONTEXT_EVENT_TIMEOUT_SECONDS
+                                    )
+                                )
+                            except Exception as persist_exc:
+                                raise RuntimeError(
+                                    "RLM tool timed out and the "
+                                    "ambiguous Context event could not "
+                                    "be committed"
+                                ) from persist_exc
+                        raise TimeoutError(
+                            f"RLM tool {t_name!r} timed out after "
+                            f"{ToolBridgeAdapter.TOOL_TIMEOUT_SECONDS:g}s; "
+                            "outcome is ambiguous"
+                        ) from exc
+
+                if t_input_model is not None:
+                    from pydantic_core import PydanticUndefined
+
+                    parameters = []
+                    for field_name, field_info in (
+                        t_input_model.model_fields.items()
+                    ):
+                        if field_info.is_required():
+                            default = inspect.Parameter.empty
+                        elif field_info.default_factory is not None:
+                            try:
+                                default = field_info.default_factory()
+                            except Exception:
+                                default = None
+                        elif field_info.default is PydanticUndefined:
+                            default = None
+                        else:
+                            default = field_info.default
+                        parameters.append(
+                            inspect.Parameter(
+                                field_name,
+                                inspect.Parameter.KEYWORD_ONLY,
+                                annotation=field_info.annotation,
+                                default=default,
+                            )
+                        )
+                    wrapper.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+                        parameters
+                    )
+                wrapper.__name__ = str(t_name)
                 return wrapper
 
-            description = params.get("tool_description") or ToolBridgeAdapter.TOOL_DESCRIPTIONS.get(node_type, f"Execute {label} ({node_type})")
+            description = (
+                tool_info.get("_agent_tool_description")
+                or params.get("tool_description")
+                or ToolBridgeAdapter.TOOL_DESCRIPTIONS.get(
+                    node_type,
+                    f"Execute {label} ({node_type})",
+                )
+            )
 
             tools[tool_name] = {
-                "tool": _make_sync_wrapper(node_type, node_id, params, label, tool_name),
+                "tool": _make_sync_wrapper(
+                    node_type,
+                    node_id,
+                    params,
+                    label,
+                    tool_name,
+                    input_model,
+                    tool_info.get("_agent_tool_execution"),
+                    ambiguous_outcome_sink,
+                ),
                 "description": description,
             }
             logger.info(f"[RLM] Bridged tool: {tool_name} ({node_type})")

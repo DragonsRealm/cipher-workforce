@@ -164,6 +164,12 @@ async def _dispatch_tool(tool_name: str, tool_args: Dict[str, Any], config: Dict
         "edges": config.get("edges", []),
         "workflow_id": config.get("workflow_id"),
         "parent_node_id": config.get("parent_node_id"),
+        # Provider/runtime call identity is a trusted idempotency key for
+        # stateful tools. It is carried on NodeContext, never accepted from
+        # the model's JSON arguments.
+        "tool_call_id": config.get("tool_call_id"),
+        "operation_id": config.get("operation_id"),
+        "user_id": config.get("user_id", "owner"),
         # Stable per-run id so session-keyed tools (browser) reuse one
         # instance across the agent loop instead of falling back to a
         # shared default session.
@@ -503,16 +509,31 @@ async def _execute_delegated_agent(
     # Create execution context for child agent. Forward the parent's
     # execution_id so session-keyed tools (browser) used by the child
     # share the parent run's instance.
+    # Scope keys the child must inherit, or it resolves no context of its own
+    # and its turns are silently never journalled. Forwarded verbatim; the
+    # explicit keys below always win.
+    _inherited_scope = {
+        key: config[key]
+        for key in (
+            "graphVersion",
+            "generation",
+            "data_scope_id",
+            "context_execution_id",
+            "context_session_id",
+            "user_id",
+            "session_id",
+            "workspace_dir",
+        )
+        if key in config
+    }
     child_context = {
+        **_inherited_scope,
         "nodes": nodes,
         "edges": edges,
         "workflow_id": workflow_id,
         "outputs": {},
         "parent_task_id": task_id,
         "execution_id": config.get("execution_id"),
-        "root_execution_id": config.get("root_execution_id"),
-        "delegation_depth": config.get("delegation_depth", 0),
-        "team_id": config.get("team_id"),
         "max_concurrent_subagents": config.get("max_concurrent_subagents", 3),
         "max_delegation_depth": config.get("max_delegation_depth", 2),
         "ai_service": config.get("ai_service"),

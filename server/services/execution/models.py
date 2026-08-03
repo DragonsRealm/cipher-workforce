@@ -349,9 +349,15 @@ class ExecutionContext:
             target_handle = edge.get("targetHandle")
 
             # Nodes connected to AI Agent config handles are sub-nodes
-            # These handles: input-memory, input-tools, input-skill, input-teammates
+            # These handles: input-context, input-tools, input-skill, input-teammates
             if target in ai_agent_node_ids and source and target_handle:
-                if target_handle in ("input-memory", "input-tools", "input-skill", "input-teammates"):
+                if target_handle in (
+                    "input-context",
+                    "input-memory",  # immutable V1 snapshot compatibility
+                    "input-tools",
+                    "input-skill",
+                    "input-teammates",
+                ):
                     subnode_ids.add(source)
 
         # Initialize node executions for all nodes (excluding config nodes and sub-nodes)

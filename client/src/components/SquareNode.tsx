@@ -6,10 +6,11 @@ import { useAppStore } from '../store/useAppStore';
 import { useAppTheme } from '../hooks/useAppTheme';
 import EditableNodeLabel from './ui/EditableNodeLabel';
 import { useWebSocket, useWhatsAppStatus, useNodeStatus } from '../contexts/WebSocketContext';
-import { getCachedNodeSpec, isNodeInBackendGroup, resolveNodeDescription, useNodeSpec } from '../lib/nodeSpec';
+import { isNodeInBackendGroup, resolveNodeDescription, useNodeSpec } from '../lib/nodeSpec';
 import { NodeIcon } from '../assets/icons';
 import { AI_MODEL_PROVIDER_MAP } from '../lib/aiModelProviders';
 import { useProviderStored } from '../hooks/useCatalogueQuery';
+import type { NodeSpecHandle } from '../adapters/nodeSpecToDescription';
 
 // Nodes with 'tool' in their group can connect to AI Agent/Zeenie tool handles
 const hasToolGroup = (definition: any): boolean => {
@@ -28,6 +29,13 @@ const CREDENTIAL_TO_PROVIDER: Record<string, string> = {
   openaiApi: 'openai',
   anthropicApi: 'anthropic',
   googleAiApi: 'gemini',
+};
+
+const REACT_POSITION: Record<NodeSpecHandle['position'], Position> = {
+  top: Position.Top,
+  bottom: Position.Bottom,
+  left: Position.Left,
+  right: Position.Right,
 };
 
 const SquareNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectable, selected }) => {
@@ -100,6 +108,7 @@ const SquareNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectab
   // Wave 6 Phase 3e: backend NodeSpec -> legacy fallback. Flag off or
   // cache cold -> returns local nodeDefinitions entry unchanged.
   const definition = resolveNodeDescription(type || '');
+  const spec = useNodeSpec(type);
 
   // Wave 10.E: backend group membership with bundled-definition fallback
   const isAndroidNode = inGroup(type, 'android');
@@ -107,6 +116,49 @@ const SquareNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectab
   // Check if this node can be used as a tool: any Android service node
   // can connect to Android Toolkit, plus any node carrying the 'tool' group.
   const isToolCapable = isAndroidNode || hasToolGroup(definition);
+  const renderedHandles = useMemo<NodeSpecHandle[]>(() => {
+    if (spec?.handles?.length) return spec.handles;
+
+    // Cold-cache / legacy fallback. Once a NodeSpec arrives its declared
+    // topology replaces this list wholesale, including Context V2 handles.
+    const fallback: NodeSpecHandle[] = [];
+    if (!spec?.hideInputHandle) {
+      fallback.push({
+        name: 'input-main',
+        kind: 'input',
+        position: 'left',
+        offset: '50%',
+        label: 'Service Input',
+        role: 'main',
+      });
+    }
+    if (!spec?.hideOutputHandle) {
+      fallback.push({
+        name: 'output-main',
+        kind: 'output',
+        position: 'right',
+        offset: '50%',
+        label: 'Service Output',
+        role: 'main',
+      });
+    }
+    if (isToolCapable) {
+      fallback.push({
+        name: 'output-tool',
+        kind: 'output',
+        position: 'top',
+        offset: '50%',
+        label: 'Tool Output',
+        role: 'tools',
+      });
+    }
+    return fallback;
+  }, [
+    spec?.handles,
+    spec?.hideInputHandle,
+    spec?.hideOutputHandle,
+    isToolCapable,
+  ]);
 
   // Android connection status from WebSocket (real-time updates)
   // Service nodes need a paired device to execute, not just relay connection
@@ -245,8 +297,7 @@ const SquareNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectab
   // NodeSpec cache so the icon populates when prefetch lands without
   // waiting for a parent re-render. <NodeIcon> resolves the ref and
   // tints lucide icons with the node's brand color via currentColor.
-  const iconSpec = useNodeSpec(type);
-  const iconRef = (iconSpec?.icon as string | undefined) ?? (definition?.icon as string | undefined);
+  const iconRef = (spec?.icon as string | undefined) ?? (definition?.icon as string | undefined);
 
   // Get the node color from definition or use default
   const nodeColor = definition?.defaults?.color || 'var(--node-model)';
@@ -351,86 +402,41 @@ const SquareNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectab
           title={getStatusTitle()}
         />
 
-        {/* Square Input Handle (gated by spec.hideInputHandle, mirrors
-            the hideOutputHandle pattern below — auto-derived True for
-            usable_as_tool=True nodes via BaseNode.__init_subclass__). */}
-        {!getCachedNodeSpec(type || '')?.hideInputHandle && (
-          <Handle
-            id="input-main"
-            type="target"
-            position={Position.Left}
-            isConnectable={isConnectable}
-            className="sq-node-handle in"
-            style={{
-              position: 'absolute',
-              left: '-6px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: theme.nodeSize.handle,
-              height: theme.nodeSize.handle,
-              zIndex: 20
-            }}
-            title="Service Input"
-          />
-        )}
-
-        {/* Square Output Handle (Wave 10.E: spec.hideOutputHandle replaces the
-            local NO_OUTPUT_NODE_TYPES list) */}
-        {!getCachedNodeSpec(type || '')?.hideOutputHandle && (
-          <Handle
-            id="output-main"
-            type="source"
-            position={Position.Right}
-            isConnectable={isConnectable}
-            className="sq-node-handle out"
-            style={{
-              '--node-color': isConfigured ? nodeColor : theme.colors.textSecondary,
-              position: 'absolute',
-              right: '-6px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: theme.nodeSize.handle,
-              height: theme.nodeSize.handle,
-              zIndex: 20
-            } as NodeStyle}
-            title="Service Output"
-          />
-        )}
-
-        {/* Top Tool Output Handle.
-            Wave 10.E: color + label come from the node's own spec. The
-            `nodeColor` carries the spec's brand color (Android green for
-            Android services, dracula accents elsewhere). The tooltip
-            reads from the spec's top-position output handle when one is
-            declared there; otherwise falls back to a generic label.
-            Visual styles (background, border, radius) owned by
-            `.sq-node-handle.out` in base.css + per-theme overrides — we
-            pass `--node-color` for the CSS var only. */}
-        {isToolCapable && (() => {
-          const spec = getCachedNodeSpec(type || '');
-          const topOut = spec?.handles?.find(h => h.kind === 'output' && h.position === 'top');
-          const tooltip = topOut?.label ?? 'Tool Output';
+        {/* NodeSpec owns the complete topology. This renderer deliberately
+            knows no handle ids: Context, Memory-as-tool and future plugin
+            handles use the same positioning contract as main I/O. */}
+        {renderedHandles.map((handle) => {
+          const placement: React.CSSProperties =
+            handle.position === 'left'
+              ? { left: '-6px', top: handle.offset || '50%', transform: 'translateY(-50%)' }
+              : handle.position === 'right'
+                ? { right: '-6px', top: handle.offset || '50%', transform: 'translateY(-50%)' }
+                : handle.position === 'top'
+                  ? { top: '-6px', left: handle.offset || '50%', transform: 'translateX(-50%)' }
+                  : { bottom: '-6px', left: handle.offset || '50%', transform: 'translateX(-50%)' };
           return (
             <Handle
-              id="output-tool"
-              type="source"
-              position={Position.Top}
+              key={handle.name}
+              id={handle.name}
+              type={handle.kind === 'input' ? 'target' : 'source'}
+              position={REACT_POSITION[handle.position]}
               isConnectable={isConnectable}
-              className="sq-node-handle out"
+              className={`sq-node-handle ${handle.kind === 'input' ? 'in' : 'out'}`}
               style={{
-                '--node-color': nodeColor,
+                '--node-color':
+                  handle.kind === 'output' && handle.role === 'main' && !isConfigured
+                    ? theme.colors.textSecondary
+                    : nodeColor,
                 position: 'absolute',
-                top: '-6px',
-                left: '50%',
-                transform: 'translateX(-50%)',
+                ...placement,
                 width: theme.nodeSize.handle,
                 height: theme.nodeSize.handle,
                 zIndex: 20,
               } as NodeStyle}
-              title={tooltip}
+              title={handle.label || handle.name}
             />
           );
-        })()}
+        })}
 
         {/* Output Data Indicator - shows when node has execution output */}
         {executionStatus === 'success' && nodeStatus?.data && (

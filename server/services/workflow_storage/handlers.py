@@ -20,6 +20,318 @@ from services.ws_handler_registry import ws_handler
 
 logger = get_logger(__name__)
 
+_CONTEXT_TOPOLOGY_ERROR_CODES = frozenset(
+    {
+        "INVALID_CONTEXT_EDGE",
+        "MISSING_CONTEXT",
+        "MULTIPLE_CONTEXTS",
+        "SHARED_CONTEXT",
+    }
+)
+
+
+class _AssumeCredentialsPresent:
+    """Avoid credential lookups while validating graph-only invariants."""
+
+    async def has_valid_key(self, provider_id: str) -> bool:
+        return True
+
+
+async def _context_topology_errors(
+    nodes: list[Dict[str, Any]],
+    edges: list[Dict[str, Any]],
+    parameters_by_id: Dict[str, Dict[str, Any]],
+) -> list[Dict[str, Any]]:
+    """Run the shared validator and retain only Context V2 invariants."""
+
+    from services.workflow_validator import validate_workflow
+
+    report = await validate_workflow(
+        nodes,
+        edges,
+        parameters_by_id=parameters_by_id,
+        auth_service=_AssumeCredentialsPresent(),
+        enforce_context=True,
+    )
+    return [issue for issue in report.get("errors", []) if issue.get("code") in _CONTEXT_TOPOLOGY_ERROR_CODES]
+
+
+def _trusted_owner_id(websocket: WebSocket, existing: Any) -> str:
+    """Resolve workflow ownership without trusting client graph fields."""
+
+    state = getattr(websocket, "state", None)
+    authenticated = getattr(state, "user_id", None)
+    if authenticated is not None and str(authenticated).strip():
+        return str(authenticated).strip()
+    existing_data = getattr(existing, "data", None)
+    if isinstance(existing_data, dict):
+        stored = existing_data.get("owner_id")
+        if stored is not None and str(stored).strip():
+            return str(stored).strip()
+    return "owner"
+
+
+def _reconcile_context_submission(
+    workflow_data: Dict[str, Any],
+    existing: Any,
+) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[str]]:
+    """Restore backend-owned Context companions before normalization.
+
+    Client graph data may preserve ownership metadata for round-tripping, but
+    it is never authoritative. Existing companions survive while their owner
+    agent remains, and client-created/replacement Context nodes are discarded
+    so normalization creates fresh backend companions where needed.
+    """
+
+    submitted_nodes = [
+        dict(node)
+        for node in workflow_data.get("nodes") or []
+        if isinstance(node, dict)
+    ]
+    submitted_edges = [
+        dict(edge)
+        for edge in workflow_data.get("edges") or []
+        if isinstance(edge, dict)
+    ]
+    existing_graph = getattr(existing, "data", None)
+    if not isinstance(existing_graph, dict):
+        existing_graph = {}
+    stored_nodes = {
+        str(node.get("id")): dict(node)
+        for node in existing_graph.get("nodes") or []
+        if isinstance(node, dict) and node.get("id")
+    }
+    stored_contexts = {
+        node_id: node
+        for node_id, node in stored_nodes.items()
+        if node.get("type") == "context"
+    }
+    submitted_context_targets: Dict[str, set[str]] = {}
+    for edge in submitted_edges:
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        source_handle = edge.get("sourceHandle") or edge.get(
+            "source_handle"
+        )
+        target_handle = edge.get("targetHandle") or edge.get(
+            "target_handle"
+        )
+        if (
+            source
+            and target
+            and source_handle == "output-context"
+            and target_handle == "input-context"
+        ):
+            submitted_context_targets.setdefault(source, set()).add(
+                target
+            )
+
+    edge_owners: Dict[str, set[str]] = {}
+    for edge in existing_graph.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        source_handle = edge.get("sourceHandle") or edge.get(
+            "source_handle"
+        )
+        target_handle = edge.get("targetHandle") or edge.get(
+            "target_handle"
+        )
+        if (
+            source in stored_contexts
+            and source_handle == "output-context"
+            and target_handle == "input-context"
+            and target
+        ):
+            edge_owners.setdefault(source, set()).add(target)
+
+    protected_owners: Dict[str, str] = {}
+    for context_id, node in stored_contexts.items():
+        data = dict(node.get("data") or {})
+        declared = str(data.get("agentNodeId") or "")
+        if (
+            data.get("systemManaged") is True
+            and declared in stored_nodes
+        ):
+            protected_owners[context_id] = declared
+            continue
+        inferred = sorted(edge_owners.get(context_id, set()))
+        if len(inferred) == 1:
+            protected_owners[context_id] = inferred[0]
+
+    submitted_owner_ids = {
+        str(node.get("id"))
+        for node in submitted_nodes
+        if node.get("id")
+        and node.get("type") != "context"
+        and str(node.get("id")) not in stored_contexts
+    }
+    retained_context_ids = {
+        context_id
+        for context_id, owner_id in protected_owners.items()
+        if owner_id in submitted_owner_ids
+    }
+    warnings: list[str] = []
+    reconciled_nodes: list[Dict[str, Any]] = []
+    seen_context_ids: set[str] = set()
+    rejected_context_ids: set[str] = set()
+    for node in submitted_nodes:
+        node_id = str(node.get("id") or "")
+        is_context_submission = (
+            node.get("type") == "context"
+            or node_id in stored_contexts
+        )
+        if not is_context_submission:
+            reconciled_nodes.append(node)
+            continue
+        if node_id not in stored_contexts and not stored_contexts:
+            # A new/legacy graph has no protected companion to replace.
+            # Ignore client ownership claims and derive ownership only from
+            # an unambiguous submitted topology. Ambiguous topology is left
+            # intact so the shared validator rejects it.
+            submitted_data = dict(node.get("data") or {})
+            submitted_data.pop("systemManaged", None)
+            submitted_data.pop("agentNodeId", None)
+            targets = sorted(
+                submitted_context_targets.get(node_id, set())
+            )
+            if len(targets) == 1:
+                submitted_data["systemManaged"] = True
+                submitted_data["agentNodeId"] = targets[0]
+            reconciled_nodes.append(
+                {
+                    **node,
+                    "type": "context",
+                    "data": submitted_data,
+                }
+            )
+            continue
+        if node_id not in retained_context_ids:
+            if node_id:
+                rejected_context_ids.add(node_id)
+            warnings.append(
+                f"Ignored untrusted Context companion {node_id!r}"
+            )
+            continue
+
+        stored = stored_contexts[node_id]
+        owner_id = protected_owners[node_id]
+        submitted_data = dict(node.get("data") or {})
+        stored_data = dict(stored.get("data") or {})
+        item = {
+            **stored,
+            **node,
+            "id": node_id,
+            "type": "context",
+            "data": {
+                **stored_data,
+                **{
+                    key: submitted_data[key]
+                    for key in ("label", "disabled")
+                    if key in submitted_data
+                },
+                "systemManaged": True,
+                "agentNodeId": owner_id,
+            },
+        }
+        reconciled_nodes.append(item)
+        seen_context_ids.add(node_id)
+
+    for context_id in sorted(retained_context_ids - seen_context_ids):
+        stored = stored_contexts[context_id]
+        owner_id = protected_owners[context_id]
+        reconciled_nodes.append(
+            {
+                **stored,
+                "type": "context",
+                "data": {
+                    **dict(stored.get("data") or {}),
+                    "systemManaged": True,
+                    "agentNodeId": owner_id,
+                },
+            }
+        )
+        warnings.append(
+            f"Restored protected Context companion {context_id!r}"
+        )
+
+    reconciled_edges = [
+        edge
+        for edge in submitted_edges
+        if str(edge.get("source") or "") not in rejected_context_ids
+        and str(edge.get("target") or "") not in rejected_context_ids
+    ]
+    return reconciled_nodes, reconciled_edges, warnings
+
+
+def _supports_context_archive_outbox(database: Any) -> bool:
+    return callable(
+        getattr(
+            database,
+            "list_workflow_context_archive_outbox",
+            None,
+        )
+    ) and callable(
+        getattr(
+            database,
+            "complete_workflow_context_archive_outbox",
+            None,
+        )
+    )
+
+
+async def _drain_context_archive_outbox(
+    database: Any,
+    workflow_id: str,
+) -> tuple[int, int]:
+    """Archive pending Context identities and acknowledge each durably."""
+
+    if not _supports_context_archive_outbox(database):
+        return 0, 0
+    pending = await database.list_workflow_context_archive_outbox(workflow_id)
+    if not pending:
+        return 0, 0
+
+    from services.agent_context import AgentContextStore
+
+    store = AgentContextStore(database)
+    completed = 0
+    for receipt in pending:
+        outbox_id = str(receipt.get("id") or "")
+        context_node_id = str(receipt.get("context_node_id") or "")
+        if not outbox_id or not context_node_id:
+            logger.error(
+                "[workflow] invalid Context archive outbox identity for workflow %s",
+                workflow_id,
+            )
+            continue
+        try:
+            await store.archive_context(
+                workflow_id=workflow_id,
+                context_node_id=context_node_id,
+                generation=None,
+                operation_id=f"context-archive-outbox:{outbox_id}",
+            )
+            acknowledged = await database.complete_workflow_context_archive_outbox(
+                outbox_id=outbox_id,
+                workflow_id=workflow_id,
+            )
+            if acknowledged:
+                completed += 1
+        except Exception:
+            # The graph mutation is already durable. Leave the receipt pending
+            # so a later save/get/delete boundary safely retries it.
+            logger.exception(
+                "[workflow] Context archive outbox drain failed (workflow=%s context=%s receipt=%s)",
+                workflow_id,
+                context_node_id,
+                outbox_id,
+            )
+
+    remaining = await database.list_workflow_context_archive_outbox(workflow_id)
+    return completed, len(remaining)
+
 
 def _move_workspace(old_slug: str, new_slug: str) -> None:
     """Rename ``<workspace_base>/<old_slug>/`` on disk. No-op when the
@@ -62,12 +374,16 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
     ``updateWorkflow({name})`` -> debounced save) flows through this
     handler, so renaming happens here — no dedicated rename endpoint.
     """
-    from services.workflow_naming import canonicalize_node_ids, next_available_slug
+    from services.workflow_naming import next_available_slug
 
     database = container.database()
     requested_id = str(data.get("workflow_id") or "").strip()
     is_new_marker = requested_id.lower() in {"", "new"}
-    existing = await database.get_workflow(requested_id) if requested_id and not is_new_marker else None
+    if requested_id and not is_new_marker:
+        await _drain_context_archive_outbox(database, requested_id)
+        existing = await database.get_workflow(requested_id)
+    else:
+        existing = None
     if is_new_marker:
         workflow_id = await database.allocate_workflow_id()
     elif existing is None:
@@ -83,25 +399,96 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
         slug = await next_available_slug(name, database, exclude_id=workflow_id)
 
     workflow_data = data.get("data", {})
-    from services.workflow_migrations import normalize_legacy_android_toolkit
+    from services.workflow_context_migration import (
+        archive_removed_contexts,
+        import_legacy_context_receipts,
+        load_node_parameters,
+        persist_parameter_aliases,
+    )
+    from services.workflow_migrations import normalize_workflow_graph
 
-    nodes, edges, _, migration_warnings = normalize_legacy_android_toolkit(
-        workflow_data.get("nodes") or [], workflow_data.get("edges") or []
+    source_nodes, source_edges, ownership_warnings = (
+        _reconcile_context_submission(
+            workflow_data,
+            existing,
+        )
     )
-    # New workflows use canonical IDs from their first persistence boundary.
-    # Existing legacy workflows are deliberately left byte-for-byte compatible;
-    # there is no startup or save-time migration.
-    if is_new_marker:
-        nodes, edges, node_id_aliases = canonicalize_node_ids(workflow_id, nodes, edges)
-    else:
-        node_id_aliases = {}
-    normalized_data = {**workflow_data, "nodes": nodes, "edges": edges}
+    source_params = await load_node_parameters(database, source_nodes)
+    normalization = normalize_workflow_graph(
+        workflow_id,
+        source_nodes,
+        source_edges,
+        source_params,
+    )
+    migration_warnings = [
+        *ownership_warnings,
+        *normalization.warnings,
+    ]
+    context_errors = await _context_topology_errors(
+        normalization.nodes,
+        normalization.edges,
+        normalization.node_parameters,
+    )
+    from services.workflow_sanitizer import sanitize_workflow_graph
+
+    normalized_graph = normalization.graph_data(workflow_data)
+    normalized_graph["owner_id"] = _trusted_owner_id(websocket, existing)
+    normalized_data = sanitize_workflow_graph(normalized_graph)
+    if context_errors:
+        return {
+            "success": False,
+            "error": "invalid_context_topology",
+            "workflow_id": workflow_id,
+            "validation_errors": context_errors,
+            "migration_warnings": migration_warnings,
+            "node_id_aliases": normalization.aliases,
+            "data": normalized_data,
+        }
+
+    # Import exact legacy artifacts before replacing their only topology
+    # pointer. Receipts are idempotent, so a failed graph save is safe to retry.
+    imported = await import_legacy_context_receipts(
+        database,
+        normalization.state_imports,
+    )
+    save_kwargs: Dict[str, Any] = {
+        "workflow_id": storage_id,
+        "name": name,
+        "slug": slug,
+        "data": normalized_data,
+    }
+    if _supports_context_archive_outbox(database):
+        save_kwargs["context_id_aliases"] = normalization.aliases
     success = await database.save_workflow(
-        workflow_id=storage_id,
-        name=name,
-        slug=slug,
-        data=normalized_data,
+        **save_kwargs,
     )
+    if success:
+        await persist_parameter_aliases(
+            database,
+            aliases=normalization.aliases,
+            parameters=normalization.node_parameters,
+            context_import_completed=(not normalization.state_imports or imported == len(normalization.state_imports)),
+        )
+        if _supports_context_archive_outbox(database):
+            context_archives_completed, context_archives_pending = await _drain_context_archive_outbox(
+                database,
+                workflow_id,
+            )
+        else:
+            # Compatibility for isolated test doubles and older storage
+            # implementations. Production Database commits the outbox in the
+            # same transaction as the graph.
+            context_archives_completed = await archive_removed_contexts(
+                database,
+                workflow_id=workflow_id,
+                previous_nodes=((existing.data or {}).get("nodes") or [] if existing is not None else []),
+                normalized_nodes=normalization.nodes,
+                aliases=normalization.aliases,
+            )
+            context_archives_pending = 0
+    else:
+        context_archives_completed = 0
+        context_archives_pending = 0
 
     if existing and existing.slug and existing.slug != slug:
         _move_workspace(existing.slug, slug)
@@ -113,7 +500,13 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
         "name": name,
         "slug": slug,
         "migration_warnings": migration_warnings,
-        "node_id_aliases": node_id_aliases,
+        "node_id_aliases": normalization.aliases,
+        "context_archives_completed": context_archives_completed,
+        "context_archives_pending": context_archives_pending,
+        # The server owns topology normalization. The editor replaces its
+        # local draft with this authoritative graph instead of reimplementing
+        # Context lifecycle rules.
+        "data": normalized_data,
     }
 
 
@@ -154,41 +547,100 @@ async def handle_import_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
 async def handle_get_workflow(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
     """Get workflow by ID."""
     database = container.database()
-    workflow = await database.get_workflow(data["workflow_id"])
+    workflow_id = str(data["workflow_id"])
+    recovered_archives, pending_archives = await _drain_context_archive_outbox(database, workflow_id)
+    workflow = await database.get_workflow(workflow_id)
     if workflow:
-        from services.workflow_migrations import normalize_legacy_android_toolkit
-
         workflow_data = workflow.data or {}
-        nodes, edges, _, migration_warnings = normalize_legacy_android_toolkit(
-            workflow_data.get("nodes") or [], workflow_data.get("edges") or []
+        from services.workflow_context_migration import (
+            archive_removed_contexts,
+            import_legacy_context_receipts,
+            load_node_parameters,
+            persist_parameter_aliases,
         )
-        if nodes != (workflow_data.get("nodes") or []) or edges != (workflow_data.get("edges") or []):
-            normalized_data = {**workflow_data, "nodes": nodes, "edges": edges}
-            await database.save_workflow(
-                workflow_id=workflow.id,
-                name=workflow.name,
-                slug=workflow.slug,
-                description=getattr(workflow, "description", None),
-                data=normalized_data,
+        from services.workflow_migrations import normalize_workflow_graph
+
+        source_nodes = workflow_data.get("nodes") or []
+        source_params = await load_node_parameters(database, source_nodes)
+        normalization = normalize_workflow_graph(
+            workflow.id,
+            source_nodes,
+            workflow_data.get("edges") or [],
+            source_params,
+        )
+        context_errors = await _context_topology_errors(
+            normalization.nodes,
+            normalization.edges,
+            normalization.node_parameters,
+        )
+        from services.workflow_sanitizer import sanitize_workflow_graph
+
+        normalized_data = sanitize_workflow_graph(normalization.graph_data(workflow_data))
+        if not context_errors:
+            imported = await import_legacy_context_receipts(
+                database,
+                normalization.state_imports,
             )
-            legacy_ids = {
-                node.get("id")
-                for node in workflow_data.get("nodes", [])
-                if node.get("type") == "androidTool" and node.get("id")
-            }
-            for legacy_id in legacy_ids:
-                await database.delete_node_parameters(legacy_id)
+            normalization_persisted = True
+            if normalized_data != workflow_data:
+                save_kwargs = {
+                    "workflow_id": workflow.id,
+                    "name": workflow.name,
+                    "slug": workflow.slug,
+                    "description": getattr(
+                        workflow,
+                        "description",
+                        None,
+                    ),
+                    "data": normalized_data,
+                }
+                if _supports_context_archive_outbox(database):
+                    save_kwargs["context_id_aliases"] = (
+                        normalization.aliases
+                    )
+                normalization_persisted = (
+                    await database.save_workflow(**save_kwargs)
+                )
+                if normalization_persisted and _supports_context_archive_outbox(database):
+                    drained, pending_archives = await _drain_context_archive_outbox(
+                        database,
+                        workflow.id,
+                    )
+                    recovered_archives += drained
+                elif normalization_persisted:
+                    recovered_archives += await archive_removed_contexts(
+                        database,
+                        workflow_id=workflow.id,
+                        previous_nodes=source_nodes,
+                        normalized_nodes=normalization.nodes,
+                        aliases=normalization.aliases,
+                    )
+                else:
+                    # Keep the response aligned with the authoritative row.
+                    # A later read retries normalization and outbox creation.
+                    normalized_data = sanitize_workflow_graph(workflow_data)
+            if normalization_persisted:
+                await persist_parameter_aliases(
+                    database,
+                    aliases=normalization.aliases,
+                    parameters=normalization.node_parameters,
+                    context_import_completed=(not normalization.state_imports or imported == len(normalization.state_imports)),
+                )
         return {
             "success": True,
             "workflow": {
                 "id": workflow.id,
                 "name": workflow.name,
                 "slug": workflow.slug,
-                "data": {**workflow_data, "nodes": nodes, "edges": edges},
+                "data": normalized_data,
                 "created_at": workflow.created_at.isoformat() if workflow.created_at else None,
                 "updated_at": workflow.updated_at.isoformat() if workflow.updated_at else None,
             },
-            "migration_warnings": migration_warnings,
+            "migration_warnings": normalization.warnings,
+            "node_id_aliases": normalization.aliases,
+            "context_validation_errors": context_errors,
+            "context_archives_completed": recovered_archives,
+            "context_archives_pending": pending_archives,
         }
     return {"success": False, "error": "Workflow not found"}
 
@@ -213,11 +665,76 @@ async def handle_get_all_workflows(data: Dict[str, Any], websocket: WebSocket) -
     }
 
 
+async def _archive_workflow_contexts(database: Any, workflow_id: str) -> int:
+    """Fence every persisted Context before its workflow graph is deleted."""
+
+    workflow = await database.get_workflow(workflow_id)
+    graph = getattr(workflow, "data", None)
+    if not isinstance(graph, dict):
+        return 0
+    context_ids = sorted(
+        {
+            str(node.get("id"))
+            for node in graph.get("nodes") or []
+            if isinstance(node, dict) and node.get("type") == "context" and node.get("id")
+        }
+    )
+    if not context_ids:
+        return 0
+
+    from services.agent_context import AgentContextStore
+
+    store = AgentContextStore(database)
+    for context_id in context_ids:
+        await store.archive_context(
+            workflow_id=workflow_id,
+            context_node_id=context_id,
+            generation=None,
+            operation_id=f"workflow-deleted:{workflow_id}:{context_id}",
+        )
+    return len(context_ids)
+
+
+async def delete_workflow_with_context_archival(
+    database: Any,
+    workflow_id: str,
+) -> Dict[str, Any]:
+    """Delete a workflow through the durable Context lifecycle boundary."""
+
+    if _supports_context_archive_outbox(database):
+        # Production Database commits graph deletion and archive identities in
+        # one transaction. A failed delete therefore cannot fence a Context
+        # that is still referenced by the workflow.
+        success = await database.delete_workflow(workflow_id)
+        completed, pending = await _drain_context_archive_outbox(
+            database,
+            workflow_id,
+        )
+    else:
+        # Compatibility for isolated test doubles. Production never takes
+        # this archive-before-delete path.
+        completed = await _archive_workflow_contexts(
+            database,
+            workflow_id,
+        )
+        success = await database.delete_workflow(workflow_id)
+        pending = 0
+    return {
+        "success": success,
+        "workflow_id": workflow_id,
+        "contexts_archived": completed,
+        "context_archives_pending": pending,
+    }
+
+
 async def handle_delete_workflow(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Delete workflow."""
+    """Archive durable Context threads, then delete their workflow graph."""
     database = container.database()
-    success = await database.delete_workflow(data["workflow_id"])
-    return {"success": success, "workflow_id": data["workflow_id"]}
+    workflow_id = str(data["workflow_id"])
+    return await delete_workflow_with_context_archival(
+        database,
+        workflow_id,
+    )
 
 
 WS_HANDLERS: Dict[str, Any] = {
@@ -231,6 +748,7 @@ WS_HANDLERS: Dict[str, Any] = {
 
 __all__ = [
     "WS_HANDLERS",
+    "delete_workflow_with_context_archival",
     "handle_delete_workflow",
     "handle_get_all_workflows",
     "handle_get_workflow",

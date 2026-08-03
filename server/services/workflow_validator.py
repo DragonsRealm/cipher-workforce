@@ -15,7 +15,7 @@ Issue shape (flat dict):
 
     {
       "code": "CYCLE" | "DANGLING_EDGE" | "UNKNOWN_NODE_TYPE"
-            | "INVALID_PARAM" | "MISSING_CREDENTIAL",
+            | "INVALID_PARAM" | "MISSING_CREDENTIAL" | Context topology codes,
       "node_id": str | None,    # node where the issue surfaces, if applicable
       "message": str,           # user-facing description
       # plus code-specific extras:
@@ -54,6 +54,7 @@ async def validate_workflow(
     *,
     parameters_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
     auth_service: Any = None,
+    enforce_context: bool = True,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Validate a workflow graph + per-node params + credential presence.
 
@@ -80,6 +81,17 @@ async def validate_workflow(
 
     node_by_id: Dict[str, Dict[str, Any]] = {n["id"]: n for n in nodes if n.get("id")}
 
+    def requires_context(node_id: str) -> bool:
+        if not enforce_context:
+            return False
+        node = node_by_id.get(node_id) or {}
+        node_cls = get_node_class(str(node.get("type") or ""))
+        if node_cls is None:
+            return False
+        if bool(getattr(node_cls, "requires_context", False)):
+            return True
+        return bool((getattr(node_cls, "ui_hints", {}) or {}).get("requiresContext"))
+
     # 1. Dangling edges — references to non-existent nodes. Errors.
     for e in edges:
         src = e.get("source")
@@ -98,6 +110,93 @@ async def validate_workflow(
                     "code": "DANGLING_EDGE",
                     "node_id": None,
                     "message": f"Edge target {tgt!r} does not match any node",
+                }
+            )
+
+    # Context V2 topology.  These checks are capability-driven: renderer
+    # component kinds and legacy AI_AGENT_TYPES are intentionally not used.
+    valid_contexts_by_agent: Dict[str, List[str]] = {}
+    agents_by_context: Dict[str, List[str]] = {}
+    for edge in edges:
+        source_id = str(edge.get("source") or "")
+        target_id = str(edge.get("target") or "")
+        source_node = node_by_id.get(source_id) or {}
+        source_handle = edge.get("sourceHandle") or edge.get("source_handle")
+        target_handle = edge.get("targetHandle") or edge.get("target_handle")
+        source_is_context = source_node.get("type") == "context"
+        touches_context_handle = (
+            source_handle == "output-context" or target_handle == "input-context"
+        )
+
+        if (
+            source_node.get("type") == "simpleMemory"
+            and target_handle == "input-memory"
+        ):
+            warnings.append(
+                {
+                    "code": "LEGACY_MEMORY_EDGE",
+                    "node_id": target_id or None,
+                    "message": (
+                        "Legacy input-memory continuity must be normalized to "
+                        "a Context edge and an ordinary Memory tool edge"
+                    ),
+                }
+            )
+
+        if not (source_is_context or touches_context_handle):
+            continue
+        valid = (
+            source_is_context
+            and source_handle == "output-context"
+            and target_handle == "input-context"
+            and requires_context(target_id)
+        )
+        if not valid:
+            errors.append(
+                {
+                    "code": "INVALID_CONTEXT_EDGE",
+                    "node_id": target_id or source_id or None,
+                    "message": (
+                        "Context edges must connect context.output-context "
+                        "to a node declaring requiresContext at input-context"
+                    ),
+                }
+            )
+            continue
+        valid_contexts_by_agent.setdefault(target_id, []).append(source_id)
+        agents_by_context.setdefault(source_id, []).append(target_id)
+
+    for node_id in sorted(node_by_id):
+        if not requires_context(node_id):
+            continue
+        context_ids = list(dict.fromkeys(valid_contexts_by_agent.get(node_id, [])))
+        if not context_ids:
+            errors.append(
+                {
+                    "code": "MISSING_CONTEXT",
+                    "node_id": node_id,
+                    "message": "This agent requires exactly one Context node",
+                }
+            )
+        elif len(context_ids) > 1:
+            errors.append(
+                {
+                    "code": "MULTIPLE_CONTEXTS",
+                    "node_id": node_id,
+                    "contexts": sorted(context_ids),
+                    "message": "An agent cannot be connected to multiple Context nodes",
+                }
+            )
+
+    for context_id, agent_ids in sorted(agents_by_context.items()):
+        unique_agents = list(dict.fromkeys(agent_ids))
+        if len(unique_agents) > 1:
+            errors.append(
+                {
+                    "code": "SHARED_CONTEXT",
+                    "node_id": context_id,
+                    "agents": sorted(unique_agents),
+                    "message": "A Context node cannot serve multiple agents",
                 }
             )
 

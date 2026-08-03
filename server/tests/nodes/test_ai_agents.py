@@ -437,58 +437,72 @@ class TestChatAgent:
 
 
 class TestSimpleMemory:
-    """handle_simple_memory reads from services.memory_store (NOT markdown)."""
+    """Simple Memory V2 is an explicit tool, never a transcript node."""
 
-    @pytest.fixture(autouse=True)
-    def _reset_memory_store(self):
-        """Snapshot + restore the module-global session dict."""
-        from services import memory_store as ms
+    @staticmethod
+    def _stub_store(monkeypatch, *, items=None):
+        import nodes.tool.simple_memory as memory_plugin
 
-        backup = dict(ms._sessions)
-        ms._sessions.clear()
-        try:
-            yield ms
-        finally:
-            ms._sessions.clear()
-            ms._sessions.update(backup)
+        store = MagicMock()
+        store.list = AsyncMock(
+            return_value={
+                "operation": "list",
+                "items": list(items or []),
+                "count": len(items or []),
+                "next_cursor": None,
+                "retrieval": "lexical",
+            }
+        )
+        monkeypatch.setattr(
+            memory_plugin,
+            "MemoryToolStore",
+            MagicMock(return_value=store),
+        )
+        return store
 
-    async def test_happy_path_empty_session(self, harness, _reset_memory_store):
+    async def test_framework_run_is_harmless_diagnostic_list(
+        self,
+        harness,
+        monkeypatch,
+    ):
+        store = self._stub_store(monkeypatch)
         result = await harness.execute(
             "simpleMemory",
-            {"session_id": "sess-a"},
+            {"reset_policy": "preserve"},
         )
 
-        harness.assert_envelope(result, success=True)
-        payload = result["result"]
-        assert payload["session_id"] == "sess-a"
-        assert payload["messages"] == []
-        assert payload["message_count"] == 0
-        # window_size always defaults to 100 now (no buffer/window split)
-        assert payload["window_size"] == 100
+        payload = result
+        assert payload["operation"] == "list"
+        assert payload["items"] == []
+        assert payload["count"] == 0
+        store.list.assert_awaited_once()
 
-    async def test_window_size_returns_last_n_messages(self, harness, _reset_memory_store):
-        ms = _reset_memory_store
-        for i in range(5):
-            ms.add_message("sess-b", "human", f"h{i}")
-            ms.add_message("sess-b", "ai", f"a{i}")
-
+    async def test_legacy_transcript_fields_are_ignored(
+        self,
+        harness,
+        monkeypatch,
+    ):
+        self._stub_store(monkeypatch)
         result = await harness.execute(
             "simpleMemory",
-            {"session_id": "sess-b", "window_size": 2},
+            {
+                "session_id": "legacy-session",
+                "window_size": 2,
+                "memory_content": "must not be injected",
+            },
         )
 
-        harness.assert_envelope(result, success=True)
-        payload = result["result"]
-        assert payload["window_size"] == 2
-        # last 2 messages from a 10-message session
-        assert payload["message_count"] == 2
-        contents = [m["content"] for m in payload["messages"]]
-        assert contents == ["h4", "a4"]
+        payload = result
+        assert "session_id" not in payload
+        assert "messages" not in payload
+        assert "memory_content" not in payload
 
-    async def test_default_session_when_omitted(self, harness, _reset_memory_store):
+    async def test_default_config_does_not_create_transcript(
+        self,
+        harness,
+        monkeypatch,
+    ):
+        self._stub_store(monkeypatch)
         result = await harness.execute("simpleMemory", {})
 
-        harness.assert_envelope(result, success=True)
-        # Empty session_id resolves to "default" sentinel
-        assert result["result"]["session_id"] == "default"
-        assert result["result"]["window_size"] == 100
+        assert result["operation"] == "list"

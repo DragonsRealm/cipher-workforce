@@ -41,7 +41,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import anyio
 
@@ -94,6 +94,9 @@ class AICliSession(BaseProcessSupervisor):
         connected_tool_names: Optional[List[str]] = None,
         connected_skill_names: Optional[List[str]] = None,
         memory_bound: bool = False,
+        context_event_sink: Optional[
+            Callable[[Dict[str, Any]], Awaitable[None]]
+        ] = None,
     ) -> None:
         super().__init__()
         self._provider = provider
@@ -129,6 +132,11 @@ class AICliSession(BaseProcessSupervisor):
         # incompatible with this — every spawn would land under a
         # brand-new project_key with no prior JSONL.
         self._memory_bound: bool = bool(memory_bound)
+        # Backend Context V2 raw-event sink. It receives each decoded
+        # provider event before UI logging and before result presentation
+        # truncates the assistant text to 4,000 characters.
+        self._context_event_sink = context_event_sink
+        self._context_capture_error: Optional[str] = None
 
         # Streaming state
         self._events: List[Dict[str, Any]] = []
@@ -474,11 +482,30 @@ class AICliSession(BaseProcessSupervisor):
         :class:`CompactionService` so the local-threshold path doesn't
         also fire.
         """
+        if self._context_event_sink is not None:
+            try:
+                await self._context_event_sink(dict(event))
+            except Exception as exc:  # noqa: BLE001 - journal failure visible
+                self._context_capture_error = (
+                    f"context_event_persistence_failed: {exc}"
+                )
+                self._logger.error(
+                    "[%s] Context raw-event append failed: %s",
+                    self.label,
+                    exc,
+                    exc_info=True,
+                )
+                self._result_event.set()
+                return
         self._events.append(event)
         await self._on_event(event)
         if self._provider.is_final_event(event):
             self._result_event.set()
-        if event.get("type") == "system" and event.get("subtype") == "compact_boundary":
+        if (
+            self._context_event_sink is None
+            and event.get("type") == "system"
+            and event.get("subtype") == "compact_boundary"
+        ):
             await self._record_native_compaction(event)
 
     async def _record_native_compaction(self, event: Dict[str, Any]) -> None:
@@ -545,14 +572,24 @@ class AICliSession(BaseProcessSupervisor):
                 "provider": self._provider.name,
                 "status": "finalising",
             }
-            for k in ("total_cost_usd", "duration_ms", "num_turns", "session_id"):
+            status_keys = ["total_cost_usd", "duration_ms", "num_turns"]
+            if self._context_event_sink is None:
+                status_keys.append("session_id")
+            for k in status_keys:
                 v = event.get(k)
                 if v is not None:
                     payload[k] = v
             await self._safe_node_status("executing", payload)
         else:
-            msg = event.get("message") or event.get("text") or event.get("delta") or json.dumps(event)
-            text = msg if isinstance(msg, str) else json.dumps(msg)
+            if self._context_event_sink is not None:
+                text = (
+                    "provider event "
+                    f"type={event.get('type', 'unknown')} "
+                    f"subtype={event.get('subtype', '')}"
+                )
+            else:
+                msg = event.get("message") or event.get("text") or event.get("delta") or json.dumps(event)
+                text = msg if isinstance(msg, str) else json.dumps(msg)
             await self._safe_terminal_log(text[:500], level="info")
 
     def _log_event_summary(self, event: Dict[str, Any]) -> None:
@@ -581,7 +618,7 @@ class AICliSession(BaseProcessSupervisor):
                             tu.get("name"),
                             list((tu.get("input") or {}).keys()),
                         )
-                elif texts:
+                elif texts and self._context_event_sink is None:
                     sample = " ".join(t for t in texts if isinstance(t, str))[:300]
                     self._logger.info(
                         "[CC-Agent stream] assistant.text: %r",
@@ -594,13 +631,19 @@ class AICliSession(BaseProcessSupervisor):
                     list((event.get("input") or {}).keys()),
                 )
             elif etype == "tool_result":
-                content = event.get("content") or ""
-                preview = content if isinstance(content, str) else json.dumps(content)
-                self._logger.info(
-                    "[CC-Agent stream] tool_result is_error=%s content=%r",
-                    event.get("is_error", False),
-                    preview[:300],
-                )
+                if self._context_event_sink is not None:
+                    self._logger.info(
+                        "[CC-Agent stream] tool_result is_error=%s",
+                        event.get("is_error", False),
+                    )
+                else:
+                    content = event.get("content") or ""
+                    preview = content if isinstance(content, str) else json.dumps(content)
+                    self._logger.info(
+                        "[CC-Agent stream] tool_result is_error=%s content=%r",
+                        event.get("is_error", False),
+                        preview[:300],
+                    )
             elif etype == "hook":
                 self._logger.info(
                     "[CC-Agent stream] hook %s",
@@ -611,7 +654,11 @@ class AICliSession(BaseProcessSupervisor):
                     "[CC-Agent stream] result is_error=%s subtype=%s " "session_id=%s duration_ms=%s num_turns=%s cost=%s",
                     event.get("is_error", False),
                     event.get("subtype"),
-                    event.get("session_id"),
+                    (
+                        None
+                        if self._context_event_sink is not None
+                        else event.get("session_id")
+                    ),
                     event.get("duration_ms"),
                     event.get("num_turns"),
                     event.get("total_cost_usd"),
@@ -709,6 +756,12 @@ class AICliSession(BaseProcessSupervisor):
                 self._result_event.wait(),
                 timeout=timeout_seconds,
             )
+            if self._context_capture_error:
+                self._exit_code = -1
+                return self._build_result(
+                    success=False,
+                    error=self._context_capture_error,
+                )
             # The result event fired; claude wrote `result` on the JSONL.
             # The subprocess is still alive (interactive TUI stays
             # running) — we treat the turn as exit-code 0 since claude

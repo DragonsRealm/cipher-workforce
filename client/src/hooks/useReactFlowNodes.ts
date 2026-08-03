@@ -14,6 +14,24 @@ export const useReactFlowNodes = ({ setNodes, setEdges, clearNodeStatus }: UseRe
   const selectedNode = useAppStore((s) => s.selectedNode);
   const setSelectedNode = useAppStore((s) => s.setSelectedNode);
 
+  const connectionTypeFor = (
+    role: string | undefined,
+    handleName: string,
+  ): NodeConnectionType => {
+    const normalized = role === 'tools' ? 'tool' : role;
+    const known = new Set<NodeConnectionType>([
+      'main', 'trigger', 'ai', 'file', 'binary', 'webhook',
+      'context', 'memory', 'tool', 'skill', 'task', 'teammates',
+    ]);
+    if (known.has(normalized as NodeConnectionType)) {
+      return normalized as NodeConnectionType;
+    }
+    const fromName = handleName.replace(/^(input|output)-/, '');
+    return known.has(fromName as NodeConnectionType)
+      ? (fromName as NodeConnectionType)
+      : 'main';
+  };
+
   // Helper function to get node inputs/outputs for both enhanced and legacy nodes
   const getNodeInputs = (nodeType: string): INodeInputDefinition[] => {
     const definition = resolveNodeDescription(nodeType);
@@ -25,12 +43,15 @@ export const useReactFlowNodes = ({ setNodes, setEdges, clearNodeStatus }: UseRe
     }
     
     // Legacy nodes: array of strings - convert to input objects
-    return (definition.inputs as string[]).map((input, index) => ({
-      name: `input_${index}`,
-      displayName: 'Input',
-      type: (input as NodeConnectionType) || 'main',
+    return (definition.inputs as string[]).map((input) => {
+      const handle = definition.handles?.find((candidate) => candidate.name === input);
+      return {
+      name: input,
+      displayName: handle?.label || 'Input',
+      type: connectionTypeFor(handle?.role, input),
       description: 'Node input connection'
-    }));
+      };
+    });
   };
   
   const getNodeOutputs = (nodeType: string): INodeOutputDefinition[] => {
@@ -43,12 +64,15 @@ export const useReactFlowNodes = ({ setNodes, setEdges, clearNodeStatus }: UseRe
     }
     
     // Legacy nodes: array of strings - convert to output objects
-    return (definition.outputs as string[]).map((output, index) => ({
-      name: `output_${index}`,
-      displayName: 'Output',
-      type: (output as NodeConnectionType) || 'main',
+    return (definition.outputs as string[]).map((output) => {
+      const handle = definition.handles?.find((candidate) => candidate.name === output);
+      return {
+      name: output,
+      displayName: handle?.label || 'Output',
+      type: connectionTypeFor(handle?.role, output),
       description: 'Node output connection'
-    }));
+      };
+    });
   };
 
   // Validate connection compatibility
@@ -113,13 +137,13 @@ export const useReactFlowNodes = ({ setNodes, setEdges, clearNodeStatus }: UseRe
     if (outputType === 'main' || inputType === 'main') return true;
     
     // Specific compatibility rules
-    const compatibilityMatrix: Record<NodeConnectionType, NodeConnectionType[]> = {
+    const compatibilityMatrix: Partial<Record<NodeConnectionType, NodeConnectionType[]>> = {
       'main': ['main', 'trigger', 'ai', 'file', 'binary', 'webhook'], // Main accepts everything
       'trigger': ['main', 'trigger'], // Triggers only connect to main or other triggers
       'ai': ['main', 'ai'], // AI outputs connect to main or other AI inputs
       'file': ['main', 'file', 'binary'], // Files can connect to binary
       'binary': ['main', 'file', 'binary'], // Binary connects to file/binary
-      'webhook': ['main', 'webhook'] // Webhooks connect to main or other webhooks
+      'webhook': ['main', 'webhook'], // Webhooks connect to main or other webhooks
     };
     
     return compatibilityMatrix[outputType]?.includes(inputType) ?? false;

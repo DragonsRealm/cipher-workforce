@@ -14,20 +14,19 @@
  */
 
 import type {
+  INodeHandleDescription,
   INodeProperties,
   INodeTypeDescription,
+  INodeUIHints,
   NodeConnectionType,
 } from '../types/INodeProperties';
 
 /** One React Flow handle on a node. Wire mirror of
  *  server/models/node_metadata.NodeHandle (Wave 10.A). */
-export interface NodeSpecHandle {
-  name: string;
-  kind: 'input' | 'output';
-  position: 'top' | 'bottom' | 'left' | 'right';
-  offset?: string;
-  label?: string;
-  role?: string;
+export type NodeSpecHandle = INodeHandleDescription;
+
+export interface NodeSpecUIHints extends INodeUIHints {
+  [key: string]: unknown;
 }
 
 /** Wire shape emitted by GET /api/schemas/nodes/{type}/spec.json. */
@@ -44,7 +43,7 @@ export interface NodeSpec {
   /** JSON Schema 7 document describing runtime output (Wave 3 contract). */
   outputs?: JsonSchema;
   credentials?: string[];
-  uiHints?: Record<string, unknown>;
+  uiHints?: NodeSpecUIHints;
   // Wave 10.A — full visual contract (every field is optional on the wire;
   // the backend emits each one only when seeded on that node).
   color?: string;
@@ -319,6 +318,16 @@ function defaultHandles(): NodeConnectionType[] {
   return ['main' as NodeConnectionType];
 }
 
+function connectionNames(
+  handles: NodeSpecHandle[] | undefined,
+  kind: NodeSpecHandle['kind'],
+): NodeConnectionType[] {
+  if (!handles || handles.length === 0) return defaultHandles();
+  return handles
+    .filter((handle) => handle.kind === kind)
+    .map((handle) => handle.name as NodeConnectionType);
+}
+
 /**
  * Top-level conversion. Adapter is pure — no side effects, no throws.
  * Missing fields become sensible defaults so the parameter panel always
@@ -348,10 +357,11 @@ export function nodeSpecToDescription(spec: NodeSpec): INodeTypeDescription {
     defaults: {
       name: spec.displayName,
     },
-    inputs: defaultHandles(),
-    outputs: defaultHandles(),
+    inputs: connectionNames(spec.handles, 'input'),
+    outputs: connectionNames(spec.handles, 'output'),
+    handles: spec.handles?.map((handle) => ({ ...handle })),
     properties,
     credentials: spec.credentials?.map(name => ({ name })),
-    uiHints: spec.uiHints as INodeTypeDescription['uiHints'],
+    uiHints: spec.uiHints,
   };
 }

@@ -221,6 +221,7 @@ class NodeExecutionActivities:
             "session_id": context.get("session_id", "default"),
             "workflow_id": context.get("workflow_id"),
             "execution_id": context.get("execution_id"),
+            "user_id": context.get("user_id", "owner"),
             # CRITICAL: Pass upstream node outputs for downstream nodes to access
             # This enables taskTrigger -> chatAgent data flow via input-task handle
             "outputs": context.get("inputs", {}),
@@ -443,6 +444,7 @@ async def load_persisted_workflow_graph_activity(payload: Dict[str, Any]) -> Dic
     )
     return {
         "found": True,
+        "graphVersion": int(data.get("graphVersion") or 0),
         "nodes": nodes,
         "edges": normalize_edge_handles(edges),
     }
@@ -526,7 +528,7 @@ async def broadcast_trigger_status_activity(payload: Dict[str, Any]) -> None:
         activity.logger.warning(f"broadcast_trigger_status_activity failed for " f"node={payload.get('node_id')!r}: {exc}")
 
 
-@activity.defn(name="workflow_control.pause_on_failure.v1")
+@activity.defn(name="workflow_control.pause_on_failure")
 async def pause_workflow_on_failure_activity(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Circuit breaker: pause a controlled deployment after a failed run.
 

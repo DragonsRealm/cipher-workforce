@@ -17,7 +17,13 @@ from typing import Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.logging import get_logger
-from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
+from services.plugin import (
+    ActionNode,
+    NodeContext,
+    Operation,
+    RetryPolicy,
+    TaskQueue,
+)
 from services.plugin.edge_walker import collect_agent_connections
 
 from .._handles import STD_AGENT_HINTS, std_agent_handles
@@ -82,10 +88,12 @@ class CodexAgentNode(ActionNode):
     group = ("agent",)
     description = "Run N parallel OpenAI Codex CLI sessions. Sandbox enforced " "by Codex itself; per-task git worktree isolation."
     component_kind = "agent"
+    requires_context = True
     handles = std_agent_handles()
     ui_hints = STD_AGENT_HINTS
     annotations = {"destructive": True, "readonly": False, "open_world": True}
     task_queue = TaskQueue.AI_HEAVY
+    retry_policy = RetryPolicy(maximum_attempts=1)
 
     Params = CodexAgentParams
     Output = CodexAgentOutput
@@ -101,7 +109,7 @@ class CodexAgentNode(ActionNode):
     ) -> Any:
         from services.cli_agent.service import get_ai_cli_service
         from services.cli_agent.types import session_result_to_model
-        from services.plugin.deps import get_database
+        from services.plugin.deps import get_ai_service, get_database
         from services.status_broadcaster import get_status_broadcaster
 
         start_time = time.time()
@@ -141,7 +149,7 @@ class CodexAgentNode(ActionNode):
                     tasks[i] = t.model_copy(update=changed)
 
         database = get_database()
-        _, skill_data, tool_data, _, _ = await collect_agent_connections(
+        context_data, skill_data, tool_data, _, _ = await collect_agent_connections(
             node_id,
             ctx.raw,
             database,
@@ -169,9 +177,15 @@ class CodexAgentNode(ActionNode):
             connected_skill_names=connected_skills,
             connected_skill_descriptors=skill_data,
             connected_tools=tool_data,
+            connected_context=(
+                context_data
+                if (context_data or {}).get("kind") == "context"
+                else None
+            ),
             execution_id=ctx.execution_id,
             allowed_credentials=params.allowed_credentials,
             max_parallel=params.max_parallel,
+            ai_service=get_ai_service(),
         )
 
         elapsed = time.time() - start_time
@@ -196,7 +210,15 @@ class CodexAgentNode(ActionNode):
             workflow_id=workflow_id,
         )
 
-        task_models = [session_result_to_model(t).model_dump() for t in result.tasks]
+        task_models = [
+            session_result_to_model(t).model_dump() for t in result.tasks
+        ]
+        if (context_data or {}).get("kind") == "context":
+            for task_model in task_models:
+                # Codex Context fidelity is observable-only/non-resumable.
+                # A provider-emitted identifier must not look like a
+                # continuation contract in ordinary node output.
+                task_model["session_id"] = None
 
         legacy_response = result.tasks[0].response if len(result.tasks) == 1 else None
 

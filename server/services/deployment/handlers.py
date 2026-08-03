@@ -95,11 +95,70 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
     workflow_id = data.get("workflow_id")
     nodes = data.get("nodes", [])
     edges = data.get("edges", [])
-    from services.workflow_migrations import normalize_legacy_android_toolkit
-
-    nodes, edges, normalized_parameters, migration_warnings = normalize_legacy_android_toolkit(
-        nodes, edges, data.get("parameters_by_id")
+    from services.workflow_context_migration import (
+        import_legacy_context_receipts,
+        load_node_parameters,
+        persist_parameter_aliases,
     )
+    from services.workflow_migrations import normalize_workflow_graph
+    from services.workflow_sanitizer import sanitize_workflow_graph
+
+    generation = int(data.get("generation") or 0)
+    if "graphVersion" in data:
+        requested_graph_version = int(data.get("graphVersion") or 0)
+    elif "graph_version" in data:
+        requested_graph_version = int(data.get("graph_version") or 0)
+    else:
+        requested_graph_version = 0
+    context_v2 = generation > 0 and requested_graph_version >= 2
+
+    parameters_by_id = data.get("parameters_by_id")
+    if not isinstance(parameters_by_id, dict):
+        parameters_by_id = await load_node_parameters(
+            container.database(),
+            nodes,
+        )
+    if context_v2:
+        normalization = normalize_workflow_graph(
+            str(workflow_id or ""),
+            nodes,
+            edges,
+            parameters_by_id,
+        )
+        safe_graph = sanitize_workflow_graph(normalization.graph_data())
+        nodes = list(safe_graph["nodes"])
+        edges = list(safe_graph["edges"])
+        normalized_parameters = normalization.node_parameters
+        migration_warnings = normalization.warnings
+        imported = await import_legacy_context_receipts(
+            container.database(),
+            normalization.state_imports,
+        )
+        await persist_parameter_aliases(
+            container.database(),
+            aliases=normalization.aliases,
+            parameters=normalized_parameters,
+            context_import_completed=(
+                imported == len(normalization.state_imports)
+            ),
+        )
+        graph_version = normalization.graph_version
+        graph_aliases = normalization.aliases
+    else:
+        # Generation zero is reserved for migration artifacts, and existing
+        # controlled V1 generations must replay their immutable topology.
+        safe_graph = sanitize_workflow_graph(
+            {"graphVersion": 0, "nodes": nodes, "edges": edges}
+        )
+        nodes = list(safe_graph["nodes"])
+        edges = list(safe_graph["edges"])
+        normalized_parameters = {
+            str(node_id): dict(value or {})
+            for node_id, value in parameters_by_id.items()
+        }
+        migration_warnings = []
+        graph_version = 0
+        graph_aliases = {}
     if migration_warnings:
         logger.warning("[Deploy] %s", "; ".join(migration_warnings))
     session_id = data.get("session_id", "default")
@@ -133,6 +192,7 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
         nodes=nodes,
         edges=edges,
         parameters_by_id=normalized_parameters,
+        enforce_context=context_v2,
     )
     if deploy_report["errors"]:
         return {
@@ -205,6 +265,20 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
                 session_id=session_id,
                 status_callback=status_callback,
                 workflow_id=workflow_id,
+                graph_version=graph_version,
+                generation=int(data.get("generation") or 0),
+                user_id=str(
+                    (
+                        getattr(
+                            getattr(websocket, "state", None),
+                            "user_id",
+                            None,
+                        )
+                        if websocket is not None
+                        else data.get("user_id")
+                    )
+                    or "owner"
+                ),
             )
 
             if not result.get("success"):
@@ -284,6 +358,13 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
         "is_running": True,
         "locked": True,
         "timestamp": time.time(),
+        "graph": {
+            "graphVersion": graph_version,
+            "nodes": nodes,
+            "edges": edges,
+        },
+        "aliases": graph_aliases,
+        "migration_warnings": migration_warnings,
     }
 
 
@@ -1324,11 +1405,20 @@ async def _rearm_generation(control) -> None:
         "workflow_id": control.workflow_id,
         "nodes": nodes,
         "edges": edges,
+        "generation": control.generation,
+        # Snapshots created before Context V2 deliberately retain version 0,
+        # so a process restart cannot mutate their Temporal command sequence.
+        "graphVersion": int(
+            snapshot.get("graphVersion")
+            or snapshot.get("graph_version")
+            or 0
+        ),
         # Runtime persistence is generation-scoped (same contract as
         # handle_start_workflow's deploy call).
         "session_id": control.data_scope_id or control.execution_id,
         "execution_id": control.execution_id,
         "root_execution_id": control.root_execution_id,
+        "user_id": str(snapshot.get("owner_id") or "owner"),
     }
     deployed = await handle_deploy_workflow(deploy_data, None)
     if not deployed.get("success"):
@@ -1455,7 +1545,6 @@ async def _rebuild_missing_controller(service: WorkflowControlService, control):
     await _rearm_generation(control)
     await _broadcast_control(control, extra={"recovery": "controller_rebuilt"})
     return control
-    return restored
 
 
 async def _duplicate_start_response(
@@ -1512,6 +1601,10 @@ async def handle_get_workflow_control_status(data: Dict[str, Any], websocket: We
 async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
     """Create generation one and retain deploy_workflow wire compatibility."""
     workflow_id = data["workflow_id"]
+    owner_id = str(
+        getattr(getattr(websocket, "state", None), "user_id", None)
+        or "owner"
+    )
     key = data.get("idempotency_key") or f"start:{workflow_id}:{uuid.uuid4().hex}"
     service = _control_service()
     existing = await service.database.get_workflow_control_by_idempotency_key(
@@ -1531,10 +1624,71 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
     expected_revision = int(data["expected_revision"])
     if expected_revision != (latest.revision if latest else 0):
         raise ValueError("control_revision_conflict")
+    if latest is not None and latest.status != "reset":
+        raise ValueError("workflow_already_started")
 
+    # Admit exactly the normalized, sanitized V2 graph.  Doing this after the
+    # control row was created would leave restart recovery with a legacy
+    # snapshot/hash even though the live deployment had already migrated.
+    from services.workflow_context_migration import (
+        import_legacy_context_receipts,
+        load_node_parameters,
+        persist_parameter_aliases,
+    )
+    from services.workflow_migrations import normalize_workflow_graph
+    from services.workflow_sanitizer import sanitize_workflow_graph
+
+    raw_nodes = list(data.get("nodes") or [])
+    raw_edges = list(data.get("edges") or [])
+    parameters_by_id = data.get("parameters_by_id")
+    if not isinstance(parameters_by_id, dict):
+        parameters_by_id = await load_node_parameters(
+            service.database,
+            raw_nodes,
+        )
+    normalization = normalize_workflow_graph(
+        workflow_id,
+        raw_nodes,
+        raw_edges,
+        parameters_by_id,
+    )
+    safe_graph = sanitize_workflow_graph(normalization.graph_data())
+    admitted_nodes = list(safe_graph["nodes"])
+    admitted_edges = list(safe_graph["edges"])
+    from services.workflow_validator import validate_workflow
+
+    validation = await validate_workflow(
+        nodes=admitted_nodes,
+        edges=admitted_edges,
+        parameters_by_id=normalization.node_parameters,
+    )
+    if validation["errors"]:
+        return {
+            "success": False,
+            "error": "validation_failed",
+            "report": validation,
+            "graph": safe_graph,
+            "aliases": normalization.aliases,
+            "migration_warnings": normalization.warnings,
+        }
+    imported = await import_legacy_context_receipts(
+        service.database,
+        normalization.state_imports,
+    )
+    await persist_parameter_aliases(
+        service.database,
+        aliases=normalization.aliases,
+        parameters=normalization.node_parameters,
+        context_import_completed=(imported == len(normalization.state_imports)),
+    )
     control, created = await service.begin_generation(
-        workflow_id=workflow_id, nodes=data.get("nodes", []), edges=data.get("edges", []),
-        session_id=data.get("session_id", "default"), idempotency_key=key,
+        workflow_id=workflow_id,
+        nodes=admitted_nodes,
+        edges=admitted_edges,
+        session_id=data.get("session_id", "default"),
+        idempotency_key=key,
+        graph_version=normalization.graph_version,
+        owner_id=owner_id,
     )
     if not created:
         control, controller_status = await _reconcile_control(service, control)
@@ -1559,9 +1713,15 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
         # outputs for a controlled run.
         deploy_data = {
             **data,
+            "nodes": admitted_nodes,
+            "edges": admitted_edges,
+            "parameters_by_id": normalization.node_parameters,
+            "graphVersion": normalization.graph_version,
+            "generation": control.generation,
             "session_id": control.data_scope_id or control.execution_id,
             "execution_id": control.execution_id,
             "root_execution_id": control.root_execution_id,
+            "user_id": owner_id,
         }
         deployed = await handle_deploy_workflow(deploy_data, websocket)
         if not deployed.get("success"):
@@ -1615,7 +1775,17 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
         control,
         controller_status=controller_status,
     )
-    return {"success": True, **payload}
+    return {
+        "success": True,
+        **payload,
+        "graph": {
+            "graphVersion": normalization.graph_version,
+            "nodes": admitted_nodes,
+            "edges": admitted_edges,
+        },
+        "aliases": normalization.aliases,
+        "migration_warnings": normalization.warnings,
+    }
 
 
 @ws_handler("workflow_id")

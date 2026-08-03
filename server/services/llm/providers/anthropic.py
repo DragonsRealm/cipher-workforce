@@ -54,8 +54,10 @@ class AnthropicProvider:
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         system, api_msgs = self._split_system(messages)
+        policy = self._model_policy(model)
 
         params: Dict[str, Any] = {
             "model": model,
@@ -65,21 +67,71 @@ class AnthropicProvider:
         if system:
             params["system"] = system
 
-        # Thinking / extended thinking
-        if thinking and thinking.enabled:
+        thinking_on = bool(thinking and thinking.enabled)
+
+        if policy["adaptive_thinking"]:
+            # ``budget_tokens`` was removed on these generations and is a 400,
+            # not a warning — the model chooses its own depth.  ``disabled`` is
+            # itself rejected on Fable/Mythos, so "thinking off" is expressed by
+            # omitting the field and letting the model's own default stand.
+            if thinking_on:
+                params["thinking"] = {
+                    "type": "adaptive",
+                    # ``display`` defaults to "omitted" here, which would empty
+                    # the reasoning text the node publishes downstream.
+                    "display": "summarized",
+                }
+        elif thinking_on:
             budget = max(1024, int(thinking.budget or 2048))
             if max_tokens <= budget:
                 params["max_tokens"] = budget + 1024
             params["thinking"] = {"type": "enabled", "budget_tokens": budget}
-            params["temperature"] = 1  # required by Anthropic when thinking
-        else:
-            params["temperature"] = temperature
+
+        if policy["sampling_params"]:
+            # Anthropic requires temperature=1 alongside budget thinking.
+            params["temperature"] = 1 if thinking_on else temperature
 
         # Tools
         if tools:
             params["tools"] = [self._to_api_tool(t) for t in tools]
 
-        resp = await self._client.messages.create(**params)
+        # Always stream.  The SDK refuses a non-streaming request whose
+        # ``max_tokens`` implies more than ten minutes of generation
+        # (``_calculate_nonstreaming_timeout``), and ``resolve_max_tokens``
+        # hands us the model's full output cap — 128K on every current
+        # Claude model — so the plain ``create()`` path raises
+        # ``ValueError: Streaming is required ...`` before the request is
+        # ever sent.  ``get_final_message()`` returns the same accumulated
+        # ``Message`` the non-streaming call would have, so ``_normalize``
+        # is unaffected.
+        if (
+            isinstance(context_management, dict)
+            and context_management.get("type") == "compaction"
+        ):
+            threshold = int(
+                context_management.get("compact_threshold") or 0
+            )
+            edit: Dict[str, Any] = {
+                "type": "compact_20260112",
+                "pause_after_compaction": bool(
+                    context_management.get("pause_after_compaction")
+                ),
+            }
+            if threshold >= 50_000:
+                edit["trigger"] = {
+                    "type": "input_tokens",
+                    "value": threshold,
+                }
+            stream_ctx = self._client.beta.messages.stream(
+                betas=["compact-2026-01-12"],
+                context_management={"edits": [edit]},
+                **params,
+            )
+        else:
+            stream_ctx = self._client.messages.stream(**params)
+
+        async with stream_ctx as stream:
+            resp = await stream.get_final_message()
         return self._normalize(resp, model)
 
     # ------------------------------------------------------------------
@@ -102,6 +154,30 @@ class AnthropicProvider:
     # ------------------------------------------------------------------
     # internals
     # ------------------------------------------------------------------
+
+    def _model_policy(self, model: str) -> Dict[str, bool]:
+        """Resolve JSON-driven per-model request-shape quirks.
+
+        Mirrors ``OpenAIProvider._model_policy``: the model families that
+        dropped sampling parameters and the ``budget_tokens`` thinking form
+        are listed in ``llm_defaults.json`` rather than hardcoded here, so a
+        new Claude generation is a config edit.
+        """
+
+        from services.llm.config import LLM_DEFAULTS
+
+        config = LLM_DEFAULTS.get("providers", {}).get(self.provider_name, {})
+
+        def matches(key: str) -> bool:
+            return any(
+                model.startswith(prefix) or prefix in model
+                for prefix in config.get(key, ())
+            )
+
+        return {
+            "adaptive_thinking": matches("adaptive_thinking_models"),
+            "sampling_params": not matches("sampling_params_removed"),
+        }
 
     def _split_system(self, messages: List[Message]):
         """Extract system message (Anthropic takes it as a top-level param)."""
@@ -272,6 +348,16 @@ class AnthropicProvider:
                         ),
                     }
                 )
+            elif block.type == "compaction":
+                summary = getattr(block, "content", "")
+                if not isinstance(summary, str):
+                    summary = str(summary or "")
+                blocks.append(
+                    ContentBlock(type="compaction", text=summary)
+                )
+                provider_blocks.append(
+                    {"type": "compaction", "content": summary}
+                )
 
         input_tokens = getattr(resp.usage, "input_tokens", 0) or 0
         output_tokens = getattr(resp.usage, "output_tokens", 0) or 0
@@ -293,6 +379,25 @@ class AnthropicProvider:
             cache_creation_tokens=cache_creation_tokens,
             cache_read_tokens=cache_read_tokens,
         )
+        iterations = getattr(resp.usage, "iterations", None) or ()
+        billed_input = 0
+        billed_output = 0
+        for iteration in iterations:
+            billed_input += int(
+                getattr(iteration, "input_tokens", 0) or 0
+            )
+            billed_output += int(
+                getattr(iteration, "output_tokens", 0) or 0
+            )
+        billing_usage = (
+            Usage(
+                input_tokens=billed_input,
+                output_tokens=billed_output,
+                total_tokens=billed_input + billed_output,
+            )
+            if billed_input or billed_output
+            else usage
+        )
 
         content = "\n".join(text_parts)
         thinking = "\n\n".join(thinking_parts) if thinking_parts else None
@@ -311,6 +416,7 @@ class AnthropicProvider:
             thinking=thinking,
             tool_calls=tool_calls,
             usage=usage,
+            billing_usage=billing_usage,
             model=model,
             finish_reason=resp.stop_reason or "stop",
             raw=resp,

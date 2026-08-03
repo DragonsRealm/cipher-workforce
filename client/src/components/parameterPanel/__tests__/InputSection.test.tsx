@@ -4,7 +4,8 @@
  * Locks in the connection-discovery contract:
  *   - Empty state when no edges target the node
  *   - Direct edges to main handles populate connected nodes
- *   - Config handles (input-memory, input-tools, input-skill) are SKIPPED
+ *   - Config handles (input-context, legacy input-memory, input-tools,
+ *     input-skill) are SKIPPED
  *     for agent nodes (those have a dedicated UI in MiddleSection)
  *   - input-main / input-chat / input-task / input-teammates are NEVER skipped
  *   - Config nodes (memory/tool group) inherit their parent node's main inputs
@@ -194,6 +195,19 @@ describe('InputSection -- config handle filtering for agent nodes', () => {
       // Memory should NOT appear -- it's filtered out for agent nodes
       expect(screen.queryByText(/Simple Memory/)).not.toBeInTheDocument();
     });
+  });
+
+  it('SKIPS input-context edges on Context V2 agents', async () => {
+    setWorkflow(
+      [
+        { id: 'ctx', type: 'context', data: { label: 'Context' }, position: { x: 0, y: 0 } },
+        { id: 'agent', type: 'aiAgent', data: { label: 'Agent' }, position: { x: 100, y: 0 } },
+      ],
+      [{ id: 'e1', source: 'ctx', target: 'agent', sourceHandle: 'output-context', targetHandle: 'input-context' }],
+    );
+
+    render(<InputSection nodeId="agent" />);
+    await waitFor(() => expect(screen.queryByText('Context')).not.toBeInTheDocument());
   });
 
   it('SKIPS input-tools edges on agent nodes', async () => {

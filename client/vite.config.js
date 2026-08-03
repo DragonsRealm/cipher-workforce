@@ -215,12 +215,7 @@ export default defineConfig(({ mode }) => {
               '@hookform/resolvers',
             ],
             'vendor-flow': ['reactflow'],
-            'vendor-radix': [
-              'radix-ui',
-              '@radix-ui/react-collapsible',
-              '@radix-ui/react-dialog',
-              '@radix-ui/react-slot',
-            ],
+            'vendor-radix': ['radix-ui'],
             'vendor-icons': ['lucide-react', '@lobehub/icons'],
             'vendor-query': [
               '@tanstack/react-query',

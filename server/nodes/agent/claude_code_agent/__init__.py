@@ -24,7 +24,14 @@ from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.logging import get_logger
-from services.plugin import ActionNode, NodeContext, NodeUserError, Operation, TaskQueue
+from services.plugin import (
+    ActionNode,
+    NodeContext,
+    NodeUserError,
+    Operation,
+    RetryPolicy,
+    TaskQueue,
+)
 from services.plugin.edge_walker import collect_agent_connections
 
 from .._handles import STD_AGENT_HINTS, std_agent_handles
@@ -235,11 +242,16 @@ class ClaudeCodeAgentNode(ActionNode):
     group = ("agent",)
     description = "Run N parallel Claude Code CLI sessions over a list of tasks. " "Each task is isolated in its own git worktree."
     component_kind = "agent"
+    requires_context = True
     tool_description = "ONE-SHOT delegation to Claude Code Agent. Call ONCE per task, returns task_id. Agentic coding with file reading, editing, and command execution - do NOT re-call."
     handles = std_agent_handles()
     ui_hints = STD_AGENT_HINTS
     annotations = {"destructive": True, "readonly": False, "open_world": True}
     task_queue = TaskQueue.AI_HEAVY
+    # A CLI/provider turn can be accepted before the worker observes its
+    # result. Automatic activity retry would repeat a paid, side-effecting
+    # operation with the same durable context identity.
+    retry_policy = RetryPolicy(maximum_attempts=1)
 
     Params = ClaudeCodeAgentParams
     Output = ClaudeCodeAgentOutput
@@ -255,7 +267,7 @@ class ClaudeCodeAgentNode(ActionNode):
     ) -> Any:
         from services.cli_agent.service import get_ai_cli_service
         from services.cli_agent.types import session_result_to_model
-        from services.plugin.deps import get_database
+        from services.plugin.deps import get_ai_service, get_database
         from services.status_broadcaster import get_status_broadcaster
 
         start_time = time.time()
@@ -276,7 +288,7 @@ class ClaudeCodeAgentNode(ActionNode):
         # read from `input_data` exactly the way `nodes/agent/_inline.py`
         # does for the standard agent path.
         database = get_database()
-        memory_data, skill_data, tool_data, input_data, _ = await collect_agent_connections(
+        context_data, skill_data, tool_data, input_data, _ = await collect_agent_connections(
             node_id,
             ctx.raw,
             database,
@@ -284,8 +296,10 @@ class ClaudeCodeAgentNode(ActionNode):
         )
         connected_skills = [s.get("skill_name") or s.get("label") for s in skill_data if s.get("skill_name") or s.get("label")]
 
-        # Memory bridge: claude maintains its own session JSONL on disk
+        # Immutable V1 Memory bridge: claude maintains its own session JSONL
         # under `<CLAUDE_CONFIG_DIR>/projects/<cwd-encoded>/<UUID>.jsonl`.
+        # Context V2 resolution, explicit UUID resume, raw-event journalling,
+        # and binding persistence live in AICliService.
         # The project_key is derived from cwd (`[^a-zA-Z0-9.-] -> -`),
         # so memory continuity needs only a STABLE cwd across runs.
         # That's handled by AICliService passing memory_bound=True so
@@ -304,6 +318,10 @@ class ClaudeCodeAgentNode(ActionNode):
         # First run: ``--continue`` with no prior session under the cwd
         # is a benign no-op; claude starts fresh. Subsequent runs find
         # and continue the prior JSONL.
+        from services.cli_agent.context_bridge import is_context
+
+        context_v2 = context_data if is_context(context_data) else None
+        memory_data = context_data if context_data and not context_v2 else None
         continue_session = bool(memory_data)
         if memory_data:
             logger.info(
@@ -390,9 +408,11 @@ class ClaudeCodeAgentNode(ActionNode):
             connected_skill_descriptors=skill_data,
             connected_tools=tool_data,
             connected_memory=memory_data,
+            connected_context=context_v2,
             execution_id=ctx.execution_id,
             allowed_credentials=params.allowed_credentials,
             max_parallel=params.max_parallel,
+            ai_service=get_ai_service(),
         )
 
         elapsed = time.time() - start_time
@@ -417,7 +437,12 @@ class ClaudeCodeAgentNode(ActionNode):
             workflow_id=workflow_id,
         )
 
-        task_models = [session_result_to_model(t).model_dump() for t in result.tasks]
+        task_models = [
+            session_result_to_model(t).model_dump() for t in result.tasks
+        ]
+        if context_v2 is not None:
+            for task_model in task_models:
+                task_model["session_id"] = None
 
         # Legacy single-task convenience fields
         legacy_response = None
@@ -425,7 +450,11 @@ class ClaudeCodeAgentNode(ActionNode):
         legacy_cost = None
         if len(result.tasks) == 1:
             legacy_response = result.tasks[0].response
-            legacy_session_id = result.tasks[0].session_id
+            legacy_session_id = (
+                result.tasks[0].session_id
+                if context_v2 is None
+                else None
+            )
             legacy_cost = result.tasks[0].cost_usd
 
         return {

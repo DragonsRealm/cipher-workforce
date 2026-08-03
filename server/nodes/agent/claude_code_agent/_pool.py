@@ -1,9 +1,10 @@
 """Long-lived ``claude`` subprocess pool — VSCode-extension pattern.
 
 Keeps one warm ``claude --output-format stream-json --input-format
-stream-json --verbose --ide`` subprocess per ``simpleMemory.node_id``
-so successive turns can reuse the same process — same session UUID
-across turns, no respawn cost. Mirrors what Anthropic's official
+stream-json --verbose --ide`` subprocess per Context thread+epoch (or per
+``simpleMemory.node_id`` for immutable V1 generations) so successive turns
+can reuse the same process — same session UUID across turns, no respawn cost.
+Mirrors what Anthropic's official
 VSCode extension does (verified from the on-disk extension source at
 ``$VSCODE_EXT_DIR/anthropic.claude-code-<ver>/extension.js`` line 156).
 
@@ -72,7 +73,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Union
 
 from core.logging import get_logger
 from services.cli_agent.factory import create_cli_provider
@@ -80,6 +81,8 @@ from services.cli_agent.protocol import AICliProvider, SessionResult
 from services.cli_agent.types import ClaudeTaskSpec
 
 logger = get_logger(__name__)
+
+ClaudePoolKey = Union[str, tuple[str, str, int]]
 
 
 # Defaults — keep aligned with the operator's mental model.
@@ -113,7 +116,9 @@ class PooledClaudeSession:
     stream-json mode, NOT to the JSONL file.
     """
 
-    memory_node_id: str
+    # V1 uses a Simple Memory node id. Context V2 uses the exact
+    # (context_node_id, thread_id, epoch) tuple.
+    memory_node_id: ClaudePoolKey
     process: asyncio.subprocess.Process
     cwd: Path
     # ``current_session_uuid`` is "" until the first turn's ``system/init``
@@ -165,6 +170,10 @@ class PooledClaudeSession:
     # warning level).
     stdout_reader_task: Optional[asyncio.Task[None]] = None
     stderr_drain_task: Optional[asyncio.Task[None]] = None
+    context_event_sink: Optional[
+        Callable[[Dict[str, Any]], Awaitable[None]]
+    ] = None
+    context_capture_error: Optional[str] = None
 
 
 class ClaudeSessionPool:
@@ -190,7 +199,7 @@ class ClaudeSessionPool:
         max_size: int = _DEFAULT_MAX_SIZE,
         reaper_interval: float = _DEFAULT_REAPER_INTERVAL,
     ) -> None:
-        self._pool: Dict[str, PooledClaudeSession] = {}
+        self._pool: Dict[ClaudePoolKey, PooledClaudeSession] = {}
         self._idle_ttl = float(idle_ttl)
         self._max_size = int(max_size)
         self._reaper_interval = float(reaper_interval)
@@ -213,7 +222,10 @@ class ClaudeSessionPool:
             name="ClaudeSessionPool.reaper",
         )
 
-    def peek(self, memory_node_id: str) -> Optional[PooledClaudeSession]:
+    def peek(
+        self,
+        memory_node_id: ClaudePoolKey,
+    ) -> Optional[PooledClaudeSession]:
         """Return the live session for ``memory_node_id`` or ``None``."""
         session = self._pool.get(memory_node_id)
         if session is None:
@@ -224,7 +236,7 @@ class ClaudeSessionPool:
 
     async def acquire(
         self,
-        memory_node_id: str,
+        memory_node_id: ClaudePoolKey,
         *,
         spec: ClaudeTaskSpec,
         cwd: Path,
@@ -236,6 +248,9 @@ class ClaudeSessionPool:
         connected_skill_names: Optional[List[str]] = None,
         workspace_dir: Optional[Path] = None,
         workflow_id: Optional[str] = None,
+        context_event_sink: Optional[
+            Callable[[Dict[str, Any]], Awaitable[None]]
+        ] = None,
     ) -> PooledClaudeSession:
         """Return a live :class:`PooledClaudeSession`.
 
@@ -256,6 +271,19 @@ class ClaudeSessionPool:
             # not wait for a busy per-memory lease here: a queued turn for M1
             # must never prevent an unrelated M2 from being acquired.
             async with self._pool_lock:
+                if isinstance(memory_node_id, tuple):
+                    stale_keys = [
+                        key
+                        for key in self._pool
+                        if isinstance(key, tuple)
+                        and key[:2] == memory_node_id[:2]
+                        and key[2] != memory_node_id[2]
+                    ]
+                    for stale_key in stale_keys:
+                        await self._terminate_locked(
+                            stale_key,
+                            reason="epoch_changed",
+                        )
                 existing = self._pool.get(memory_node_id)
                 crashed_uuid = ""
                 if existing is not None and existing.process.returncode is not None:
@@ -291,10 +319,12 @@ class ClaudeSessionPool:
                         connected_tool_names=connected_tool_names,
                         connected_skill_names=connected_skill_names,
                         workspace_dir=workspace_dir,
+                        context_event_sink=context_event_sink,
                     )
                     if mcp_bearer_token:
                         session.batch_token = mcp_bearer_token
                     session.workspace_dir = workspace_dir
+                    session.context_event_sink = context_event_sink
                     session.materialised_skills = frozenset(
                         connected_skill_names or []
                     )
@@ -350,19 +380,24 @@ class ClaudeSessionPool:
                 memory_node_id=memory_node_id,
                 mcp_bearer_token=mcp_bearer_token,
                 connected_skill_names=connected_skill_names,
+                context_event_sink=context_event_sink,
             )
 
     async def _prepare_warm_reuse(
         self,
         existing: PooledClaudeSession,
         *,
-        memory_node_id: str,
+        memory_node_id: ClaudePoolKey,
         mcp_bearer_token: Optional[str],
         connected_skill_names: Optional[List[str]],
+        context_event_sink: Optional[
+            Callable[[Dict[str, Any]], Awaitable[None]]
+        ],
     ) -> PooledClaudeSession:
         """Rebind one already-leased warm process for the next turn."""
         try:
             existing.last_used_at = time.monotonic()
+            existing.context_event_sink = context_event_sink
             if (
                 existing.batch_token
                 and mcp_bearer_token
@@ -472,10 +507,41 @@ class ClaudeSessionPool:
         if session.turn_lease.locked():
             session.turn_lease.release()
 
-    async def terminate(self, memory_node_id: str) -> None:
+    async def terminate(self, memory_node_id: ClaudePoolKey) -> None:
         """Force-drop a specific pooled session."""
         async with self._pool_lock:
             await self._terminate_locked(memory_node_id)
+
+    async def terminate_context(
+        self,
+        context_node_id: str,
+        *,
+        thread_id: Optional[str] = None,
+        keep_epoch: Optional[int] = None,
+    ) -> int:
+        """Terminate warm processes fenced by a Context lifecycle change.
+
+        Context clear/reset handlers can call this immediately after
+        ``start_epoch``.  ``acquire`` independently performs the same fence,
+        so a missed best-effort lifecycle notification cannot reuse an old
+        epoch later.
+        """
+
+        async with self._pool_lock:
+            keys = [
+                key
+                for key in self._pool
+                if isinstance(key, tuple)
+                and key[0] == context_node_id
+                and (thread_id is None or key[1] == thread_id)
+                and (keep_epoch is None or key[2] != keep_epoch)
+            ]
+            for key in keys:
+                await self._terminate_locked(
+                    key,
+                    reason="context_epoch_changed",
+                )
+            return len(keys)
 
     async def shutdown_all(self) -> None:
         """Terminate every pooled subprocess + stop the reaper.
@@ -526,6 +592,7 @@ class ClaudeSessionPool:
 
             session.result_event.clear()
             session.events_this_turn = []
+            session.context_capture_error = None
 
             # Stream-json input shape — the VSCode extension's wire
             # format. Newline-delimited; one JSON object per turn.
@@ -552,6 +619,14 @@ class ClaudeSessionPool:
                     session.result_event.wait(),
                     timeout=float(timeout_seconds),
                 )
+                if session.context_capture_error:
+                    return self._build_result_from_events(
+                        session=session,
+                        events=session.events_this_turn,
+                        prompt=prompt,
+                        success=False,
+                        error=session.context_capture_error,
+                    )
             except asyncio.TimeoutError:
                 logger.warning(
                     "[ClaudeSessionPool] turn timeout memory_node=%s " "prompt_len=%d",
@@ -601,7 +676,7 @@ class ClaudeSessionPool:
     async def _spawn(
         self,
         *,
-        memory_node_id: str,
+        memory_node_id: ClaudePoolKey,
         spec: ClaudeTaskSpec,
         cwd: Path,
         env: Dict[str, str],
@@ -611,6 +686,9 @@ class ClaudeSessionPool:
         connected_tool_names: Optional[List[str]],
         connected_skill_names: Optional[List[str]] = None,
         workspace_dir: Optional[Path] = None,
+        context_event_sink: Optional[
+            Callable[[Dict[str, Any]], Awaitable[None]]
+        ] = None,
     ) -> PooledClaudeSession:
         """Cold-spawn a new pooled claude subprocess. Caller holds pool_lock."""
         # Materialise connected skills under
@@ -668,6 +746,7 @@ class ClaudeSessionPool:
             memory_node_id=memory_node_id,
             process=process,
             cwd=cwd,
+            context_event_sink=context_event_sink,
         )
 
         # stdout reader — the single runtime contract in stream-json
@@ -689,11 +768,34 @@ class ClaudeSessionPool:
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
-                        logger.debug(
-                            "[ClaudeSessionPool] stdout non-JSON line " "memory_node=%s line=%r",
-                            memory_node_id,
-                            line[:200],
-                        )
+                        if session.context_event_sink is not None:
+                            try:
+                                await session.context_event_sink(
+                                    {
+                                        "type": "stdout.non_json",
+                                        "raw": line,
+                                    }
+                                )
+                            except Exception as exc:
+                                session.context_capture_error = (
+                                    "context_event_persistence_failed: "
+                                    f"{exc}"
+                                )
+                                session.result_event.set()
+                                return
+                            logger.debug(
+                                "[ClaudeSessionPool] stdout non-JSON "
+                                "memory_node=%s bytes=%d",
+                                memory_node_id,
+                                len(raw),
+                            )
+                        else:
+                            logger.debug(
+                                "[ClaudeSessionPool] stdout non-JSON line "
+                                "memory_node=%s line=%r",
+                                memory_node_id,
+                                line[:200],
+                            )
                         continue
                     try:
                         await self._handle_stream_event(session, event)
@@ -721,12 +823,33 @@ class ClaudeSessionPool:
                         return
                     line = raw.decode("utf-8", errors="replace").rstrip()
                     if line:
-                        logger.warning(
-                            "[ClaudeSessionPool] claude stderr " "memory_node=%s pid=%s: %s",
-                            memory_node_id,
-                            process.pid,
-                            line,
-                        )
+                        if session.context_event_sink is not None:
+                            try:
+                                await session.context_event_sink(
+                                    {"type": "stderr", "raw": line}
+                                )
+                            except Exception as exc:
+                                session.context_capture_error = (
+                                    "context_event_persistence_failed: "
+                                    f"{exc}"
+                                )
+                                session.result_event.set()
+                                return
+                            logger.warning(
+                                "[ClaudeSessionPool] claude stderr "
+                                "memory_node=%s pid=%s bytes=%d",
+                                memory_node_id,
+                                process.pid,
+                                len(raw),
+                            )
+                        else:
+                            logger.warning(
+                                "[ClaudeSessionPool] claude stderr "
+                                "memory_node=%s pid=%s: %s",
+                                memory_node_id,
+                                process.pid,
+                                line,
+                            )
             except (asyncio.CancelledError, ConnectionError):
                 return
             except Exception as exc:  # pragma: no cover — defensive
@@ -769,13 +892,36 @@ class ClaudeSessionPool:
              :class:`CompactionService` so the local-threshold path
              doesn't double-fire on claude's native auto-compaction.
         """
+        # Context receives the unmodified stream object before the
+        # presentation result is reduced/truncated.
+        if session.context_event_sink is not None:
+            try:
+                await session.context_event_sink(dict(event))
+            except Exception as exc:  # noqa: BLE001 - provider stays observable
+                session.context_capture_error = (
+                    f"context_event_persistence_failed: {exc}"
+                )
+                logger.error(
+                    "[ClaudeSessionPool] Context raw-event append failed "
+                    "key=%s: %s",
+                    session.memory_node_id,
+                    exc,
+                    exc_info=True,
+                )
+                session.result_event.set()
+                return
+
         sid = event.get("session_id") or event.get("sessionId")
         if sid and not session.current_session_uuid:
             session.current_session_uuid = sid
         session.events_this_turn.append(event)
         if self._provider.is_final_event(event):
             session.result_event.set()
-        if event.get("type") == "system" and event.get("subtype") == "compact_boundary":
+        if (
+            session.context_event_sink is None
+            and event.get("type") == "system"
+            and event.get("subtype") == "compact_boundary"
+        ):
             await self._record_native_compaction(session, event)
 
     @staticmethod
@@ -860,7 +1006,7 @@ class ClaudeSessionPool:
 
     async def _terminate_locked(
         self,
-        memory_node_id: str,
+        memory_node_id: ClaudePoolKey,
         *,
         reason: str = "explicit",
     ) -> None:
@@ -974,7 +1120,7 @@ class ClaudeSessionPool:
         self,
         kind: Literal["spawned", "cleared", "terminated", "usage"],
         *,
-        memory_node_id: str,
+        memory_node_id: ClaudePoolKey,
         workflow_id: Optional[str] = None,
         **payload: Any,
     ) -> None:
@@ -991,31 +1137,53 @@ class ClaudeSessionPool:
         except Exception:  # pragma: no cover
             return
         try:
+            context_scoped = isinstance(memory_node_id, tuple)
+            wire_node_id = (
+                memory_node_id[0]
+                if context_scoped
+                else memory_node_id
+            )
             if kind == "spawned":
                 await broadcaster.broadcast_claude_session_spawned(
-                    memory_node_id,
-                    session_uuid=payload["session_uuid"],
+                    wire_node_id,
+                    session_uuid=(
+                        "" if context_scoped else payload["session_uuid"]
+                    ),
                     pid=payload["pid"],
                     workflow_id=workflow_id,
                 )
             elif kind == "cleared":
                 await broadcaster.broadcast_claude_session_cleared(
-                    memory_node_id,
-                    old_session_uuid=payload["old_session_uuid"],
-                    new_session_uuid=payload["new_session_uuid"],
+                    wire_node_id,
+                    old_session_uuid=(
+                        ""
+                        if context_scoped
+                        else payload["old_session_uuid"]
+                    ),
+                    new_session_uuid=(
+                        ""
+                        if context_scoped
+                        else payload["new_session_uuid"]
+                    ),
                     workflow_id=workflow_id,
                 )
             elif kind == "terminated":
                 await broadcaster.broadcast_claude_session_terminated(
-                    memory_node_id,
+                    wire_node_id,
                     reason=payload["reason"],
-                    session_uuid=payload.get("session_uuid"),
+                    session_uuid=(
+                        None
+                        if context_scoped
+                        else payload.get("session_uuid")
+                    ),
                     workflow_id=workflow_id,
                 )
             elif kind == "usage":
                 await broadcaster.broadcast_claude_session_usage(
-                    memory_node_id,
-                    session_uuid=payload["session_uuid"],
+                    wire_node_id,
+                    session_uuid=(
+                        "" if context_scoped else payload["session_uuid"]
+                    ),
                     total_cost_usd=payload.get("total_cost_usd"),
                     input_tokens=payload.get("input_tokens", 0),
                     output_tokens=payload.get("output_tokens", 0),

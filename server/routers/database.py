@@ -8,7 +8,11 @@ from core.container import container
 from core.database import Database
 from core.logging import get_logger
 from services.example_loader import import_examples_for_user
-from services.workflow_storage.handlers import handle_save_workflow
+from services.workflow_storage.handlers import (
+    delete_workflow_with_context_archival,
+    handle_get_workflow,
+    handle_save_workflow,
+)
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/database", tags=["database"])
@@ -123,22 +127,18 @@ async def get_all_workflows(database: Database = Depends(lambda: container.datab
 
 @router.get("/workflows/{workflow_id}")
 async def get_workflow(workflow_id: str, database: Database = Depends(lambda: container.database())):
-    """Get workflow by ID."""
+    """Get the server-normalized workflow graph by ID."""
     try:
-        workflow = await database.get_workflow(workflow_id)
+        result = await handle_get_workflow(
+            {"workflow_id": workflow_id},
+            websocket=None,  # type: ignore[arg-type]  # unused by handler
+        )
+        workflow = result.get("workflow")
         if workflow:
-            return {
-                "success": True,
-                "workflow": {
-                    "id": workflow.id,
-                    "name": workflow.name,
-                    "slug": workflow.slug,
-                    "data": workflow.data,
-                    "createdAt": workflow.created_at.isoformat() if workflow.created_at else None,
-                    "lastModified": workflow.updated_at.isoformat() if workflow.updated_at else None,
-                },
-            }
-        return {"success": False, "error": "Workflow not found"}
+            # Preserve the REST route's established timestamp field names.
+            workflow["createdAt"] = workflow.pop("created_at", None)
+            workflow["lastModified"] = workflow.pop("updated_at", None)
+        return result
     except Exception as e:
         logger.error("Failed to get workflow", error=str(e), exc_info=True)
         return {"success": False, "error": "Failed to get workflow"}
@@ -146,10 +146,12 @@ async def get_workflow(workflow_id: str, database: Database = Depends(lambda: co
 
 @router.delete("/workflows/{workflow_id}")
 async def delete_workflow(workflow_id: str, database: Database = Depends(lambda: container.database())):
-    """Delete workflow."""
+    """Delete through the same durable Context lifecycle path as WebSocket."""
     try:
-        success = await database.delete_workflow(workflow_id)
-        return {"success": success, "workflow_id": workflow_id}
+        return await delete_workflow_with_context_archival(
+            database,
+            workflow_id,
+        )
     except Exception as e:
         logger.error("Failed to delete workflow", error=str(e), exc_info=True)
         return {"success": False, "error": "Failed to delete workflow"}

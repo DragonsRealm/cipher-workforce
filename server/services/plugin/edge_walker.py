@@ -8,7 +8,7 @@ module. Used by :class:`AIAgentNode`, :class:`ChatAgentNode`,
 
 Three helpers:
 
-- :func:`collect_agent_connections` — walks ``input-memory``,
+- :func:`collect_agent_connections` — walks ``input-context``,
   ``input-skill``, ``input-tools``, ``input-main`` / ``input-chat``,
   ``input-task`` edges into a single tuple. Knows about the
   ``masterSkill`` expansion + direct Android service tools +
@@ -130,6 +130,47 @@ def register_master_skill_expander(fn: MasterSkillExpander) -> None:
     _MASTER_SKILL_EXPANDER = fn
 
 
+# ---- Agent-Context descriptor builder registry ---------------------------
+
+AgentContextBuilder = Callable[
+    [str, Dict[str, Any], Any],
+    Awaitable[Optional[Dict[str, Any]]],
+]
+"""Async callable that turns a Context node connected on ``input-context``
+into the descriptor the agent runtime consumes. Signature:
+``(source_node_id, context, database) -> descriptor | None``.
+
+Returning ``None`` means "this connection contributes no context" and the
+edge is skipped. The framework does not know the descriptor's shape — the
+plugin that owns the node owns its keys."""
+
+_AGENT_CONTEXT_BUILDER: Optional[AgentContextBuilder] = None
+
+
+def register_agent_context_builder(fn: AgentContextBuilder) -> None:
+    """Publish the Context descriptor builder.
+
+    Idempotent on equality. ``nodes.context`` registers its builder from
+    ``__init__.py`` on package import. Edge-walking code calls
+    :func:`get_agent_context_builder` and runs whatever is registered, so
+    the framework carries no knowledge of the Context node's parameters,
+    thread-selection rules, or descriptor keys.
+    """
+    global _AGENT_CONTEXT_BUILDER
+    if _AGENT_CONTEXT_BUILDER is not None and _AGENT_CONTEXT_BUILDER != fn:
+        raise ValueError(
+            "register_agent_context_builder: callback already registered "
+            "by a different callable; refusing to overwrite"
+        )
+    _AGENT_CONTEXT_BUILDER = fn
+
+
+def get_agent_context_builder() -> Optional[AgentContextBuilder]:
+    """Return the registered Context builder, or None when no plugin has
+    wired one (in which case ``input-context`` edges contribute nothing)."""
+    return _AGENT_CONTEXT_BUILDER
+
+
 def get_master_skill_expander() -> Optional[MasterSkillExpander]:
     """Return the registered expander callback, or None when no skill
     plugin has wired it (in which case Master-Skill nodes silently
@@ -143,7 +184,7 @@ async def collect_agent_connections(
     database: "Database",
     log_prefix: str = "[Agent]",
 ) -> Tuple[
-    Optional[Dict[str, Any]],  # memory_data
+    Optional[Dict[str, Any]],  # context_data (legacy memory_data on V1)
     List[Dict[str, Any]],  # skill_data
     List[Dict[str, Any]],  # tool_data
     Optional[Dict[str, Any]],  # input_data
@@ -152,14 +193,16 @@ async def collect_agent_connections(
     """Walk edges targeting ``node_id`` and collect everything an agent
     needs from its connected nodes.
 
-    Returns ``(memory, skills, tools, input, task)``. See module
+    Returns ``(context, skills, tools, input, task)``. The first item is an
+    Agent Context reference/policy descriptor for V2 graphs; immutable V1
+    snapshots may still yield their legacy Memory descriptor.
     docstring for behaviour notes.
     """
     nodes = context.get("nodes")
     edges = context.get("edges")
     workflow_id = context.get("workflow_id")
 
-    memory_data: Optional[Dict[str, Any]] = None
+    context_data: Optional[Dict[str, Any]] = None
     skill_data: List[Dict[str, Any]] = []
     tool_data: List[Dict[str, Any]] = []
     input_data: Optional[Dict[str, Any]] = None
@@ -173,7 +216,7 @@ async def collect_agent_connections(
     )
 
     if not edges or not nodes:
-        return memory_data, skill_data, tool_data, input_data, task_data
+        return context_data, skill_data, tool_data, input_data, task_data
 
     incoming_edges = [e for e in edges if e.get("target") == node_id]
     logger.info(f"{log_prefix} Incoming edges to {node_id}: {len(incoming_edges)}")
@@ -196,9 +239,23 @@ async def collect_agent_connections(
         if not source_node:
             continue
 
-        if target_handle == "input-memory":
+        if target_handle == "input-context":
+            # The descriptor's shape belongs to the plugin that owns the
+            # node, not to the framework. Whatever is registered decides
+            # whether this edge contributes context at all.
+            builder = get_agent_context_builder()
+            if builder is not None:
+                built = await builder(
+                    str(source_node_id or ""),
+                    {**context, "workflow_id": str(workflow_id or "")},
+                    database,
+                )
+                if built:
+                    context_data = built
+        elif target_handle == "input-memory":
+            # Immutable V1 workflow snapshots retain their recorded behavior.
             if source_node.get("type") == "simpleMemory":
-                memory_data = await _build_memory_entry(
+                context_data = await _build_memory_entry(
                     node_id,
                     source_node_id,
                     database,
@@ -266,7 +323,7 @@ async def collect_agent_connections(
 
     logger.info(
         f"{log_prefix} Collected: {len(skill_data)} skills, {len(tool_data)} tools, "
-        f"memory={'yes' if memory_data else 'no'}, "
+        f"context={'yes' if context_data else 'no'}, "
         f"input={'yes' if input_data else 'no'}, "
         f"task={'yes' if task_data else 'no'}"
     )
@@ -275,7 +332,7 @@ async def collect_agent_connections(
     for td in tool_data:
         logger.info(f"{log_prefix} Tool: type={td.get('node_type')}, node_id={td.get('node_id')}")
 
-    return memory_data, skill_data, tool_data, input_data, task_data
+    return context_data, skill_data, tool_data, input_data, task_data
 
 
 async def _build_memory_entry(

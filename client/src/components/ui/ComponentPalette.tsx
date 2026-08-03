@@ -53,6 +53,10 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({
     const definitions = listCachedNodeSpecs().map(nodeSpecToDescription);
 
     const filteredDefinitions = definitions.filter((definition) => {
+      // Context companions and other lifecycle-owned nodes are rendered when
+      // present in a workflow, but can only be created by graph operations.
+      if (definition.uiHints?.systemManaged) return false;
+
       // Backend allowlist (server/config/node_allowlist.json). Two-tier:
       //   1. `disabled_groups` + `disabled_nodes` — absolute blocklist
       //      enforced in BOTH normal and dev mode. The node's group

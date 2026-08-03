@@ -81,6 +81,23 @@
         "_default": 200000
       },
       "thinking_type": "budget",
+      "_capability_note": "Two request-shape breaks landed together in the Claude 4.7+ generations: `temperature`/`top_p`/`top_k` are rejected (400 `temperature is deprecated for this model`), and the `{type: enabled, budget_tokens: N}` thinking form is rejected in favour of `{type: adaptive}`. Both lists are prefix-matched by AnthropicProvider._model_policy. claude-opus-4-6 / claude-sonnet-4-6 are deliberately absent: adaptive is recommended there but budget_tokens still works, so they keep the legacy shape until Anthropic removes it.",
+      "adaptive_thinking_models": [
+        "claude-fable-5",
+        "claude-mythos-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-sonnet-5"
+      ],
+      "sampling_params_removed": [
+        "claude-fable-5",
+        "claude-mythos-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-sonnet-5"
+      ],
       "temperature_range": [0.0, 1.0]
     },
     "gemini": {

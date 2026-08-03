@@ -41,6 +41,7 @@ from temporalio.common import WorkflowIDReusePolicy
 from temporalio.workflow import ParentClosePolicy
 
 from ._retry_policies import DEFAULT_ACTIVITY_RETRY
+from .workflow import TEMPORAL_ROUTING_INPUT_KEY
 
 
 # Same continueAsNew threshold as TriggerListenerWorkflow — keeps Event
@@ -57,23 +58,18 @@ _DEFAULT_POLL_INTERVAL_S = 60
 # headroom for slow Gmail / Twitter responses without hanging forever.
 # Workflow ``RetryPolicy`` (default) handles transient failures.
 _ACTIVITY_TIMEOUT_MULT = 4
-COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
-    "polling-trigger-cooperative-pause-scheduling-v1"
-)
-# Same contract as trigger_listener_workflow.UNBOUNDED_CHILD_RUNS_PATCH:
-# child runs may execute or stay paused for months, so new executions
-# start them without lifetime caps; the patch keeps replay
-# compatibility for histories recorded with the old 1h caps.
-UNBOUNDED_CHILD_RUNS_PATCH = "polling-unbounded-child-runs-v1"
-# _processed_count above increments only per EMITTED event, but every
-# poll cycle burns ~8-11 history events (sleep timer + activity +
-# workflow tasks) regardless — a quiet mailbox at the 60s default
-# reached the server's ~51,200-event hard termination in ~3 days with
-# the counter frozen at 0 and continue-as-new never firing. The patched
-# path checks history pressure every cycle (server suggestion + the
-# soft cap below), clamps user-supplied poll intervals to a sane floor,
-# and carries the pause flag across the rollover instead of blocking it.
-HISTORY_BOUNDED_CAN_PATCH = "polling-history-bounded-can-v1"
+# Child runs may execute — or stay cooperatively paused — for months,
+# so they start without lifetime caps; Temporal's timeout timer keeps
+# ticking through a pause. Liveness comes from activity heartbeats.
+#
+# _processed_count increments only per EMITTED event, but every poll
+# cycle burns ~8-11 history events (sleep timer + activity + workflow
+# tasks) regardless — a quiet mailbox at the 60s default reached the
+# server's ~51,200-event hard termination in ~3 days with the counter
+# frozen at 0. History pressure is therefore checked every cycle
+# (server suggestion + the soft cap below), poll intervals are clamped
+# to a sane floor, and the pause flag is carried across the rollover
+# instead of blocking it behind a resume that may be months away.
 _HISTORY_SOFT_CAP = 10_000
 # Defensive floor for user-supplied poll intervals: a few-second
 # interval burns ~100K+ history events/day. Mirrors the plugin-side
@@ -138,26 +134,12 @@ class PollingTriggerWorkflow:
         node_type = listener_data["node_type"]
         version = listener_data.get("version", 1)
         activity_name = f"poll.{node_type}.v{version}"
-        try:
-            use_cooperative_pause_schedule_gate = workflow.patched(
-                COOPERATIVE_PAUSE_SCHEDULING_PATCH
-            )
-            use_history_bounded_can = workflow.patched(HISTORY_BOUNDED_CAN_PATCH)
-        except Exception:  # direct unit invocation outside Temporal runtime
-            if workflow.in_workflow():
-                raise
-            use_cooperative_pause_schedule_gate = False
-            use_history_bounded_can = True
-
-        # Rehydrate rollover-carried pause state. Command-free, so
-        # pre-patch histories (whose payloads lack the key) replay
-        # identically.
+        # Rehydrate rollover-carried pause state.
         self._control_paused = bool(listener_data.get("control_paused"))
 
         params = listener_data.get("filter_params", {}) or {}
         poll_interval = int(params.get("poll_interval") or _DEFAULT_POLL_INTERVAL_S)
-        if use_history_bounded_can:
-            poll_interval = max(_MIN_POLL_INTERVAL_S, poll_interval)
+        poll_interval = max(_MIN_POLL_INTERVAL_S, poll_interval)
         activity_timeout_s = max(30, poll_interval * _ACTIVITY_TIMEOUT_MULT)
 
         # Carry seen_ids across continueAsNew. First-start payload has
@@ -186,8 +168,7 @@ class PollingTriggerWorkflow:
                 }
             else:
                 await workflow.sleep(timedelta(seconds=poll_interval))
-                if use_cooperative_pause_schedule_gate:
-                    await self._wait_until_resumed()
+                await self._wait_until_resumed()
                 cycle_payload = {
                     "node_id": listener_data["trigger_node_id"],
                     "params": params,
@@ -224,8 +205,7 @@ class PollingTriggerWorkflow:
                     continue
                 self._seen_event_ids.add(event_id)
                 try:
-                    if use_cooperative_pause_schedule_gate:
-                        await self._wait_until_resumed()
+                    await self._wait_until_resumed()
                     from services.temporal.trigger_listener_workflow import (
                         event_workflow_search_attributes,
                     )
@@ -233,17 +213,9 @@ class PollingTriggerWorkflow:
                     await self._spawn_child_run(
                         event,
                         listener_data,
-                        admission_check=(
-                            self._wait_until_resumed
-                            if use_cooperative_pause_schedule_gate
-                            else None
-                        ),
-                        search_attributes=(
-                            event_workflow_search_attributes(
-                                listener_data.get("workflow_id")
-                            )
-                            if use_cooperative_pause_schedule_gate
-                            else None
+                        admission_check=self._wait_until_resumed,
+                        search_attributes=event_workflow_search_attributes(
+                            listener_data.get("workflow_id")
                         ),
                     )
                 except Exception as spawn_exc:  # noqa: BLE001
@@ -254,7 +226,7 @@ class PollingTriggerWorkflow:
                 self._processed_count += 1
 
             should_rollover = self._processed_count >= _MAX_EVENTS_BEFORE_CONTINUE_AS_NEW
-            if use_history_bounded_can and not should_rollover:
+            if not should_rollover:
                 # Poll cycles burn history even with zero emitted events —
                 # check pressure every cycle, not only per processed event.
                 from services.temporal.trigger_listener_workflow import _history_pressure
@@ -262,16 +234,10 @@ class PollingTriggerWorkflow:
                 should_rollover = _history_pressure(_HISTORY_SOFT_CAP)
             if should_rollover:
                 workflow.logger.info(f"PollingTriggerWorkflow continue_as_new: processed={self._processed_count}")
-                if use_history_bounded_can:
-                    # Carry the pause flag instead of blocking the rollover
-                    # behind a resume that may be months away (signal
-                    # traffic would overflow the history mid-pause).
-                    listener_data["control_paused"] = self._control_paused
-                elif use_cooperative_pause_schedule_gate:
-                    # A pause may arrive during the final waiting-status
-                    # broadcast. Continue only after Resume so the next run
-                    # cannot reset a still-active pause flag.
-                    await self._wait_until_resumed()
+                # Carry the pause flag instead of blocking the rollover
+                # behind a resume that may be months away (signal traffic
+                # would overflow the history mid-pause).
+                listener_data["control_paused"] = self._control_paused
                 # Carry seen_ids forward so the new run doesn't re-emit
                 # what's already been seen by the provider.
                 listener_data["seen_ids"] = list(seen_ids)
@@ -296,7 +262,6 @@ class PollingTriggerWorkflow:
         """
         from services.temporal._retry_policies import QUICK_ACTIVITY_RETRY
         from services.temporal.trigger_listener_workflow import (
-            BOUNDED_STATUS_BROADCASTS_PATCH,
             _broadcast_trigger_idle,
             _broadcast_trigger_waiting,
             _build_run_graph,
@@ -307,11 +272,15 @@ class PollingTriggerWorkflow:
         edges = listener_data["edges"]
         session_id = listener_data.get("session_id", "default")
         workflow_id = listener_data.get("workflow_id")
-        try:
-            use_latest_graph = bool(workflow_id) and workflow.patched("trigger-latest-graph-v1")
-        except RuntimeError:  # direct unit invocation outside Temporal runtime
-            use_latest_graph = False
-        if use_latest_graph:
+        graph_version = int(
+            listener_data.get("graphVersion")
+            or listener_data.get("graph_version")
+            or 0
+        )
+        generation = int(listener_data.get("generation") or 0)
+        # Controlled generations execute their immutable admitted snapshot.
+        # Legacy uncontrolled deployments retain hot graph lookup.
+        if bool(workflow_id) and not listener_data.get("data_scope_id"):
             try:
                 latest = await workflow.execute_activity(
                     "load_persisted_workflow_graph_activity",
@@ -321,6 +290,9 @@ class PollingTriggerWorkflow:
                 if latest.get("found"):
                     nodes = latest.get("nodes") or []
                     edges = latest.get("edges") or []
+                    graph_version = int(
+                        latest.get("graphVersion") or graph_version
+                    )
             except Exception as exc:  # snapshot remains a safe fallback
                 workflow.logger.warning(
                     f"Current graph lookup failed for {workflow_id}; using deployment snapshot: {exc}"
@@ -357,13 +329,10 @@ class PollingTriggerWorkflow:
         event_id = event.get("id") or workflow.uuid4().hex
         child_id = f"{workflow_slug}-{trigger_label}-{event_id}"
 
-        try:
-            unbounded_child_runs = workflow.patched(UNBOUNDED_CHILD_RUNS_PATCH)
-            bounded_broadcasts = workflow.patched(BOUNDED_STATUS_BROADCASTS_PATCH)
-        except RuntimeError:  # direct unit invocation outside Temporal runtime
-            unbounded_child_runs = True
-            bounded_broadcasts = True
-        broadcast_retry = QUICK_ACTIVITY_RETRY if bounded_broadcasts else None
+        # Status broadcasts are cosmetic UI signalling; without an explicit
+        # policy Temporal retries a failing activity forever, wedging the
+        # serialized spawn loop behind a dead broadcaster.
+        broadcast_retry = QUICK_ACTIVITY_RETRY
 
         try:
             await _broadcast_trigger_idle(
@@ -386,26 +355,44 @@ class PollingTriggerWorkflow:
                 WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
             ),
         }
-        if not unbounded_child_runs:
-            # Replay-only: pre-patch histories recorded 1h caps on the
-            # child-start command. See UNBOUNDED_CHILD_RUNS_PATCH.
-            child_options["execution_timeout"] = timedelta(hours=1)
-            child_options["run_timeout"] = timedelta(hours=1)
         if search_attributes is not None:
             child_options["search_attributes"] = search_attributes
 
+        child_payload = {
+            "nodes": filtered_nodes,
+            "edges": filtered_edges,
+            "session_id": session_id,
+            "workflow_id": workflow_id,
+            "workflow_slug": workflow_slug,
+            "tenant_id": tenant_id,
+        }
+        frozen_routing = listener_data.get(TEMPORAL_ROUTING_INPUT_KEY)
+        if isinstance(frozen_routing, dict):
+            child_payload[TEMPORAL_ROUTING_INPUT_KEY] = dict(
+                frozen_routing
+            )
+            if "user_id" in listener_data:
+                child_payload["user_id"] = listener_data.get("user_id")
+        if graph_version >= 2 and generation > 0:
+            event_session_id = str(event.get("session_id") or "").strip()
+            child_payload.update(
+                {
+                    "graphVersion": graph_version,
+                    "generation": generation,
+                    "context_execution_id": child_id,
+                    "execution_id": listener_data.get("execution_id"),
+                    "root_execution_id": listener_data.get(
+                        "root_execution_id"
+                    ),
+                    "data_scope_id": listener_data.get("data_scope_id"),
+                }
+            )
+            if event_session_id and event_session_id != "default":
+                child_payload["context_session_id"] = event_session_id
+
         await workflow.start_child_workflow(
             "MachinaWorkflow",
-            args=[
-                {
-                    "nodes": filtered_nodes,
-                    "edges": filtered_edges,
-                    "session_id": session_id,
-                    "workflow_id": workflow_id,
-                    "workflow_slug": workflow_slug,
-                    "tenant_id": tenant_id,
-                }
-            ],
+            args=[child_payload],
             **child_options,
         )
 

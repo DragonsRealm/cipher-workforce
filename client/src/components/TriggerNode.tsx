@@ -16,6 +16,14 @@ import { NodeIcon } from '../assets/icons';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useWhatsAppStatus, useNodeStatus } from '../contexts/WebSocketContext';
 import EditableNodeLabel from './ui/EditableNodeLabel';
+import type { NodeSpecHandle } from '../adapters/nodeSpecToDescription';
+
+const REACT_POSITION: Record<NodeSpecHandle['position'], Position> = {
+  top: Position.Top,
+  bottom: Position.Bottom,
+  left: Position.Left,
+  right: Position.Right,
+};
 
 const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectable, selected }) => {
   const theme = useAppTheme();
@@ -114,6 +122,15 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
   // <NodeIcon> resolves the ref and tints lucide icons via currentColor.
   const iconSpec = useNodeSpec(type);
   const iconRef = (iconSpec?.icon as string | undefined) ?? (definition?.icon as string | undefined);
+  const outputHandles: NodeSpecHandle[] = iconSpec?.handles
+    ?.filter((handle) => handle.kind === 'output')
+    ?? [{
+      name: 'output-main',
+      kind: 'output',
+      position: 'right',
+      label: 'Trigger Output',
+      role: 'main',
+    }];
 
   // Get the node color from definition or use default trigger color
   const nodeColor = definition?.defaults?.color || 'var(--node-trigger)';
@@ -251,24 +268,36 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
           <span style={{ lineHeight: 1, color: theme.isDarkMode ? theme.colors.background : '#1a1d21' }}>{isPaused ? 'Ⅱ' : '⚡'}</span>
         </div>
 
-        {/* Output Handle (right side) — CSS owns bg/border via .sq-node-handle.out */}
-        <Handle
-          id="output-main"
-          type="source"
-          position={Position.Right}
-          isConnectable={isConnectable}
-          className="sq-node-handle out"
-          style={{
-            position: 'absolute',
-            right: '-6px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: theme.nodeSize.handle,
-            height: theme.nodeSize.handle,
-            zIndex: 20,
-          }}
-          title="Trigger Output"
-        />
+        {/* Backend NodeSpec owns every trigger output, including the
+            canonical output-tool endpoint on dual-purpose triggers. */}
+        {outputHandles.map((handle) => {
+          const placement: React.CSSProperties =
+            handle.position === 'left'
+              ? { left: '-6px', top: handle.offset || '50%', transform: 'translateY(-50%)' }
+              : handle.position === 'right'
+                ? { right: '-6px', top: handle.offset || '50%', transform: 'translateY(-50%)' }
+                : handle.position === 'top'
+                  ? { top: '-6px', left: handle.offset || '50%', transform: 'translateX(-50%)' }
+                  : { bottom: '-6px', left: handle.offset || '50%', transform: 'translateX(-50%)' };
+          return (
+            <Handle
+              key={handle.name}
+              id={handle.name}
+              type="source"
+              position={REACT_POSITION[handle.position]}
+              isConnectable={isConnectable}
+              className="sq-node-handle out"
+              style={{
+                position: 'absolute',
+                ...placement,
+                width: theme.nodeSize.handle,
+                height: theme.nodeSize.handle,
+                zIndex: 20,
+              }}
+              title={handle.label || handle.name}
+            />
+          );
+        })}
 
         {/* Output Data Indicator (bespoke; keeps inline style) */}
         {executionStatus === 'success' && nodeStatus?.data && (

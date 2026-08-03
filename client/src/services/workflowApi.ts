@@ -21,6 +21,7 @@ export interface WorkflowData {
   name: string;
   slug: string;
   data: {
+    graphVersion?: number;
     nodes: any[];
     edges: any[];
   };
@@ -35,6 +36,13 @@ export interface SaveWorkflowResult {
   slug?: string;
   name?: string;
   nodeIdAliases?: Record<string, string>;
+  /** Authoritative, normalized graph. Context companions and migrations are
+   * created server-side; clients replace their edit buffer with this graph. */
+  data?: {
+    graphVersion?: number;
+    nodes: any[];
+    edges: any[];
+  };
 }
 
 export const workflowApi = {
@@ -56,6 +64,7 @@ export const workflowApi = {
         slug: result.slug,
         name: result.name,
         nodeIdAliases: result.node_id_aliases ?? {},
+        data: result.data,
       };
     } catch (error) {
       console.error('Failed to save workflow:', error);

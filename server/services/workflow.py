@@ -11,6 +11,7 @@ Following n8n/Conductor patterns for clean separation of concerns.
 """
 
 import time
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
@@ -34,6 +35,11 @@ if TYPE_CHECKING:
     from services.temporal import TemporalExecutor
 
 logger = get_logger(__name__)
+
+_parallel_user_id: ContextVar[str] = ContextVar(
+    "workflow_parallel_user_id",
+    default="owner",
+)
 
 
 class WorkflowService:
@@ -185,6 +191,7 @@ class WorkflowService:
         workflow_slug: str = None,
         outputs: Dict[str, Any] = None,
         extras: Optional[Dict[str, Any]] = None,
+        user_id: str = "owner",
     ) -> Dict[str, Any]:
         """Execute a single workflow node.
 
@@ -204,6 +211,7 @@ class WorkflowService:
             "execution_id": execution_id,
             "workflow_id": workflow_id,  # UUID — stable system identity, FK target
             "workflow_slug": workflow_slug,  # Human-readable, mutable on rename
+            "user_id": str(user_id or "owner"),
             "workspace_dir": workspace_dir,  # Per-workflow filesystem for nodes and agents
             "get_output_fn": self.get_node_output,
             "outputs": outputs or {},  # Upstream node outputs for data flow (e.g., taskTrigger -> chatAgent)
@@ -236,6 +244,10 @@ class WorkflowService:
             execution_id=context.get("execution_id"),
             workflow_id=context.get("workflow_id"),
             workflow_slug=context.get("workflow_slug"),
+            user_id=(
+                context.get("user_id")
+                or _parallel_user_id.get()
+            ),
         )
 
     # =========================================================================
@@ -252,6 +264,9 @@ class WorkflowService:
         skip_clear_outputs: bool = False,
         workflow_id: Optional[str] = None,
         use_temporal: bool = None,
+        graph_version: int = 0,
+        generation: int = 0,
+        user_id: str = "owner",
     ) -> Dict[str, Any]:
         """Execute entire workflow.
 
@@ -264,8 +279,12 @@ class WorkflowService:
             skip_clear_outputs: Skip clearing outputs (for deployment runs)
             workflow_id: Workflow ID for per-workflow status scoping (n8n pattern)
             use_temporal: Force Temporal execution (None = use settings default)
+            graph_version: Normalized graph version for Context V2 cutover
+            generation: Durable deployment generation for Context V2 cutover
+            user_id: Authenticated server-owned user identity
         """
         start_time = time.time()
+        user_id = str(user_id or "owner")
 
         # Clear outputs unless skipped
         if not skip_clear_outputs:
@@ -310,7 +329,17 @@ class WorkflowService:
 
         # Use Temporal if enabled and executor is configured
         if use_temporal and self._temporal_executor is not None:
-            return await self._execute_temporal(nodes, edges, session_id, status_callback, start_time, workflow_id)
+            return await self._execute_temporal(
+                nodes,
+                edges,
+                session_id,
+                status_callback,
+                start_time,
+                workflow_id,
+                graph_version,
+                generation,
+                user_id,
+            )
 
         # Loud error if Temporal was requested but the executor never finished
         # wiring. Previously a WARNING; bumped to ERROR because a silent
@@ -328,12 +357,39 @@ class WorkflowService:
 
         # Use parallel executor if enabled and Redis available
         if use_parallel and self.settings.redis_enabled:
-            return await self._execute_parallel(nodes, edges, session_id, status_callback, start_time, workflow_id)
+            return await self._execute_parallel(
+                nodes,
+                edges,
+                session_id,
+                status_callback,
+                start_time,
+                workflow_id,
+                user_id,
+            )
 
         # Fall back to sequential
-        return await self._execute_sequential(nodes, edges, session_id, status_callback, start_time, workflow_id)
+        return await self._execute_sequential(
+            nodes,
+            edges,
+            session_id,
+            status_callback,
+            start_time,
+            workflow_id,
+            user_id,
+        )
 
-    async def _execute_temporal(self, nodes, edges, session_id, status_callback, start_time, workflow_id: Optional[str] = None) -> Dict:
+    async def _execute_temporal(
+        self,
+        nodes,
+        edges,
+        session_id,
+        status_callback,
+        start_time,
+        workflow_id: Optional[str] = None,
+        graph_version: int = 0,
+        generation: int = 0,
+        user_id: str = "owner",
+    ) -> Dict:
         """Execute with Temporal for durable workflow orchestration."""
         # Use passed workflow_id (from deployment) or generate new one
         if not workflow_id:
@@ -357,6 +413,9 @@ class WorkflowService:
             session_id=session_id,
             enable_caching=True,
             workflow_slug=workflow_slug,
+            graph_version=graph_version,
+            generation=generation,
+            user_id=user_id,
         )
 
         # Notify status callback for completed nodes if provided
@@ -382,20 +441,33 @@ class WorkflowService:
             "timestamp": datetime.now().isoformat(),
         }
 
-    async def _execute_parallel(self, nodes, edges, session_id, status_callback, start_time, workflow_id: Optional[str] = None) -> Dict:
+    async def _execute_parallel(
+        self,
+        nodes,
+        edges,
+        session_id,
+        status_callback,
+        start_time,
+        workflow_id: Optional[str] = None,
+        user_id: str = "owner",
+    ) -> Dict:
         """Execute with parallel orchestration engine."""
         # Use passed workflow_id (from deployment) or generate new one
         if not workflow_id:
             workflow_id = f"workflow_{session_id}_{int(time.time() * 1000)}"
         executor = self._get_workflow_executor(status_callback)
 
-        result = await executor.execute_workflow(
-            workflow_id=workflow_id,
-            nodes=nodes,
-            edges=edges,
-            session_id=session_id,
-            enable_caching=True,
-        )
+        token = _parallel_user_id.set(str(user_id or "owner"))
+        try:
+            result = await executor.execute_workflow(
+                workflow_id=workflow_id,
+                nodes=nodes,
+                edges=edges,
+                session_id=session_id,
+                enable_caching=True,
+            )
+        finally:
+            _parallel_user_id.reset(token)
 
         return {
             "success": result.get("success", False),
@@ -408,7 +480,16 @@ class WorkflowService:
             "timestamp": datetime.now().isoformat(),
         }
 
-    async def _execute_sequential(self, nodes, edges, session_id, status_callback, start_time, workflow_id: Optional[str] = None) -> Dict:
+    async def _execute_sequential(
+        self,
+        nodes,
+        edges,
+        session_id,
+        status_callback,
+        start_time,
+        workflow_id: Optional[str] = None,
+        user_id: str = "owner",
+    ) -> Dict:
         """Execute nodes sequentially (fallback mode)."""
         execution_id = uuid4().hex
         start_node = self._find_start_node(nodes)
@@ -454,6 +535,7 @@ class WorkflowService:
                 session_id=session_id,
                 execution_id=execution_id,
                 workflow_id=workflow_id,
+                user_id=user_id,
             )
 
             results[node_id] = result
@@ -491,6 +573,9 @@ class WorkflowService:
         session_id: str = "default",
         status_callback=None,
         workflow_id: Optional[str] = None,
+        graph_version: int = 0,
+        generation: int = 0,
+        user_id: str = "owner",
     ) -> Dict[str, Any]:
         """Deploy workflow in event-driven mode.
 
@@ -500,9 +585,30 @@ class WorkflowService:
             session_id: Session identifier
             status_callback: Status update callback
             workflow_id: Workflow ID for per-workflow deployment tracking
+            graph_version: Normalized graph contract version
+            generation: Durable workflow-control generation
+            user_id: Authenticated server-owned user identity
         """
         manager = self._get_deployment_manager()
-        return await manager.deploy(nodes, edges, session_id, status_callback, workflow_id)
+        if int(graph_version or 0) < 2 or int(generation or 0) <= 0:
+            return await manager.deploy(
+                nodes,
+                edges,
+                session_id,
+                status_callback,
+                workflow_id,
+                user_id=user_id,
+            )
+        return await manager.deploy(
+            nodes,
+            edges,
+            session_id,
+            status_callback,
+            workflow_id,
+            graph_version,
+            generation,
+            user_id=user_id,
+        )
 
     async def cancel_deployment(self, workflow_id: Optional[str] = None) -> Dict[str, Any]:
         """Cancel active deployment.

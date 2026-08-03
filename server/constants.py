@@ -48,15 +48,20 @@ AI_AGENT_TYPES: FrozenSet[str] = frozenset(
         "ai_employee",
         "rlm_agent",
         "claude_code_agent",
+        "codex_agent",
         "vertex_managed_agent",
     ]
 )
 
 AI_MEMORY_TYPES: FrozenSet[str] = frozenset(
     [
+        # V2 exposes this node through input-tools, while immutable V1
+        # generations still recognize their recorded input-memory topology.
         "simpleMemory",
     ]
 )
+
+AI_CONTEXT_TYPES: FrozenSet[str] = frozenset(["context"])
 
 # Tool node types (connect to AI Agent's input-tools handle)
 AI_TOOL_TYPES: FrozenSet[str] = frozenset(
@@ -66,6 +71,7 @@ AI_TOOL_TYPES: FrozenSet[str] = frozenset(
         "duckduckgoSearch",
         "writeTodos",
         "processManager",
+        "simpleMemory",
     ]
 )
 
@@ -89,7 +95,8 @@ AI_MODEL_TYPES: FrozenSet[str] = AI_AGENT_TYPES | AI_CHAT_MODEL_TYPES
 # (input-memory, input-tools, input-model, input-skill).
 # They don't execute independently - they're used by their parent nodes.
 CONFIG_NODE_TYPES: FrozenSet[str] = (
-    AI_MEMORY_TYPES  # Memory nodes (connect to input-memory)
+    AI_CONTEXT_TYPES  # Context nodes (connect to input-context)
+    | AI_MEMORY_TYPES  # Legacy V1 memory / V2 Memory tool config nodes
     | AI_TOOL_TYPES  # Tool nodes (connect to AI Agent's input-tools)
     | AI_CHAT_MODEL_TYPES  # Model config nodes (connect to input-model)
     | SKILL_NODE_TYPES  # Skill nodes (connect to Zeenie's input-skill)

@@ -16,7 +16,15 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 
 // Fields allowed in node.data for export/save - everything else is parameter data
 // that belongs in the DB and should not leak into exported JSON files.
-export const UI_DATA_FIELDS = new Set(['label', 'disabled', 'condition']);
+export const UI_DATA_FIELDS = new Set([
+  'label',
+  'disabled',
+  'condition',
+  // Backend-owned Context companion identity. The client only preserves
+  // these values; normalization and lifecycle decisions remain server-side.
+  'systemManaged',
+  'agentNodeId',
+]);
 
 /**
  * Declarative manifest of what an exported workflow needs to run on the

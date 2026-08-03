@@ -332,6 +332,13 @@ class TestSpawnChildRun:
             "nodes": [_node("wh-1", "webhookTrigger"), _node("agent-1", "aiAgent")],
             "edges": [_edge("wh-1", "agent-1")],
             "session_id": "sess-1",
+            "_temporal_routing_v1": {
+                "version": 1,
+                "agent_workflow_enabled": True,
+                "per_type_dispatch_enabled": True,
+                "worker_pool_enabled": False,
+            },
+            "user_id": "user-7",
         }
 
         await wf._spawn_child_run(event, listener_data)
@@ -350,6 +357,10 @@ class TestSpawnChildRun:
         assert wh["_pre_executed"] is True
         assert wh["_trigger_output"]["path"] == "/hook"
         assert wh["_trigger_output"]["_event_envelope"]["id"] == "evt-42"
+        assert child_args["_temporal_routing_v1"] == (
+            listener_data["_temporal_routing_v1"]
+        )
+        assert child_args["user_id"] == "user-7"
 
     @pytest.mark.asyncio
     async def test_spawn_uses_latest_saved_graph_tools(self, monkeypatch):

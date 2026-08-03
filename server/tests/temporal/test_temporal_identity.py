@@ -66,31 +66,25 @@ def patched_workflow(monkeypatch):
 
 
 class TestIdentityHelpers:
-    def test_patch_ids_are_stable_protocol_constants(self):
-        from services.temporal.agent_workflow import TOOL_CALL_IDENTITY_V2_PATCH
-        from services.temporal.workflow import AGENT_CHILD_ID_V2_PATCH
-
-        assert AGENT_CHILD_ID_V2_PATCH == "machina-agent-child-id-v2"
-        assert TOOL_CALL_IDENTITY_V2_PATCH == "agent-tool-call-identity-v2"
 
     def test_root_child_id_uses_run_and_canvas_node(self):
-        from services.temporal.workflow import _agent_child_workflow_id_v2
+        from services.temporal.workflow import _agent_child_workflow_id
 
-        assert _agent_child_workflow_id_v2("root-a", "agent-1") == "root-a-agent-agent-1"
-        assert _agent_child_workflow_id_v2("root-a", "agent-1") != _agent_child_workflow_id_v2("root-a", "agent-2")
-        assert _agent_child_workflow_id_v2("root-a", "agent-1") != _agent_child_workflow_id_v2("root-b", "agent-1")
+        assert _agent_child_workflow_id("root-a", "agent-1") == "root-a-agent-agent-1"
+        assert _agent_child_workflow_id("root-a", "agent-1") != _agent_child_workflow_id("root-a", "agent-2")
+        assert _agent_child_workflow_id("root-a", "agent-1") != _agent_child_workflow_id("root-b", "agent-1")
 
     def test_same_tool_calls_have_distinct_command_ids(self):
         from services.temporal.agent_workflow import (
-            _delegation_child_id_v2,
-            _refresh_tools_activity_id_v2,
-            _tool_activity_id_v2,
+            _delegation_child_id,
+            _refresh_tools_activity_id,
+            _tool_activity_id,
         )
 
-        assert _tool_activity_id_v2("tool-1", 0, 0) == "tool-tool-1-1-1"
-        assert _tool_activity_id_v2("tool-1", 0, 1) == "tool-tool-1-1-2"
-        assert _delegation_child_id_v2("agent-run", "agent-2", 0, 1) == "agent-run-delegate-agent-2-1-2"
-        assert _refresh_tools_activity_id_v2("builder-1", 2, 1) == "refresh-tools-builder-1-3-2"
+        assert _tool_activity_id("tool-1", 0, 0) == "tool-tool-1-1-1"
+        assert _tool_activity_id("tool-1", 0, 1) == "tool-tool-1-1-2"
+        assert _delegation_child_id("agent-run", "agent-2", 0, 1) == "agent-run-delegate-agent-2-1-2"
+        assert _refresh_tools_activity_id("builder-1", 2, 1) == "refresh-tools-builder-1-3-2"
 
     def test_duplicate_visible_name_error_is_deterministic_and_actionable(self):
         from services.temporal.agent_workflow import _duplicate_visible_tool_name_error
@@ -108,18 +102,6 @@ class TestIdentityHelpers:
         assert "unique Tool Name" in message
         assert _duplicate_visible_tool_name_error([_tool("todo-a"), _tool("search-1", name="search")]) is None
 
-    def test_patch_gates_keep_legacy_command_shapes_in_source(self):
-        from services.temporal.agent_workflow import AgentWorkflow
-        from services.temporal.workflow import MachinaWorkflow
-
-        root_source = inspect.getsource(MachinaWorkflow.run)
-        assert 'workflow.patched(AGENT_CHILD_ID_V2_PATCH)' in root_source
-        assert 'f"{workflow_slug}-{node_label_slug(node)}"' in root_source
-
-        agent_source = inspect.getsource(AgentWorkflow.run)
-        assert 'workflow.patched(TOOL_CALL_IDENTITY_V2_PATCH)' in agent_source
-        assert 'f"tool-{tool_info[\'tool_node_id\']}-{iteration + 1}"' in agent_source
-        assert 'f"refresh-tools-{tool_info[\'tool_node_id\']}-{iteration + 1}"' in agent_source
 
 
 class TestRootChildIdentity:
@@ -128,9 +110,11 @@ class TestRootChildIdentity:
         from services.temporal.workflow import MachinaWorkflow
 
         child_ids: list[str] = []
+        child_contexts: list[dict] = []
 
-        async def fake_start_child_workflow(_name, *, id, **_kwargs):
+        async def fake_start_child_workflow(_name, *, id, args, **_kwargs):
             child_ids.append(id)
+            child_contexts.append(args[0])
             handle = asyncio.get_running_loop().create_future()
             handle.set_result({"success": True, "result": {"response": id}})
             return handle
@@ -139,7 +123,11 @@ class TestRootChildIdentity:
         monkeypatch.setattr(
             MachinaWorkflow,
             "_resolve_dispatch",
-            lambda _self, _node_type: {"kind": "child_workflow", "name": "AgentWorkflow", "queue": None},
+            lambda _self, _node_type, **_kwargs: {
+                "kind": "child_workflow",
+                "name": "AgentWorkflow",
+                "queue": None,
+            },
         )
 
         result = await MachinaWorkflow().run(
@@ -152,50 +140,17 @@ class TestRootChildIdentity:
                 "workflow_id": "graph-1",
                 "workflow_slug": "Graph",
                 "execution_id": "root-run-1",
+                "user_id": "account-41",
             }
         )
 
         assert result["success"] is True
         assert child_ids == ["root-run-1-agent-agent-a", "root-run-1-agent-agent-b"]
+        assert [context["user_id"] for context in child_contexts] == [
+            "account-41",
+            "account-41",
+        ]
 
-    @pytest.mark.asyncio
-    async def test_pre_patch_history_keeps_legacy_label_child_id(self, monkeypatch, patched_workflow):
-        from services.temporal.workflow import MachinaWorkflow
-
-        monkeypatch.setattr(patched_workflow, "patched", lambda _patch_id: False)
-        child_ids: list[str] = []
-
-        async def fake_start_child_workflow(_name, *, id, **_kwargs):
-            child_ids.append(id)
-            handle = asyncio.get_running_loop().create_future()
-            handle.set_result({"success": True, "result": {"response": id}})
-            return handle
-
-        monkeypatch.setattr(patched_workflow, "start_child_workflow", fake_start_child_workflow)
-        monkeypatch.setattr(
-            MachinaWorkflow,
-            "_resolve_dispatch",
-            lambda _self, _node_type: {
-                "kind": "child_workflow",
-                "name": "AgentWorkflow",
-                "queue": None,
-            },
-        )
-
-        result = await MachinaWorkflow().run(
-            {
-                "nodes": [
-                    {"id": "agent-a", "type": "aiAgent", "data": {"label": "Legacy Worker"}},
-                ],
-                "edges": [],
-                "workflow_id": "graph-1",
-                "workflow_slug": "Graph_One",
-                "execution_id": "root-run-1",
-            }
-        )
-
-        assert result["success"] is True
-        assert child_ids == ["Graph_One-Legacy_Worker"]
 
 
 class TestAgentCallIdentity:
@@ -209,11 +164,11 @@ class TestAgentCallIdentity:
 
         async def fake_execute_activity(name, *, args, **kwargs):
             nonlocal llm_steps
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _agent_payload([_tool("todo-1")])
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_steps += 1
                 if llm_steps == 1:
                     return {
@@ -228,9 +183,9 @@ class TestAgentCallIdentity:
             if name == "node.writeTodos.v1":
                 tool_commands.append((kwargs["activity_id"], args[0]))
                 return {"success": True, "todos": []}
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 
@@ -249,50 +204,6 @@ class TestAgentCallIdentity:
         assert all(payload["invoking_agent_node_id"] == "agent-1" for _command_id, payload in tool_commands)
         assert all(payload["agent_iteration"] == 1 for _command_id, payload in tool_commands)
 
-    @pytest.mark.asyncio
-    async def test_pre_patch_history_keeps_legacy_activity_id_and_payload(self, monkeypatch, patched_workflow):
-        import services.temporal.agent_workflow as agent_module
-        from services.temporal.agent_workflow import AgentWorkflow
-
-        monkeypatch.setattr(patched_workflow, "patched", lambda _patch_id: False)
-        tool_commands: list[tuple[str, dict]] = []
-        llm_steps = 0
-
-        async def fake_execute_activity(name, *, args, **kwargs):
-            nonlocal llm_steps
-            if name == "agent.prepare_payload.v1":
-                return _agent_payload([_tool("todo-1")])
-            if name == "agent.broadcast_progress.v1":
-                return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
-                llm_steps += 1
-                if llm_steps == 1:
-                    return {
-                        "kind": "tool_calls",
-                        "calls": [
-                            {"id": "legacy-call", "name": "write_todos", "args": {"todos": []}},
-                        ],
-                        "usage": {},
-                    }
-                return {"kind": "final", "content": "done", "usage": {}}
-            if name == "node.writeTodos.v1":
-                tool_commands.append((kwargs["activity_id"], args[0]))
-                return {"success": True, "todos": []}
-            if name == "agent.store_output.v1":
-                return {"stored": True}
-            if name == "agent.skill.clear.v1":
-                return {"cleared": True}
-            raise AssertionError(f"Unexpected activity {name}")
-
-        monkeypatch.setattr(patched_workflow, "execute_activity", fake_execute_activity)
-        monkeypatch.setattr(agent_module, "get_node_class", lambda _node_type: SimpleNamespace(needs_canvas=False))
-
-        result = await AgentWorkflow().run({"node_id": "agent-1", "execution_id": "root-run-1"})
-
-        assert result["success"] is True
-        assert tool_commands[0][0] == "tool-todo-1-1"
-        assert "tool_call_index" not in tool_commands[0][1]
-        assert "invoking_agent_node_id" not in tool_commands[0][1]
 
     @pytest.mark.asyncio
     async def test_duplicate_initial_names_fail_before_llm(self, monkeypatch, patched_workflow):
@@ -302,9 +213,9 @@ class TestAgentCallIdentity:
 
         async def fake_execute_activity(name, *, args, **_kwargs):
             activities.append((name, args[0]))
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _agent_payload([_tool("todo-a", label="First"), _tool("todo-b", label="Second")])
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 return {"emitted": True}
             raise AssertionError(f"Duplicate names must fail before {name}")
 
@@ -320,8 +231,8 @@ class TestAgentCallIdentity:
             "todo-b",
         ]
         assert [name for name, _payload in activities] == [
-            "agent.prepare_payload.v1",
-            "agent.broadcast_progress.v1",
+            "agent.prepare_payload",
+            "agent.broadcast_progress",
         ]
         error_phase = activities[-1][1]
         assert error_phase["status"] == "error"
@@ -337,12 +248,12 @@ class TestAgentCallIdentity:
         phases: list[dict] = []
 
         async def fake_execute_activity(name, *, args, **kwargs):
-            if name == "agent.prepare_payload.v1":
+            if name == "agent.prepare_payload":
                 return _agent_payload([_tool("todo-1", label="Original")])
-            if name == "agent.broadcast_progress.v1":
+            if name == "agent.broadcast_progress":
                 phases.append(args[0])
                 return {"emitted": True}
-            if name == "agent.execute_llm_step.v1":
+            if name == "agent.execute_llm_step":
                 llm_payloads.append(args[0])
                 if len(llm_payloads) == 1:
                     return {
@@ -353,12 +264,12 @@ class TestAgentCallIdentity:
                 return {"kind": "final", "content": "done", "usage": {}}
             if name == "node.writeTodos.v1":
                 return {"success": True, "operations": [{"op": "add_node"}]}
-            if name == "agent.refresh_tools.v1":
+            if name == "agent.refresh_tools":
                 refresh_commands.append((kwargs["activity_id"], args[0]))
                 return {"tools": [_tool("todo-2", label="Conflicting")]}
-            if name == "agent.store_output.v1":
+            if name == "agent.store_output":
                 return {"stored": True}
-            if name == "agent.skill.clear.v1":
+            if name == "agent.skill.clear":
                 return {"cleared": True}
             raise AssertionError(f"Unexpected activity {name}")
 

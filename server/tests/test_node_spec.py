@@ -795,6 +795,9 @@ class TestUIHintsInNodeSpec:
         spec = get_node_spec("masterSkill")
         assert spec is not None
         assert spec["displayName"] == "Master Skill"
+        assert {
+            handle.get("name") for handle in spec.get("handles", [])
+        } == {"output-tool"}
         hints = spec.get("uiHints", {})
         assert hints.get("isMasterSkillEditor") is True
         assert hints.get("hideRunButton") is True
@@ -922,7 +925,11 @@ class TestNodeSpecContractInvariants:
             "hasCodeEditor",
             "isMasterSkillEditor",
             "isMemoryPanel",
+            "isMemoryToolPanel",
+            "isContextPanel",
             "isToolPanel",
+            "requiresContext",
+            "systemManaged",
             # writeTodos: render the editable Current Todos manager in the
             # middle section (in addition to isToolPanel).
             "isTodoEditor",
@@ -1028,9 +1035,9 @@ class TestPluginContractInvariants:
                 assert h.get("kind") in {"input", "output"}, f"{t}.{h.get('name')}: kind={h.get('kind')!r} not input/output"
                 assert h.get("position") in self.VALID_POSITIONS, f"{t}.{h.get('name')}: position={h.get('position')!r} invalid"
 
-    def test_agent_kind_has_skill_tool_memory_handles(self):
+    def test_agent_kind_has_skill_tool_context_handles(self):
         # Contract: anything registered as an agent must accept skill,
-        # tools, memory, and task inputs (the core n8n AIAgent handle
+        # tools, Context, and task inputs (the core AIAgent handle
         # set). Keeps the AIAgentNode renderer honest.
         for t in self._plugin_types():
             spec = get_node_spec(t)
@@ -1042,7 +1049,7 @@ class TestPluginContractInvariants:
             if "social" in (spec.get("group") or []):
                 continue
             names = {h.get("name") for h in spec.get("handles") or []}
-            for required in ("input-skill", "input-tools", "input-memory", "input-task"):
+            for required in ("input-skill", "input-tools", "input-context", "input-task"):
                 assert required in names, f"{t}: componentKind=agent missing handle {required!r}; got {sorted(names)}"
 
     def test_trigger_kind_emits_output(self):

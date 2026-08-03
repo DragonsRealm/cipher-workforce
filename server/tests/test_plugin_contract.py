@@ -187,7 +187,12 @@ class TestToolSchemaGeneration:
             # itself — the declaration points at a definition that no
             # longer exists (nested BaseModel / Enum Params fields).
             assert '"$ref"' not in json.dumps(params), f"{cls.__qualname__} tool schema contains a dangling $ref — " "nested refs must be inlined, not stripped"
-            assert schema.get("name") == cls.type
+            expected_name = (
+                cls.tool_name
+                if getattr(cls, "tool_schema_locked", False)
+                else cls.type
+            )
+            assert schema.get("name") == expected_name
 
 
 class TestToolSchemaFastPath:
@@ -208,6 +213,25 @@ class TestToolSchemaFastPath:
             resolved = get_node_class(cls.type)
             assert resolved is cls, f"{cls.__qualname__}: fast-path lookup by type '{cls.type}' " f"returned {resolved}, expected {cls}"
             assert hasattr(resolved, "Params"), f"{cls.__qualname__} has no Params — fast-path would miss it"
+
+    def test_every_invokable_tool_emits_canonical_connection_handle(self):
+        from services.node_spec import get_node_spec
+
+        for cls in _all_plugin_classes():
+            is_invokable_tool = getattr(cls, "usable_as_tool", False) or (
+                getattr(cls, "component_kind", "") == "tool"
+                and getattr(cls, "ui_hints", {}).get("isMasterSkillEditor")
+                is not True
+            )
+            if not is_invokable_tool:
+                continue
+            handles = get_node_spec(cls.type).get("handles") or []
+            assert any(
+                handle.get("name") == "output-tool"
+                and handle.get("kind") == "output"
+                and handle.get("role") == "tools"
+                for handle in handles
+            ), f"{cls.type}: invokable tool is missing canonical output-tool"
 
 
 class TestInterpretResultContract:

@@ -54,7 +54,10 @@ import { useReactFlowNodes } from './hooks/useReactFlowNodes';
 import { useAutoSkillEdges } from './hooks/useAutoSkillEdges';
 import { useWorkflowOpsListener } from './hooks/useWorkflowOpsListener';
 import { useCopyPaste } from './hooks/useCopyPaste';
-import { useWebSocket } from './contexts/WebSocketContext';
+import {
+  useWebSocket,
+  type WorkflowStartResult,
+} from './contexts/WebSocketContext';
 import { useNodeStatusStore } from './stores/nodeStatusStore';
 import {
   sanitizeNodesForComparison,
@@ -316,6 +319,48 @@ const DashboardContent: React.FC = () => {
     }));
   }, [nodes, getAllNodeParameters, saveNodeParameters]);
 
+  const applyAuthoritativeStartGraph = React.useCallback((
+    workflowId: string,
+    result: WorkflowStartResult,
+  ) => {
+    if (
+      !result.graph
+      || !Array.isArray(result.graph.nodes)
+      || !Array.isArray(result.graph.edges)
+    ) {
+      return;
+    }
+
+    // Start admits and normalizes the graph on the backend. Once it succeeds,
+    // replace both UI copies with that exact topology. Aliases only preserve
+    // the user's selected-node identity across canonical ID assignment.
+    const store = useAppStore.getState();
+    const workflow = store.currentWorkflow;
+    if (!workflow || workflow.id !== workflowId) return;
+
+    const aliases = result.aliases ?? {};
+    const selectedId = store.selectedNode
+      ? aliases[store.selectedNode.id] ?? store.selectedNode.id
+      : null;
+    const authoritativeNodes = (result.graph.nodes as Node[]).map((node) => ({
+      ...node,
+      selected: selectedId !== null && node.id === selectedId,
+    }));
+    const authoritativeEdges = result.graph.edges as Edge[];
+    const canonicalSelection = selectedId
+      ? authoritativeNodes.find((node) => node.id === selectedId) ?? null
+      : null;
+
+    store.setCurrentWorkflow({
+      ...workflow,
+      nodes: authoritativeNodes,
+      edges: authoritativeEdges,
+    });
+    store.setSelectedNode(canonicalSelection);
+    setNodes(authoritativeNodes);
+    setEdges(authoritativeEdges);
+  }, [setEdges, setNodes]);
+
   // Toggle disabled state on selected nodes
   const toggleDisableSelected = React.useCallback(() => {
     setNodes(nds => nds.map(node => {
@@ -505,7 +550,14 @@ const DashboardContent: React.FC = () => {
   // canvas rendered the fallback default node on first drop.
   const [specsKey, setSpecsKey] = React.useState(() => cachedNodeSpecTypesKey());
   React.useEffect(() => {
-    if (!isReady || hasPrefetchedSpecs.current) return;
+    if (!isReady) {
+      // A backend restart can add or change NodeSpecs while this editor tab
+      // remains open. Re-arm the catalogue check so reconnect runs the
+      // revision-based cache invalidation and restores new icons/handles.
+      hasPrefetchedSpecs.current = false;
+      return;
+    }
+    if (hasPrefetchedSpecs.current) return;
     if (!featureFlags.nodeSpecBackend) {
       // When the backend is disabled, mark ready so the legacy fallback
       // dispatch runs without waiting on a never-completing prefetch.
@@ -827,7 +879,14 @@ const DashboardContent: React.FC = () => {
         })),
       });
 
-      await startWorkflow(currentWorkflow.id, nodes, edges, 'default', workflowControl.revision);
+      const result = await startWorkflow(
+        currentWorkflow.id,
+        nodes,
+        edges,
+        'default',
+        workflowControl.revision,
+      );
+      applyAuthoritativeStartGraph(currentWorkflow.id, result);
     } catch (error: any) {
       console.error('[Dashboard] Deployment error:', error);
       alert(`Deployment error: ${error.message}`);
@@ -844,17 +903,23 @@ const DashboardContent: React.FC = () => {
     try {
       const status = await getWorkflowControlStatus(workflow.id);
       if (!status.can_start) return;
-      await startWorkflow(
+      const result = await startWorkflow(
         workflow.id,
         workflow.nodes,
         workflow.edges,
         'default',
         status.revision,
       );
+      applyAuthoritativeStartGraph(workflow.id, result);
     } catch {
       toast.error('Could not start the example — press Start on the toolbar.');
     }
-  }, [getWorkflowControlStatus, openExampleAndChat, startWorkflow]);
+  }, [
+    applyAuthoritativeStartGraph,
+    getWorkflowControlStatus,
+    openExampleAndChat,
+    startWorkflow,
+  ]);
 
   const handlePauseWorkflow = async () => {
     const workflowId = currentWorkflow?.id;
@@ -888,7 +953,10 @@ const DashboardContent: React.FC = () => {
     if (!currentWorkflow?.nodes.length) return {};
     const nodeIds = currentWorkflow.nodes.map(n => n.id);
     try {
-      const allParams = await getAllNodeParameters(nodeIds);
+      const allParams = await getAllNodeParameters(nodeIds, {
+        purpose: 'export',
+        workflowId: currentWorkflow.id,
+      });
       const result: Record<string, Record<string, any>> = {};
       for (const [nodeId, np] of Object.entries(allParams)) {
         if (np?.parameters && Object.keys(np.parameters).length > 0) {

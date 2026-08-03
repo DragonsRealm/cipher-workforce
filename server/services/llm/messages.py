@@ -32,10 +32,14 @@ def filter_empty_messages(messages: Sequence) -> List:
             filtered.append(m)
             continue
 
-        # AI/assistant with tool_calls -- keep even if content is empty
+        # AI/assistant replay state must survive even when it has no rendered
+        # text. Provider compaction, reasoning signatures, and ordered output
+        # blocks are inputs to the next request, not presentation content.
         if role in ("ai", "assistant"):
             tool_calls = getattr(m, "tool_calls", None)
-            if tool_calls:
+            provider_state = getattr(m, "provider_state", None)
+            blocks = getattr(m, "blocks", None)
+            if tool_calls or provider_state or blocks:
                 filtered.append(m)
                 continue
 

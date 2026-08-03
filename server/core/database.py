@@ -2,6 +2,7 @@
 
 import json
 import inspect
+import secrets
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Dict, Any, List, Optional, Tuple, Union
@@ -42,6 +43,15 @@ from models.database import (
     ProxyProviderConfig,
     ProxyRoutingRule,
     WorkflowControlExecution,
+    WorkflowContextArchiveOutbox,
+)
+from models.agent_context import (  # noqa: F401 - registers SQLModel tables
+    AgentContextBlobRecord,
+    AgentContextCheckpointRecord,
+    AgentContextCompactionAttemptRecord,
+    AgentContextEventRecord,
+    AgentContextProviderBindingRecord,
+    AgentContextThreadRecord,
 )
 from models.cache import CacheEntry  # SQLite-backed cache for Redis alternative
 from core.logging import get_logger
@@ -59,6 +69,12 @@ ParameterMutator = Callable[
         Tuple[Dict[str, Any], Optional[Dict[str, Any]]],
     ],
 ]
+
+
+def _workflow_context_node_ids(data: Any) -> set[str]:
+    if not isinstance(data, dict):
+        return set()
+    return {str(node.get("id")) for node in data.get("nodes") or [] if isinstance(node, dict) and node.get("type") == "context" and node.get("id")}
 
 
 class Database:
@@ -580,6 +596,7 @@ class Database:
             workflow = selected.scalar_one_or_none()
             if workflow is None:
                 return {"found": False}
+            previous_context_ids = _workflow_context_node_ids(workflow.data)
             transformed = mutator(deepcopy(workflow.data or {}))
             if isinstance(transformed, tuple):
                 new_data, metadata = transformed
@@ -587,6 +604,16 @@ class Database:
                 new_data, metadata = transformed, {}
             if not isinstance(new_data, dict):
                 raise TypeError("workflow data mutator must return a dict")
+            for context_node_id in sorted(
+                previous_context_ids - _workflow_context_node_ids(new_data)
+            ):
+                session.add(
+                    WorkflowContextArchiveOutbox(
+                        id=f"ctxarc-{secrets.token_hex(16)}",
+                        workflow_id=workflow_id,
+                        context_node_id=context_node_id,
+                    )
+                )
             workflow.data = deepcopy(new_data)
             workflow.updated_at = datetime.now(timezone.utc)
             return {"found": True, **deepcopy(metadata or {})}
@@ -670,6 +697,7 @@ class Database:
         slug: str,
         data: Dict[str, Any],
         description: Optional[str] = None,
+        context_id_aliases: Optional[Dict[str, str]] = None,
     ) -> bool:
         """Save or update workflow.
 
@@ -686,6 +714,8 @@ class Database:
                 stmt = select(Workflow).where(Workflow.id == workflow_id)
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
+                previous_context_ids = _workflow_context_node_ids(existing.data if existing is not None else {})
+                next_context_ids = _workflow_context_node_ids(data)
 
                 if existing:
                     existing.name = name
@@ -696,6 +726,24 @@ class Database:
                     existing = Workflow(id=workflow_id, name=name, slug=slug, description=description, data=data)
                     session.add(existing)
 
+                aliases = context_id_aliases or {}
+                canonicalized_context_ids = {
+                    old_id
+                    for old_id in previous_context_ids
+                    if aliases.get(old_id) in next_context_ids
+                }
+                for context_node_id in sorted(
+                    previous_context_ids
+                    - next_context_ids
+                    - canonicalized_context_ids
+                ):
+                    session.add(
+                        WorkflowContextArchiveOutbox(
+                            id=f"ctxarc-{secrets.token_hex(16)}",
+                            workflow_id=workflow_id,
+                            context_node_id=context_node_id,
+                        )
+                    )
                 await session.commit()
                 return True
 
@@ -769,7 +817,7 @@ class Database:
             return False
 
     async def delete_workflow(self, workflow_id: str) -> bool:
-        """Delete workflow."""
+        """Delete a workflow and atomically enqueue its Context archives."""
         try:
             async with self.get_session() as session:
                 stmt = select(Workflow).where(Workflow.id == workflow_id)
@@ -777,6 +825,14 @@ class Database:
                 workflow = result.scalar_one_or_none()
 
                 if workflow:
+                    for context_node_id in sorted(_workflow_context_node_ids(workflow.data)):
+                        session.add(
+                            WorkflowContextArchiveOutbox(
+                                id=f"ctxarc-{secrets.token_hex(16)}",
+                                workflow_id=workflow_id,
+                                context_node_id=context_node_id,
+                            )
+                        )
                     await session.delete(workflow)
                     await session.commit()
 
@@ -784,6 +840,72 @@ class Database:
 
         except Exception as e:
             logger.error("Failed to delete workflow", workflow_id=workflow_id, error=str(e))
+            return False
+
+    async def list_workflow_context_archive_outbox(
+        self,
+        workflow_id: str,
+    ) -> List[Dict[str, str]]:
+        """List pending archive identities without loading Context payloads."""
+
+        try:
+            async with self.get_session() as session:
+                result = await session.execute(
+                    select(WorkflowContextArchiveOutbox)
+                    .where(
+                        WorkflowContextArchiveOutbox.workflow_id == workflow_id,
+                        WorkflowContextArchiveOutbox.status == "pending",
+                    )
+                    .order_by(
+                        WorkflowContextArchiveOutbox.created_at,
+                        WorkflowContextArchiveOutbox.id,
+                    )
+                )
+                return [
+                    {
+                        "id": row.id,
+                        "workflow_id": row.workflow_id,
+                        "context_node_id": row.context_node_id,
+                    }
+                    for row in result.scalars().all()
+                ]
+        except Exception as e:
+            logger.error(
+                "Failed to list workflow Context archive outbox",
+                workflow_id=workflow_id,
+                error=str(e),
+            )
+            return []
+
+    async def complete_workflow_context_archive_outbox(
+        self,
+        *,
+        outbox_id: str,
+        workflow_id: str,
+    ) -> bool:
+        """Idempotently mark one successfully archived Context intent."""
+
+        try:
+            async with self.get_session() as session:
+                row = await session.get(
+                    WorkflowContextArchiveOutbox,
+                    outbox_id,
+                )
+                if row is None or row.workflow_id != workflow_id:
+                    return False
+                if row.status == "completed":
+                    return True
+                row.status = "completed"
+                row.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+                return True
+        except Exception as e:
+            logger.error(
+                "Failed to complete workflow Context archive outbox",
+                workflow_id=workflow_id,
+                outbox_id=outbox_id,
+                error=str(e),
+            )
             return False
 
     # ============================================================================
@@ -2574,6 +2696,7 @@ class Database:
 
     async def create_workflow_control(self, control: WorkflowControlExecution) -> WorkflowControlExecution:
         from models.database import WorkflowRunDataScope
+        from services.workflow_sanitizer import sanitize_runtime_payload
 
         async with self.get_session() as session:
             session.add(control)
@@ -2596,8 +2719,8 @@ class Database:
             runtime_nodes = {
                 str(node["id"]): {
                     "type": node.get("type"),
-                    "canvas_data": dict(node.get("data") or {}),
-                    "parameters": parameters_by_id.get(str(node["id"]), {}),
+                    "canvas_data": sanitize_runtime_payload(dict(node.get("data") or {})),
+                    "parameters": sanitize_runtime_payload(parameters_by_id.get(str(node["id"]), {})),
                 }
                 for node in graph_nodes
             }
@@ -2615,7 +2738,7 @@ class Database:
                 node_data={
                     str(node.get("id")): {
                         "type": node.get("type"),
-                        "data": node.get("data", {}),
+                        "data": sanitize_runtime_payload(node.get("data", {})),
                     }
                     for node in control.graph_snapshot.get("nodes", [])
                     if node.get("id")

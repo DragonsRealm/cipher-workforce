@@ -245,6 +245,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...newWorkflow,
         id: result.id,
         slug: result.slug ?? newWorkflow.slug,
+        nodes: migrateNodes(result.data?.nodes ?? newWorkflow.nodes),
+        edges: result.data?.edges ?? newWorkflow.edges,
       },
       hasUnsavedChanges: false,
       selectedNode: null,
@@ -272,15 +274,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     const aliases = result.nodeIdAliases ?? {};
-    const nodes = currentWorkflow.nodes.map(node => {
-      const canonicalId = aliases[node.id];
-      return canonicalId ? { ...node, id: canonicalId } : node;
-    });
-    const edges = currentWorkflow.edges.map(edge => ({
-      ...edge,
-      source: aliases[edge.source] ?? edge.source,
-      target: aliases[edge.target] ?? edge.target,
-    }));
+    // Server normalization is authoritative: it creates Context companions,
+    // repairs protected edges, applies migrations, and returns canonical ids
+    // atomically. Alias rewriting is only for older servers that omit data.
+    const nodes = result.data?.nodes
+      ? migrateNodes(result.data.nodes as Node[])
+      : currentWorkflow.nodes.map(node => {
+          const canonicalId = aliases[node.id];
+          return canonicalId ? { ...node, id: canonicalId } : node;
+        });
+    const edges = result.data?.edges
+      ? (result.data.edges as Edge[])
+      : currentWorkflow.edges.map(edge => ({
+          ...edge,
+          source: aliases[edge.source] ?? edge.source,
+          target: aliases[edge.target] ?? edge.target,
+        }));
+    const selected = get().selectedNode;
+    const selectedId = selected ? aliases[selected.id] ?? selected.id : null;
+    const normalizedSelection = selectedId
+      ? nodes.find((node) => node.id === selectedId) ?? null
+      : null;
 
     set({
       currentWorkflow: {
@@ -291,9 +305,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         slug: result.slug ?? currentWorkflow.slug,
         lastModified: new Date(),
       },
-      selectedNode: get().selectedNode && aliases[get().selectedNode!.id]
-        ? { ...get().selectedNode!, id: aliases[get().selectedNode!.id] }
-        : get().selectedNode,
+      selectedNode: normalizedSelection,
       hasUnsavedChanges: false,
     });
     invalidateWorkflowsList();
@@ -359,14 +371,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
 
       // Save migrated workflow to database (sanitize node.data)
-      await workflowApi.saveWorkflow(
+      const result = await workflowApi.saveWorkflow(
         migratedWorkflow.id,
         migratedWorkflow.name,
         { nodes: sanitizeNodes(migratedWorkflow.nodes), edges: migratedWorkflow.edges }
       );
+      if (!result) return;
 
       set({
-        currentWorkflow: migratedWorkflow,
+        currentWorkflow: {
+          ...migratedWorkflow,
+          id: result.id,
+          slug: result.slug ?? migratedWorkflow.slug,
+          nodes: result.data?.nodes
+            ? migrateNodes(result.data.nodes as Node[])
+            : migratedWorkflow.nodes,
+          edges: result.data?.edges
+            ? (result.data.edges as Edge[])
+            : migratedWorkflow.edges,
+        },
         hasUnsavedChanges: false
       });
       invalidateWorkflowsList();

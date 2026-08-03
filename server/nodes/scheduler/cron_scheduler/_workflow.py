@@ -29,23 +29,11 @@ Refs:
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any, Dict
 
 from temporalio import workflow
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.workflow import ParentClosePolicy
-
-
-CHILD_SEARCH_ATTRIBUTES_PATCH = "cron-child-search-attributes-v1"
-COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
-    "cron-cooperative-pause-scheduling-v1"
-)
-# Same contract as trigger_listener_workflow.UNBOUNDED_CHILD_RUNS_PATCH:
-# a spawned run may execute or stay paused for months, so new firings
-# start children without lifetime caps; the patch keeps replay
-# compatibility for histories recorded with the old 1h caps.
-UNBOUNDED_CHILD_RUNS_PATCH = "cron-unbounded-child-runs-v1"
 
 
 @workflow.defn(name="CronTriggerWorkflow", sandboxed=False)
@@ -134,41 +122,26 @@ class CronTriggerWorkflow:
         firing_iso = trigger_output["timestamp"]
         child_id = f"{workflow_slug}-{trigger_label}-{firing_iso}"
 
-        try:
-            use_child_search_attributes = workflow.patched(
-                CHILD_SEARCH_ATTRIBUTES_PATCH
-            )
-            use_cooperative_pause_schedule_gate = workflow.patched(
-                COOPERATIVE_PAUSE_SCHEDULING_PATCH
-            )
-            unbounded_child_runs = workflow.patched(UNBOUNDED_CHILD_RUNS_PATCH)
-        except RuntimeError:  # direct unit invocation outside Temporal runtime
-            use_child_search_attributes = False
-            use_cooperative_pause_schedule_gate = False
-            unbounded_child_runs = True
         from services.temporal.trigger_listener_workflow import (
             event_workflow_search_attributes,
         )
 
+        # A spawned run may execute — or stay cooperatively paused — for
+        # months, and Temporal's timeout timer keeps ticking through a
+        # pause, so children start without lifetime caps. Liveness is
+        # enforced at the activity layer via heartbeats.
         child_options = {
             "id": child_id,
             "parent_close_policy": ParentClosePolicy.ABANDON,
             "id_reuse_policy": (
                 WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
             ),
+            "search_attributes": event_workflow_search_attributes(
+                deployment_workflow_id
+            ),
         }
-        if not unbounded_child_runs:
-            # Replay-only: pre-patch histories recorded 1h caps on the
-            # child-start command. See UNBOUNDED_CHILD_RUNS_PATCH.
-            child_options["execution_timeout"] = timedelta(hours=1)
-            child_options["run_timeout"] = timedelta(hours=1)
-        if use_child_search_attributes:
-            child_options["search_attributes"] = (
-                event_workflow_search_attributes(deployment_workflow_id)
-            )
 
-        if use_cooperative_pause_schedule_gate:
-            await self._wait_until_resumed()
+        await self._wait_until_resumed()
         await workflow.start_child_workflow(
             "MachinaWorkflow",
             args=[
@@ -219,7 +192,5 @@ def _build_trigger_output(listener_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 __all__ = [
-    "CHILD_SEARCH_ATTRIBUTES_PATCH",
-    "COOPERATIVE_PAUSE_SCHEDULING_PATCH",
     "CronTriggerWorkflow",
 ]

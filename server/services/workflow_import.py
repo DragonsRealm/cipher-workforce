@@ -35,8 +35,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.logging import get_logger
 from services.node_registry import get_node_class
-from services.workflow_migrations import normalize_legacy_android_toolkit
-from services.workflow_naming import canonicalize_node_ids, next_available_slug
+from services.workflow_migrations import (
+    normalize_legacy_android_toolkit,
+    normalize_workflow_graph,
+)
+from services.workflow_naming import next_available_slug
 from services.workflow_validator import validate_workflow
 
 logger = get_logger(__name__)
@@ -262,6 +265,26 @@ async def import_workflow(
     nodes, edges, node_parameters, migration_warnings = normalize_legacy_android_toolkit(
         nodes, edges, node_parameters
     )
+    # Validation sees the exact V2 topology, but preview does not allocate a
+    # workflow identity or write state. Keep the pre-Context source so the
+    # commit pass can generate canonical import receipts after ID allocation.
+    migration_source_nodes = [dict(node) for node in nodes]
+    migration_source_edges = [dict(edge) for edge in edges]
+    migration_source_params = {
+        str(node_id): dict(params or {})
+        for node_id, params in node_parameters.items()
+    }
+    preview_normalization = normalize_workflow_graph(
+        "",
+        nodes,
+        edges,
+        node_parameters,
+        canonicalize_ids=False,
+    )
+    nodes = preview_normalization.nodes
+    edges = preview_normalization.edges
+    node_parameters = preview_normalization.node_parameters
+    migration_warnings.extend(preview_normalization.warnings)
 
     # 1. Validate. Errors block the import; warnings flow through.
     report = await validate_workflow(
@@ -306,46 +329,69 @@ async def import_workflow(
     # 6. Remap node ids — protects the node_parameters table from
     #    duplicate-id collisions across imports.
     remapped_nodes, remapped_edges, remapped_params = remap_node_ids(
-        nodes,
-        edges,
-        node_parameters,
+        migration_source_nodes,
+        migration_source_edges,
+        migration_source_params,
     )
 
     # 7. Save. Incremental system identity + name-derived slug for
     #    human-visible surfaces (folder names, Temporal Web UI).
     workflow_id = await database.allocate_workflow_id()
-    remapped_nodes, remapped_edges, canonical_aliases = canonicalize_node_ids(
-        workflow_id, remapped_nodes, remapped_edges
+    normalization = normalize_workflow_graph(
+        workflow_id,
+        remapped_nodes,
+        remapped_edges,
+        remapped_params,
     )
-    remapped_params = {
-        canonical_aliases.get(node_id, node_id): params
-        for node_id, params in remapped_params.items()
-    }
+    remapped_nodes = normalization.nodes
+    remapped_edges = normalization.edges
+    remapped_params = normalization.node_parameters
+    from services.workflow_context_migration import (
+        import_legacy_context_receipts,
+    )
+
+    imported = await import_legacy_context_receipts(
+        database,
+        normalization.state_imports,
+    )
+    if imported != len(normalization.state_imports):
+        return {
+            "success": False,
+            "error": "context_state_import_failed",
+            "report": report,
+        }
     slug = await next_available_slug(proposed_name, database)
+    from services.workflow_sanitizer import sanitize_workflow_graph
+
+    normalized_data = sanitize_workflow_graph(
+        {
+            "graphVersion": normalization.graph_version,
+            "nodes": remapped_nodes,
+            "edges": remapped_edges,
+        }
+    )
     saved = await database.save_workflow(
         workflow_id=workflow_id,
         name=proposed_name,
         slug=slug,
         description=workflow.get("description"),
-        data={"nodes": remapped_nodes, "edges": remapped_edges},
+        data=normalized_data,
     )
     if not saved:
         return {"success": False, "error": "save_failed", "report": report}
 
-    # 8. Per-node parameter saves under the remapped ids.
-    saved_params = 0
-    for node_id, params in remapped_params.items():
-        if not params:
-            continue
-        try:
-            await database.save_node_parameters(node_id, params)
-            saved_params += 1
-        except Exception as e:
-            logger.error(
-                "[workflow_import] save_node_parameters failed for %s: %s",
-                node_id,
-                e,
-            )
+    # 8. Per-node configuration saves. Legacy transcript/provider fields have
+    # already been preserved as immutable Context artifacts and are retired
+    # from the Memory tool's configuration surface.
+    from services.workflow_context_migration import persist_parameter_aliases
+
+    await persist_parameter_aliases(
+        database,
+        aliases={},
+        parameters=remapped_params,
+        context_import_completed=True,
+    )
+    saved_params = sum(bool(params) for params in remapped_params.values())
 
     # 9. CloudEvents broadcast — ``workflow.imported`` envelope. Other
     #    connected clients (browser tabs) listen for this and invalidate

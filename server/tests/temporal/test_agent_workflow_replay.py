@@ -76,17 +76,17 @@ def _prepared_payload(*, engine: str) -> dict[str, Any]:
     return payload
 
 
-@activity.defn(name="agent.prepare_payload.v1")
+@activity.defn(name="agent.prepare_payload")
 async def _prepare_payload(context: dict[str, Any]) -> dict[str, Any]:
     return _prepared_payload(engine=str(context["test_engine"]))
 
 
-@activity.defn(name="agent.broadcast_progress.v1")
+@activity.defn(name="agent.broadcast_progress")
 async def _broadcast_progress(_payload: dict[str, Any]) -> dict[str, Any]:
     return {"emitted": True}
 
 
-@activity.defn(name="agent.execute_llm_step.v1")
+@activity.defn(name="agent.execute_llm_step")
 async def _execute_llm_step(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("llm_engine") == "native":
         assert payload["message_wire_version"] == 2
@@ -129,12 +129,12 @@ async def _execute_llm_step(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@activity.defn(name="agent.store_output.v1")
+@activity.defn(name="agent.store_output")
 async def _store_output(_payload: dict[str, Any]) -> dict[str, Any]:
     return {"stored": True}
 
 
-@activity.defn(name="agent.skill.clear.v1")
+@activity.defn(name="agent.skill.clear")
 async def _clear_skills(_payload: dict[str, Any]) -> dict[str, Any]:
     return {"cleared": True}
 
@@ -211,13 +211,13 @@ async def _run_replay_gate() -> None:
         assert legacy_result["result"]["response"] == "done"
 
         expected_order = [
-            "agent.prepare_payload.v1",
-            "agent.broadcast_progress.v1",
-            "agent.broadcast_progress.v1",
-            "agent.execute_llm_step.v1",
-            "agent.store_output.v1",
-            "agent.skill.clear.v1",
-            "agent.broadcast_progress.v1",
+            "agent.prepare_payload",
+            "agent.broadcast_progress",
+            "agent.broadcast_progress",
+            "agent.execute_llm_step",
+            "agent.store_output",
+            "agent.skill.clear",
+            "agent.broadcast_progress",
         ]
         native_scheduled = _scheduled_activities(native_history)
         emergency_scheduled = _scheduled_activities(emergency_history)
@@ -305,15 +305,12 @@ async def _run_replay_gate() -> None:
             replay = await replayer.replay_workflow(captured)
             assert replay.replay_failure is None
 
-        # This fixture is frozen rather than generated from the workflow
-        # implementation under test, protecting already-recorded histories
-        # whose prepare result had no engine/version marker.
-        frozen_legacy = _load_captured_history(
-            "agent_legacy_pre_native_history.json.zlib.b64",
-            "agent-legacy-pre-native-captured-v1",
-        )
-        replay = await replayer.replay_workflow(frozen_legacy)
-        assert replay.replay_failure is None
+        # The frozen pre-native fixture was removed with the replay patches.
+        # It asserted that a history recorded BEFORE `agent-tool-call-identity-v2`
+        # still replayed; with the patch markers deleted that history is
+        # deliberately non-replayable, and Temporal history back-compat is
+        # explicitly out of scope. The generated-shape replays above still
+        # gate determinism for every history this code can now produce.
 
 
 def test_all_cutover_history_shapes_execute_and_replay() -> None:

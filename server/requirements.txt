@@ -121,9 +121,7 @@ google-auth==2.55.2
     #   google-genai
     #   opencompany-server
 google-auth-httplib2==0.4.0
-    # via
-    #   google-api-python-client
-    #   opencompany-server
+    # via google-api-python-client
 google-auth-oauthlib==1.4.0
     # via opencompany-server
 google-genai==2.11.0
@@ -341,8 +339,6 @@ python-multipart==0.0.32
 python-slugify==8.0.4
     # via opencompany-server
 python-telegram-bot==22.8
-    # via opencompany-server
-pytz==2026.2
     # via opencompany-server
 pywin32==312 ; sys_platform == 'win32'
     # via mcp

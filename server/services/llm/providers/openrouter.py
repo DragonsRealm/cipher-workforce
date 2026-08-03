@@ -49,7 +49,11 @@ class OpenRouterProvider(OpenAIProvider):
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
+        # OpenAI-compatible endpoints must prove support independently; the
+        # OpenRouter adapter currently uses portable Context checkpoints.
+        del context_management
         # Strip [FREE] prefix from model ID
         clean_model = model.replace("[FREE] ", "")
         return await super().chat(
@@ -59,6 +63,7 @@ class OpenRouterProvider(OpenAIProvider):
             max_tokens=max_tokens,
             thinking=thinking,
             tools=tools,
+            context_management=None,
         )
 
     async def fetch_models(self, api_key: str) -> List[str]:

@@ -439,9 +439,11 @@ class TestAddSubagent:
         ):
             result = await node.add_subagent(ctx, params)
 
-        assert len(result.operations) == 2
+        assert len(result.operations) == 4
         assert result.operations[0]["node_type"] == "coding_agent"
-        assert result.operations[1]["target_handle"] == "input-teammates"
+        assert result.operations[1]["node_type"] == "context"
+        assert result.operations[2]["target_handle"] == "input-context"
+        assert result.operations[3]["target_handle"] == "input-teammates"
 
 
 # ============================================================================

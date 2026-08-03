@@ -11,24 +11,15 @@ from temporalio.exceptions import ApplicationError
 from services.temporal._retry_policies import DEFAULT_ACTIVITY_RETRY
 
 
-COOPERATIVE_PAUSE_SCHEDULING_PATCH = (
-    "workflow-control-cooperative-pause-scheduling-v1"
-)
 # The controller is the ONE workflow expected to live for months, and it
 # multiplexes every trigger's signals, poll timers/activities, and child
 # spawns into a single event history. Temporal terminates any workflow
 # around ~51,200 history events, so without continue-as-new a single
 # polling trigger at the default 60s interval killed the whole
-# deployment's control plane in days. The patched path rolls the run
-# over (carrying triggers, control state, queued events, and per-trigger
-# seen-id baselines) whenever the server suggests it or the history
-# crosses the soft cap below. Pre-patch histories replay unchanged.
-CONTINUE_AS_NEW_PATCH = "workflow-control-continue-as-new-v1"
-# Upsert the ControlEventTypes keyword-list Search Attribute so
-# dispatch.emit can skip controllers whose deployment has no matching
-# push trigger (otherwise every platform event lands ~4 history events
-# in every running controller). Patch-gated: upsert is a command.
-CONTROL_EVENT_TYPES_SA_PATCH = "workflow-control-event-types-sa-v1"
+# deployment's control plane in days. The run rolls over (carrying
+# triggers, control state, queued events, and per-trigger seen-id
+# baselines) whenever the server suggests it or the history crosses the
+# soft cap below.
 
 # Roll over before the server's hard ceiling. is_continue_as_new_suggested
 # is the primary signal; this cap is the deterministic backstop.
@@ -72,8 +63,6 @@ class WorkflowControlWorkflow:
         # the newest entries when trimming to _MAX_CARRIED_SEEN_IDS.
         self._seen_event_ids: dict[str, None] = {}
         self._poll_tasks: dict[str, asyncio.Task] = {}
-        self._use_cooperative_pause_schedule_gate = False
-        self._can_enabled = False
         self._can_requested = False
 
     @workflow.signal
@@ -167,16 +156,6 @@ class WorkflowControlWorkflow:
 
     @workflow.run
     async def run(self, control_data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            self._use_cooperative_pause_schedule_gate = workflow.patched(
-                COOPERATIVE_PAUSE_SCHEDULING_PATCH
-            )
-            self._can_enabled = workflow.patched(CONTINUE_AS_NEW_PATCH)
-        except Exception:  # direct unit invocation outside Temporal runtime
-            if workflow.in_workflow():
-                raise
-            self._use_cooperative_pause_schedule_gate = False
-            self._can_enabled = True
         self._state = control_data.get("state", "running")
         self._seed_carried_state(control_data)
         while not self._closed:
@@ -255,7 +234,7 @@ class WorkflowControlWorkflow:
         return _history_pressure(_HISTORY_SOFT_CAP)
 
     def _maybe_request_rollover(self) -> None:
-        if self._can_enabled and not self._closed and not self._can_requested:
+        if not self._closed and not self._can_requested:
             if self._history_pressure():
                 self._can_requested = True
 
@@ -299,13 +278,14 @@ class WorkflowControlWorkflow:
 
         Lets ``dispatch.emit`` skip controllers with no matching trigger
         instead of signalling every running controller with every
-        platform event. Patch-gated (upsert is a command); controllers
-        without the attribute are treated as match-all by dispatch.
+        platform event. Controllers without the attribute are treated as
+        match-all by dispatch.
         """
-        try:
-            if not workflow.patched(CONTROL_EVENT_TYPES_SA_PATCH):
-                return
-        except Exception:  # direct unit invocation outside Temporal runtime
+        # Upsert is a workflow command and the failure path logs through
+        # ``workflow.logger``; both need the workflow event loop. Direct
+        # unit invocation has no loop, so no-op there rather than raising
+        # out of the exception handler.
+        if not workflow.in_workflow():
             return
         event_types: set[str] = set()
         for spec in self._triggers.values():
@@ -341,16 +321,11 @@ class WorkflowControlWorkflow:
         await listener._spawn_child_run(
             event,
             listener_args,
-            # This admission check predates the patch marker and must remain
-            # unconditional for replay compatibility with existing controller
-            # histories. The marker gates only the new child metadata.
             admission_check=self._wait_until_running,
             search_attributes=(
                 event_workflow_search_attributes(
                     listener_args.get("workflow_id")
                 )
-                if self._use_cooperative_pause_schedule_gate
-                else None
             ),
         )
 
@@ -375,11 +350,8 @@ class WorkflowControlWorkflow:
         activity_name = f"poll.{node_type}.v{listener_data.get('version', 1)}"
         params = listener_data.get("filter_params", {}) or {}
         poll_interval = int(params.get("poll_interval") or _DEFAULT_POLL_INTERVAL_S)
-        if self._can_enabled:
-            # A few-second user-supplied interval overflows history in
-            # hours. Timer durations are recorded commands, so the clamp
-            # rides the same patch as continue-as-new.
-            poll_interval = max(_MIN_POLL_INTERVAL_S, poll_interval)
+        # A few-second user-supplied interval overflows history in hours.
+        poll_interval = max(_MIN_POLL_INTERVAL_S, poll_interval)
         activity_timeout_s = max(30, poll_interval * _ACTIVITY_TIMEOUT_MULT)
         seen_ids: set[str] = set(listener_data.get("seen_ids") or [])
         baseline = not seen_ids
@@ -433,17 +405,9 @@ class WorkflowControlWorkflow:
                     await runner._spawn_child_run(
                         event,
                         listener_data,
-                        admission_check=(
-                            self._wait_until_running
-                            if self._use_cooperative_pause_schedule_gate
-                            else None
-                        ),
-                        search_attributes=(
-                            event_workflow_search_attributes(
-                                listener_data.get("workflow_id")
-                            )
-                            if self._use_cooperative_pause_schedule_gate
-                            else None
+                        admission_check=self._wait_until_running,
+                        search_attributes=event_workflow_search_attributes(
+                            listener_data.get("workflow_id")
                         ),
                     )
                 except asyncio.CancelledError:
@@ -462,8 +426,5 @@ class WorkflowControlWorkflow:
 
 
 __all__ = [
-    "CONTINUE_AS_NEW_PATCH",
-    "CONTROL_EVENT_TYPES_SA_PATCH",
-    "COOPERATIVE_PAUSE_SCHEDULING_PATCH",
     "WorkflowControlWorkflow",
 ]

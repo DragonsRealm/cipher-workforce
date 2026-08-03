@@ -15,6 +15,12 @@ class DeploymentState:
     nodes: List[Dict]
     edges: List[Dict]
     session_id: str
+    user_id: str = "owner"
+    # Context V2 cutover metadata. Both must be present for
+    # MachinaWorkflow to select AgentWorkflowV2; legacy/uncontrolled
+    # deployments leave them at zero and retain AgentWorkflow V1.
+    graph_version: int = 0
+    generation: int = 0
     # Human-readable slug resolved from DB at deploy time. Used to
     # prefix Temporal workflow IDs (listener + per-firing run) so
     # operators browsing the Temporal Web UI can identify runs by
@@ -31,6 +37,9 @@ class DeploymentState:
             "workflow_slug": self.workflow_slug,
             "is_running": self.is_running,
             "session_id": self.session_id,
+            "user_id": self.user_id,
+            "graph_version": self.graph_version,
+            "generation": self.generation,
             "settings": self.settings,
             "deployed_at": self.deployed_at,
             "node_count": len(self.nodes),

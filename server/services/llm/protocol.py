@@ -263,6 +263,9 @@ class LLMResponse:
     thinking: Optional[str] = None
     tool_calls: List[ToolCall] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
+    # Some context-management APIs expose active (post-compaction) usage at
+    # the top level and a separate iteration list for total billed work.
+    billing_usage: Optional[Usage] = None
     model: str = ""
     finish_reason: str = "stop"
     raw: Any = None
@@ -271,6 +274,8 @@ class LLMResponse:
     def __post_init__(self) -> None:
         """Keep the flat response API while exposing a replayable message."""
 
+        if self.billing_usage is None:
+            self.billing_usage = self.usage
         if self.assistant_message is None:
             blocks: List[ContentBlock] = []
             if self.thinking:
@@ -718,6 +723,7 @@ class LLMProvider(Protocol):
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse: ...
 
     async def fetch_models(self, api_key: str) -> List[str]: ...

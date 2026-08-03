@@ -108,6 +108,7 @@ class SpecializedAgentBase(ActionNode, abstract=True):
     """Subclass and set type/display_name/icon/color/subtitle/description."""
 
     component_kind = "agent"
+    requires_context = True
     handles = std_agent_handles()
     ui_hints = STD_AGENT_HINTS
     annotations = {"destructive": False, "readonly": False, "open_world": True}

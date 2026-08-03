@@ -47,6 +47,30 @@ class RuntimeMutation(SQLModel, table=True):
     )
 
 
+class WorkflowContextArchiveOutbox(SQLModel, table=True):
+    """Durable Context archive intent committed with a workflow mutation.
+
+    The record contains identities and timestamps only. Exact Context events,
+    provider replay payloads, and Memory contents remain in their dedicated
+    stores and never enter this lifecycle outbox.
+    """
+
+    __tablename__ = "workflow_context_archive_outbox"
+
+    id: str = Field(primary_key=True, max_length=64)
+    workflow_id: str = Field(index=True, max_length=255)
+    context_node_id: str = Field(index=True, max_length=255)
+    status: str = Field(default="pending", index=True, max_length=20)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+
+
 class Workflow(SQLModel, table=True):
     """Workflow definitions.
 

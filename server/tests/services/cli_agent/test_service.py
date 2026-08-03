@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from services.cli_agent import ClaudeTaskSpec, CodexTaskSpec
 from services.cli_agent.service import AICliService, get_ai_cli_service
+from nodes.search.duckduckgo_search import DuckDuckGoSearchParams
 
 
 @pytest.mark.asyncio
@@ -272,6 +274,23 @@ async def test_run_batch_registers_mcp_batch_on_happy_path(monkeypatch):
 
     svc = get_ai_cli_service()
     workspace = Path(__file__).resolve().parents[3]  # the repo root (a git repo)
+    tool_builder = SimpleNamespace(
+        _build_tool_from_node=AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    name="web_search",
+                    description="Search the web",
+                    parameters=DuckDuckGoSearchParams.model_json_schema(),
+                    args_schema=DuckDuckGoSearchParams,
+                ),
+                {
+                    "node_id": "ddg_1",
+                    "node_type": "duckduckgoSearch",
+                    "parameters": {},
+                },
+            )
+        )
+    )
     result = await svc.run_batch(
         "claude",
         tasks=[ClaudeTaskSpec(prompt="ping")],
@@ -284,12 +303,13 @@ async def test_run_batch_registers_mcp_batch_on_happy_path(monkeypatch):
             {"node_id": "ddg_1", "node_type": "duckduckgoSearch", "label": "DDG", "parameters": {}},
         ],
         connected_skill_names=["duckduckgo-search-skill"],
+        ai_service=tool_builder,
     )
 
     text = _logger_messages(svc_logger, mcp_logger)
     # Engine-entry log:
     assert "[CC-Agent run_batch] enter" in text, text
-    assert "duckduckgoSearch" in text, text
+    assert "web_search" in text, text
     # Resolver succeeded:
     assert "[CC-Agent run_batch] resolved repo_root=" in text, text
     # MCP token registered with our connected tool:

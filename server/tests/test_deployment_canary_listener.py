@@ -65,7 +65,13 @@ def fresh_canary_registry(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _build_manager_with_state(workflow_id: str, nodes, edges, session_id="sess"):
+def _build_manager_with_state(
+    workflow_id: str,
+    nodes,
+    edges,
+    session_id="sess",
+    user_id="owner",
+):
     """Build a DeploymentManager populated with one in-flight deployment.
 
     The canary methods read ``self._deployments[workflow_id]`` for nodes/edges
@@ -96,6 +102,7 @@ def _build_manager_with_state(workflow_id: str, nodes, edges, session_id="sess")
         nodes=nodes,
         edges=edges,
         session_id=session_id,
+        user_id=user_id,
     )
     return mgr, broadcaster
 
@@ -233,11 +240,13 @@ class TestStartCanaryListener:
     @pytest.mark.asyncio
     async def test_starts_with_deterministic_id_and_use_existing_policy(self, monkeypatch):
         from temporalio.common import WorkflowIDConflictPolicy
+        from types import SimpleNamespace
 
         mgr, _ = _build_manager_with_state(
             "wf-abc",
             nodes=[_node("wh-1", "webhookTrigger"), _node("agent-1", "aiAgent")],
             edges=[{"source": "wh-1", "target": "agent-1", "targetHandle": "input-main"}],
+            user_id="account-21",
         )
 
         recorded_start: List[Dict[str, Any]] = []
@@ -253,8 +262,18 @@ class TestStartCanaryListener:
         wrapper.client = client
 
         from core import container as container_mod
+        import core.config
 
         monkeypatch.setattr(container_mod.container, "temporal_client", lambda: wrapper)
+        monkeypatch.setattr(
+            core.config,
+            "Settings",
+            lambda: SimpleNamespace(
+                temporal_agent_workflow_enabled=True,
+                temporal_per_type_dispatch=False,
+                temporal_worker_pool_enabled=False,
+            ),
+        )
         monkeypatch.setattr(
             container_mod.container,
             "database",
@@ -277,6 +296,13 @@ class TestStartCanaryListener:
         assert call["id"] == "wf-abc-webhookTrigger"
         assert call["id_conflict_policy"] == WorkflowIDConflictPolicy.USE_EXISTING
         assert call["task_queue"] == "machina-tasks"
+        assert call["args"][0]["user_id"] == "account-21"
+        assert call["args"][0]["_temporal_routing_v1"] == {
+            "version": 1,
+            "agent_workflow_enabled": True,
+            "per_type_dispatch_enabled": False,
+            "worker_pool_enabled": False,
+        }
 
     @pytest.mark.asyncio
     async def test_controlled_listener_is_registered_under_controller(self, monkeypatch):

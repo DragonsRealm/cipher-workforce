@@ -88,6 +88,7 @@ class ChatUnifier:
         max_tokens: int = 4096,
         thinking: Optional[ThinkingConfig] = None,
         tools: Optional[List[ToolDef]] = None,
+        context_management: Optional[Dict[str, Any]] = None,
         sdk_max_retries: int = 2,
         translate_errors: bool = True,
     ) -> LLMResponse:
@@ -112,6 +113,7 @@ class ChatUnifier:
                 max_tokens=max_tokens,
                 thinking=thinking,
                 tools=tools,
+                context_management=context_management,
             )
         except spec.sdk_exception_types as e:
             error = LLMError.from_exception(provider, e)

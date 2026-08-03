@@ -217,6 +217,118 @@ async def test_native_loop_replays_assistant_and_accumulates_usage():
 
 
 @pytest.mark.asyncio
+async def test_compaction_pause_can_replace_replay_before_next_request():
+    compaction_message = Message(
+        role="assistant",
+        provider_state={
+            "provider": "anthropic",
+            "payload": {
+                "content": [
+                    {
+                        "type": "compaction",
+                        "content": "durable checkpoint",
+                    }
+                ]
+            },
+        },
+    )
+    unifier = _FakeUnifier(
+        [
+            LLMResponse(
+                assistant_message=compaction_message,
+                finish_reason="compaction",
+            ),
+            LLMResponse(content="continued after checkpoint"),
+        ]
+    )
+    pauses: list[int] = []
+
+    async def commit_pause(iteration, _response, _messages):
+        pauses.append(iteration)
+        return [compaction_message]
+
+    result = await run_native_agent_loop(
+        unifier,
+        provider="anthropic",
+        api_key="test",
+        model="claude-sonnet-4-6",
+        temperature=0,
+        max_tokens=100,
+        initial_messages=[Message(role="user", content="large history")],
+        compaction_pause_callback=commit_pause,
+    )
+
+    assert pauses == [1]
+    assert unifier.calls[1]["messages"] == [compaction_message]
+    assert result["response"].content == "continued after checkpoint"
+
+
+@pytest.mark.asyncio
+async def test_native_loop_persists_context_transitions_before_tool_execution():
+    first_message = Message(
+        role="assistant",
+        tool_calls=[ToolCall(id="call-1", name="one", args={"value": 3})],
+        provider_state={"provider": "openai", "payload": {"opaque": "exact"}},
+    )
+    unifier = _FakeUnifier(
+        [
+            LLMResponse(
+                tool_calls=first_message.tool_calls,
+                assistant_message=first_message,
+                usage=Usage(input_tokens=7, output_tokens=2),
+            ),
+            LLMResponse(
+                content="done",
+                usage=Usage(input_tokens=11, output_tokens=3),
+            ),
+        ]
+    )
+    observed: list[tuple[str, str]] = []
+    tool = _tool("one")
+
+    class _Sink:
+        async def append_transition(self, **kwargs):
+            observed.append(("context", kwargs["event_type"]))
+            if kwargs.get("message_wire_v2"):
+                assert kwargs["message_wire_v2"]["version"] == 2
+            assert kwargs["operation_id"].startswith("execution-9:")
+
+    async def execute(_name, args):
+        assert tool.execution["tool_call_id"] == "call-1"
+        assert (
+            tool.execution["operation_id"]
+            == "execution-9:iteration:1:tool:1:call-1"
+        )
+        observed.append(("tool", str(args["value"])))
+        return {"ok": True}
+
+    await run_native_agent_loop(
+        unifier,
+        provider="openai",
+        api_key="test",
+        model="gpt-test",
+        temperature=0,
+        max_tokens=100,
+        initial_messages=[Message(role="system", content="resolved"), Message(role="user", content="go")],
+        tools=[tool],
+        tool_executor=execute,
+        context_transition_sink=_Sink(),
+        context_operation_id="execution-9",
+    )
+
+    event_names = [value for kind, value in observed if kind == "context"]
+    assert event_names == [
+        "request.snapshot",
+        "message.assistant",
+        "message.tool_result",
+        "request.snapshot",
+        "message.assistant",
+        "response.final",
+    ]
+    assert observed.index(("context", "message.assistant")) < observed.index(("tool", "3"))
+
+
+@pytest.mark.asyncio
 async def test_native_loop_returns_invalid_arguments_to_model_without_execution():
     invalid = ToolCall(
         id="bad",

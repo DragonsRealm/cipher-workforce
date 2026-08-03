@@ -69,8 +69,21 @@ class WorkflowControlService:
 
     async def begin_generation(
         self, *, workflow_id: str, nodes: list[dict], edges: list[dict], session_id: str,
-        idempotency_key: str, reset: bool = False,
+        idempotency_key: str, reset: bool = False, graph_version: int = 0,
+        owner_id: str = "owner",
     ) -> tuple[WorkflowControlExecution, bool]:
+        from services.workflow_sanitizer import sanitize_runtime_payload
+
+        safe_graph = sanitize_runtime_payload(
+            {
+                "graphVersion": max(0, int(graph_version or 0)),
+                "owner_id": str(owner_id or "owner"),
+                "nodes": nodes,
+                "edges": edges,
+            }
+        )
+        nodes = list(safe_graph.get("nodes") or [])
+        edges = list(safe_graph.get("edges") or [])
         existing = await self.database.get_workflow_control_by_idempotency_key(workflow_id, idempotency_key)
         if existing:
             return existing, False
@@ -85,7 +98,13 @@ class WorkflowControlService:
             data_scope_id=execution_id,
             controller_workflow_id=f"workflow-control-{workflow_id}-g{generation}",
             session_id=session_id, graph_hash=_graph_hash(nodes, edges),
-            graph_snapshot={"nodes": nodes, "edges": edges}, idempotency_key=idempotency_key,
+            graph_snapshot={
+                "graphVersion": safe_graph["graphVersion"],
+                "owner_id": safe_graph["owner_id"],
+                "nodes": nodes,
+                "edges": edges,
+            },
+            idempotency_key=idempotency_key,
             # Revisions are monotonic across generations so a delayed request
             # from an archived generation cannot pass CAS against a newer one
             # that happens to be at the same lifecycle step.

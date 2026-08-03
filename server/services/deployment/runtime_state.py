@@ -12,6 +12,7 @@ async def archive_and_reset_node_state(control: Any, database: Any, broadcaster:
     class owns any external mutable state through ``reset_execution_state``.
     """
     from services.node_registry import get_node_class
+    from services.workflow_sanitizer import sanitize_runtime_payload
 
     graph = control.graph_snapshot or {}
     archived_nodes: Dict[str, Any] = {}
@@ -23,8 +24,10 @@ async def archive_and_reset_node_state(control: Any, database: Any, broadcaster:
         params = await database.get_node_parameters(str(node_id)) or {}
         archived_nodes[str(node_id)] = {
             "type": node.get("type"),
-            "canvas_data": dict(node.get("data") or {}),
-            "parameters": dict(params),
+            "canvas_data": sanitize_runtime_payload(
+                dict(node.get("data") or {})
+            ),
+            "parameters": sanitize_runtime_payload(dict(params)),
         }
 
     scope_id = control.data_scope_id or control.execution_id
@@ -40,7 +43,10 @@ async def archive_and_reset_node_state(control: Any, database: Any, broadcaster:
             continue
         result = await node_class.reset_execution_state(
             node_id=str(node_id), workflow_id=control.workflow_id,
-            execution_id=control.execution_id, graph=graph, database=database,
+            execution_id=control.execution_id,
+            generation=int(getattr(control, "generation", 0) or 0),
+            graph=graph,
+            database=database,
         )
         if not result.get("reset"):
             continue

@@ -30,12 +30,14 @@ class RLMService:
         node_id: str,
         parameters: Dict[str, Any],
         memory_data: Optional[Dict[str, Any]] = None,
+        context_data: Optional[Dict[str, Any]] = None,
         skill_data: Optional[List[Dict[str, Any]]] = None,
         tool_data: Optional[List[Dict[str, Any]]] = None,
         broadcaster=None,
         workflow_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
         database=None,
+        ai_service=None,
     ) -> Dict[str, Any]:
         """Execute RLM agent completion.
 
@@ -43,6 +45,23 @@ class RLMService:
         Reuses existing OpenCompany utilities for shared concerns.
         """
         start_time = time.time()
+        context_bridge = None
+        if (context_data or {}).get("kind") == "context":
+            from services.cli_agent.context_bridge import (
+                SpecializedAgentContextBridge,
+            )
+
+            context_bridge = await SpecializedAgentContextBridge.resolve(
+                database,
+                context_data,
+                provider="rlm",
+                fidelity="observable_only",
+                resumable=False,
+                operation_prefix=(
+                    f"rlm-context:"
+                    f"{(context or {}).get('execution_id') or 'run'}:{node_id}"
+                ),
+            )
 
         async def broadcast_status(phase: str, details: Dict[str, Any] = None):
             if broadcaster:
@@ -119,6 +138,38 @@ class RLMService:
             progressive_skill_tool = skill_tool_info(skill_data or [], node_id)
             if progressive_skill_tool:
                 effective_tool_data.append(progressive_skill_tool)
+            if ai_service is not None:
+                canonical_tool_data = []
+                for tool_info in effective_tool_data:
+                    tool, execution = await ai_service._build_tool_from_node(
+                        tool_info
+                    )
+                    if tool is None or execution is None:
+                        raise ValueError(
+                            "Could not build connected tool "
+                            f"{tool_info.get('node_type')!r}"
+                        )
+                    canonical_tool_data.append(
+                        {
+                            **tool_info,
+                            "_agent_tool_name": tool.name,
+                            "_agent_tool_description": tool.description,
+                            "_agent_tool_schema": tool.parameters,
+                            "_agent_tool_input_model": tool.args_schema,
+                            "_agent_tool_execution": execution,
+                        }
+                    )
+                effective_tool_data = canonical_tool_data
+
+            async def record_ambiguous_tool_outcome(
+                payload: Dict[str, Any],
+            ) -> None:
+                if context_bridge is not None:
+                    await context_bridge.append_observable(
+                        "tool.ambiguous_outcome",
+                        payload,
+                    )
+
             custom_tools = ToolBridgeAdapter.bridge(
                 effective_tool_data,
                 context,
@@ -127,6 +178,11 @@ class RLMService:
                 parent_node_id=node_id,
                 workflow_id=workflow_id,
                 provider=provider,
+                ambiguous_outcome_sink=(
+                    record_ambiguous_tool_outcome
+                    if context_bridge is not None
+                    else None
+                ),
             )
 
             # === RLM-specific parameters ===
@@ -161,6 +217,31 @@ class RLMService:
                 augmented_prompt = f"## Instructions\n{system_message}\n\n## Task\n{augmented_prompt}"
             if supplementary_context:
                 augmented_prompt = f"{supplementary_context}\n\n{augmented_prompt}"
+            if context_bridge is not None:
+                augmented_prompt = context_bridge.augment_prompt(
+                    augmented_prompt
+                )
+
+            if context_bridge is not None:
+                await context_bridge.append_observable(
+                    "provider.request",
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "prompt": augmented_prompt,
+                        "max_iterations": max_iterations,
+                        "max_depth": max_depth,
+                        "max_budget": max_budget,
+                        "max_timeout": max_timeout,
+                        "max_tokens": max_tokens,
+                        "tool_node_ids": [
+                            item.get("node_id")
+                            for item in effective_tool_data
+                            if isinstance(item, dict)
+                        ],
+                    },
+                    operation_suffix="request",
+                )
 
             def _run_rlm():
                 from rlm import RLM
@@ -184,6 +265,17 @@ class RLMService:
                 return rlm_instance.completion(augmented_prompt)
 
             result = await asyncio.to_thread(_run_rlm)
+
+            if context_bridge is not None:
+                await context_bridge.append_observable(
+                    "provider.result",
+                    {
+                        "response": result.response,
+                        "metadata": result.metadata,
+                        "usage_summary": result.usage_summary,
+                    },
+                    operation_suffix="result",
+                )
 
             # === Memory save (same pattern as execute_chat_agent) ===
             if memory_data and memory_data.get("node_id"):
@@ -222,14 +314,32 @@ class RLMService:
             }
 
         except Exception as e:
-            logger.error(f"[RLM] Execution failed: {e}", exc_info=True)
+            public_error = (
+                str(e)
+                if context_bridge is None
+                else f"{type(e).__name__}: RLM execution failed"
+            )
+            logger.error(
+                "[RLM] Execution failed type=%s",
+                type(e).__name__,
+                exc_info=context_bridge is None,
+            )
             execution_time = time.time() - start_time
-            await broadcast_status("error", {"message": str(e)})
+            if context_bridge is not None:
+                await context_bridge.append_observable(
+                    "provider.error",
+                    {
+                        "error_type": type(e).__name__,
+                        "error": str(e),
+                    },
+                    operation_suffix="error",
+                )
+            await broadcast_status("error", {"message": public_error})
             return {
                 "success": False,
                 "node_id": node_id,
                 "node_type": "rlm_agent",
-                "error": str(e),
+                "error": public_error,
                 "execution_time": execution_time,
             }
         finally:

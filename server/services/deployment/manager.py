@@ -167,6 +167,9 @@ class DeploymentManager:
         session_id: str = "default",
         status_callback: Optional[Callable] = None,
         workflow_id: Optional[str] = None,
+        graph_version: int = 0,
+        generation: int = 0,
+        user_id: str = "owner",
     ) -> Dict[str, Any]:
         """Deploy workflow in event-driven mode.
 
@@ -176,6 +179,9 @@ class DeploymentManager:
             session_id: Session identifier
             status_callback: Status update callback
             workflow_id: Workflow ID for per-workflow deployment tracking
+            graph_version: Normalized graph contract version
+            generation: Durable workflow-control generation
+            user_id: Authenticated server-owned user identity
         """
         # Generate workflow_id if not provided
         if not workflow_id:
@@ -225,6 +231,9 @@ class DeploymentManager:
             nodes=nodes,
             edges=edges,
             session_id=session_id,
+            user_id=str(user_id or "owner"),
+            graph_version=max(0, int(graph_version or 0)),
+            generation=max(0, int(generation or 0)),
             settings=self._settings.copy(),
         )
 
@@ -776,6 +785,9 @@ class DeploymentManager:
         # workflow_id for tests / direct-call paths that bypass deploy.
         slug = state.workflow_slug or workflow_id
         listener_id = self._listener_workflow_id(slug, trigger_label)
+        from services.temporal.executor import (
+            capture_temporal_routing_input,
+        )
 
         # ``trigger_label`` flows into the per-firing run id
         # (``<slug>-<label>-<event_id>``) inside both child workflows so
@@ -793,7 +805,16 @@ class DeploymentManager:
             "nodes": state.nodes,
             "edges": state.edges,
             "session_id": state.session_id,
+            "user_id": state.user_id,
+            **capture_temporal_routing_input(),
         }
+        if state.graph_version > 0 and state.generation > 0:
+            listener_args.update(
+                {
+                    "graphVersion": state.graph_version,
+                    "generation": state.generation,
+                }
+            )
         if is_polling:
             # ``version`` feeds the polling workflow's activity-name
             # construction (``poll.{type}.v{version}``). Pulled from the
@@ -829,6 +850,7 @@ class DeploymentManager:
                 "execution_id": control.execution_id,
                 "root_execution_id": control.root_execution_id,
                 "data_scope_id": control.data_scope_id or control.execution_id,
+                "generation": control.generation,
             })
             # The controller owns listeners as child workflows. This keeps
             # trigger activity in the deployment's Temporal execution tree
@@ -1177,14 +1199,25 @@ class DeploymentManager:
         # Execute filtered graph with deployment's workflow_id for scoped status
         # Use Temporal for proper parallel branch execution
         status_callback = self._status_callbacks.get(workflow_id)
+        execution_kwargs: Dict[str, Any] = {
+            "nodes": filtered_nodes,
+            "edges": filtered_edges,
+            "session_id": run_session_id,
+            "status_callback": status_callback,
+            "skip_clear_outputs": True,
+            "workflow_id": workflow_id,
+            "use_temporal": True,
+            "user_id": state.user_id,
+        }
+        if state.graph_version >= 2 and state.generation > 0:
+            execution_kwargs.update(
+                {
+                    "graph_version": state.graph_version,
+                    "generation": state.generation,
+                }
+            )
         result = await self._execute_workflow(
-            nodes=filtered_nodes,
-            edges=filtered_edges,
-            session_id=run_session_id,
-            status_callback=status_callback,
-            skip_clear_outputs=True,
-            workflow_id=workflow_id,  # Pass deployment's workflow_id for status scoping
-            use_temporal=True,  # Force Temporal for parallel node execution
+            **execution_kwargs,
         )
 
         result["run_id"] = run_id

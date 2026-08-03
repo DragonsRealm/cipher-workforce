@@ -678,10 +678,9 @@ class TestVertexManagedAgent:
         ai_service._build_tool_from_node.assert_awaited_once()
         assert [t["name"] for t in create_mock.call_args.kwargs["tools"]] == ["fake_tool"]
 
-    async def test_duplicate_tool_names_deduped(self, harness):
-        """Two nodes resolving to the same tool name get deterministic
-        _2 suffixes; the suffixed name dispatches with the SECOND node's
-        config."""
+    async def test_duplicate_tool_names_fail_before_provider_call(self, harness):
+        """Vertex uses the same canonical-name ambiguity gate as every
+        other agent runtime; it must not invent provider-only aliases."""
         agent_id = "vx-1"
 
         def make_tool(node_id):
@@ -692,25 +691,13 @@ class TestVertexManagedAgent:
 
         ai_service = MagicMock(name="AIService")
         ai_service._build_tool_from_node = AsyncMock(side_effect=[make_tool("tool-1"), make_tool("tool-2")])
-        execute_tool_mock = AsyncMock(return_value={"answer": 1})
-
-        turns = [
-            _interaction(
-                status="requires_action",
-                interaction_id="ix-1",
-                steps=[_fc_step("fake_tool_2", "c1", {"query": "x"})],
-            ),
-            _interaction(status="completed", interaction_id="ix-2"),
-        ]
-        client_patch, create_patch = _patched_interactions(turns)
+        client_patch, create_patch = _patched_interactions([_interaction()])
         with (
             patched_container(auth_api_keys={}),
             patched_broadcaster() as bc,
             client_patch,
             create_patch as create_mock,
             patch("services.plugin.deps.get_ai_service", return_value=ai_service),
-            patch("services.handlers.tools.execute_tool", execute_tool_mock),
-            patch(f"{_NODE_MODULE}._ops.record_tool_output", AsyncMock()),
         ):
             _wire_async_broadcasts(bc)
             result = await harness.execute(
@@ -728,12 +715,9 @@ class TestVertexManagedAgent:
                 ],
             )
 
-        harness.assert_envelope(result, success=True)
-        declared_names = [t["name"] for t in create_mock.call_args_list[0].kwargs["tools"]]
-        assert declared_names == ["fake_tool", "fake_tool_2"]
-        execute_tool_mock.assert_awaited_once()
-        config_arg = execute_tool_mock.await_args.args[2]
-        assert config_arg["node_id"] == "tool-2"
+        harness.assert_envelope(result, success=False)
+        assert "Duplicate LLM-visible tool names" in result["error"]
+        create_mock.assert_not_called()
 
     async def test_unanswerable_requires_action_surfaces_warning(self, harness):
         """When requires_action only carries calls we never declared, the

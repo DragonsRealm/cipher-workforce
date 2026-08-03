@@ -8,8 +8,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Type
+from dataclasses import asdict, dataclass, field
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Type,
+)
 
 from pydantic import BaseModel, ValidationError
 
@@ -23,10 +33,31 @@ from services.llm.protocol import (
     ToolCall,
     ToolDef,
     Usage,
+    message_to_wire,
+    messages_to_wire,
 )
 from services.tool_identity import DuplicateToolNameError
 
 logger = get_logger(__name__)
+
+
+class AgentContextTransitionSink(Protocol):
+    """Bound, epoch-fenced sink for one Context thread.
+
+    Store implementations decide whether payloads are inlined or replaced by
+    hash-addressed blob references.  The runtime only emits committed
+    transitions in provider-observable order.
+    """
+
+    async def append_transition(
+        self,
+        *,
+        event_type: str,
+        operation_id: str,
+        provider: str,
+        message_wire_v2: Optional[Dict[str, Any]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Any: ...
 
 
 @dataclass
@@ -92,6 +123,7 @@ async def run_native_llm_step(
     max_tokens: int,
     thinking: Optional[ThinkingConfig] = None,
     tools: Optional[Sequence[ToolDef | AgentToolSpec]] = None,
+    context_management: Optional[Dict[str, Any]] = None,
     sdk_max_retries: int = 0,
     explicit_max_retries: int = 2,
     translate_errors: bool = True,
@@ -119,6 +151,7 @@ async def run_native_llm_step(
                 max_tokens=max_tokens,
                 thinking=thinking,
                 tools=definitions or None,
+                context_management=context_management,
                 sdk_max_retries=max(0, int(sdk_max_retries)),
                 # Preserve structured metadata until this agent-step boundary.
                 translate_errors=False,
@@ -153,7 +186,11 @@ def _validated_tool_args(
 
     try:
         value = spec.args_schema.model_validate(call.args or {})
-        return value.model_dump(mode="json"), None
+        # Preserve the security boundary used by ToolNode.execute_as_tool:
+        # only fields the model actually supplied may participate in the
+        # invocation/config merge. Pydantic defaults are schema metadata, not
+        # model-authored arguments.
+        return value.model_dump(mode="json", exclude_unset=True), None
     except ValidationError as exc:
         return None, str(exc)
 
@@ -175,6 +212,15 @@ async def run_native_agent_loop(
     rebind_from_operations: Optional[
         Callable[[List[Dict[str, Any]]], Awaitable[List[AgentToolSpec]]]
     ] = None,
+    context_management: Optional[Dict[str, Any]] = None,
+    compaction_pause_callback: Optional[
+        Callable[
+            [int, LLMResponse, List[Message]],
+            Awaitable[Optional[List[Message]]],
+        ]
+    ] = None,
+    context_transition_sink: Optional[AgentContextTransitionSink] = None,
+    context_operation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the shared buffered native tool-agent loop.
 
@@ -189,6 +235,27 @@ async def run_native_agent_loop(
     thinking_parts: List[str] = []
     last_response: Optional[LLMResponse] = None
     iteration = 0
+    if context_transition_sink is not None and not context_operation_id:
+        raise ValueError(
+            "context_operation_id is required when a Context transition sink is used"
+        )
+
+    async def persist_transition(
+        event_type: str,
+        *,
+        operation_id: str,
+        message: Optional[Message] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if context_transition_sink is None:
+            return
+        await context_transition_sink.append_transition(
+            event_type=event_type,
+            operation_id=f"{context_operation_id}:{operation_id}",
+            provider=provider,
+            message_wire_v2=message_to_wire(message) if message else None,
+            payload=payload,
+        )
 
     for iteration in range(1, max_iterations + 1):
         if progress_callback is not None:
@@ -197,19 +264,59 @@ async def run_native_agent_loop(
             except Exception as exc:  # progress is observational
                 logger.debug("[Agent loop] progress callback failed: %s", exc)
 
-        response = await run_native_llm_step(
-            chat_unifier,
-            provider=provider,
-            api_key=api_key,
-            messages=messages,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            thinking=thinking,
-            tools=current_tools,
+        definitions = [_tool_definition(tool) for tool in current_tools]
+        await persist_transition(
+            "request.snapshot",
+            operation_id=f"iteration:{iteration}:request",
+            payload={
+                "iteration": iteration,
+                "provider": provider,
+                "model": model,
+                "settings": {
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "thinking": asdict(thinking) if thinking is not None else None,
+                },
+                "messages": messages_to_wire(messages),
+                "tools": [
+                    {
+                        "name": definition.name,
+                        "description": definition.description,
+                        "parameters": definition.parameters,
+                    }
+                    for definition in definitions
+                ],
+                "dynamic_tool_count": len(current_tools),
+            },
         )
+        try:
+            response = await run_native_llm_step(
+                chat_unifier,
+                provider=provider,
+                api_key=api_key,
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking=thinking,
+                tools=current_tools,
+                context_management=context_management,
+            )
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            await persist_transition(
+                "provider.outcome_ambiguous",
+                operation_id=f"iteration:{iteration}:provider-error",
+                payload={
+                    "iteration": iteration,
+                    "error_type": type(exc).__name__,
+                    "ambiguous": True,
+                },
+            )
+            raise
         last_response = response
-        usage = add_usage(usage, response.usage)
+        usage = add_usage(usage, response.billing_usage or response.usage)
 
         assistant = response.assistant_message
         if assistant is None:
@@ -219,6 +326,21 @@ async def run_native_agent_loop(
                 tool_calls=list(response.tool_calls),
             )
         messages.append(assistant)
+        # This commit is intentionally before any requested tool executes.
+        await persist_transition(
+            "message.assistant",
+            operation_id=f"iteration:{iteration}:assistant",
+            message=assistant,
+            payload={
+                "iteration": iteration,
+                "finish_reason": response.finish_reason,
+                "model": response.model or model,
+                "usage": asdict(response.usage),
+                "billing_usage": asdict(
+                    response.billing_usage or response.usage
+                ),
+            },
+        )
 
         if response.thinking:
             thinking_parts.append(
@@ -233,7 +355,42 @@ async def run_native_agent_loop(
             logger.warning("[Agent loop] provider response blocked by safety filters")
 
         calls = list(response.tool_calls or assistant.tool_calls or ())
+        if (
+            str(response.finish_reason).strip().lower() == "compaction"
+            and not calls
+        ):
+            # Anthropic's durability pause returns only a compaction block.
+            # It has already been journaled above; continue from that exact
+            # block instead of exposing it as the user's final response.
+            await persist_transition(
+                "provider.compaction_paused",
+                operation_id=f"iteration:{iteration}:compaction-pause",
+                payload={
+                    "iteration": iteration,
+                    "finish_reason": response.finish_reason,
+                },
+            )
+            if compaction_pause_callback is not None:
+                replacement = await compaction_pause_callback(
+                    iteration,
+                    response,
+                    list(messages),
+                )
+                if replacement is not None:
+                    messages = list(replacement)
+            continue
         if not calls:
+            await persist_transition(
+                "response.final",
+                operation_id=f"iteration:{iteration}:final",
+                payload={
+                    "iteration": iteration,
+                    "usage": asdict(response.usage),
+                    "lifetime_usage": asdict(usage),
+                    "active_input_tokens": response.usage.input_tokens,
+                    "finish_reason": response.finish_reason,
+                },
+            )
             return {
                 "messages": messages,
                 "iteration": iteration,
@@ -259,7 +416,7 @@ async def run_native_agent_loop(
 
         specs = _tool_specs_by_name(current_tools)
         iteration_new_tools: List[AgentToolSpec] = []
-        for call in calls:
+        for call_index, call in enumerate(calls, start=1):
             if call.name not in specs:
                 result: Any = {
                     "error": "Unknown tool",
@@ -278,6 +435,18 @@ async def run_native_agent_loop(
                         result["raw_arguments"] = call.raw_arguments
                 else:
                     try:
+                        # AgentToolSpec.execution is the trusted server-side
+                        # config consumed by execute_tool. Attach the provider
+                        # call identity there, never to model-controlled args,
+                        # so stateful tools can make mutations idempotent.
+                        spec = specs[call.name]
+                        spec.execution["tool_call_id"] = call.id
+                        spec.execution["operation_id"] = (
+                            f"{context_operation_id}:iteration:{iteration}:"
+                            f"tool:{call_index}:{call.id or call.name}"
+                            if context_operation_id
+                            else f"{provider}:tool:{call.id or call.name}"
+                        )
                         result = await tool_executor(call.name, args or {})
                     except Exception as exc:
                         # Tool failures are fed back to the model.
@@ -308,13 +477,29 @@ async def run_native_agent_loop(
                         "[Agent loop] tool rebind failed: %s", exc, exc_info=True
                     )
 
-            messages.append(
-                Message(
-                    role="tool",
-                    content=json.dumps(result, default=str),
-                    tool_call_id=call.id,
-                    name=call.name,
-                )
+            tool_message = Message(
+                role="tool",
+                content=json.dumps(result, default=str),
+                tool_call_id=call.id,
+                name=call.name,
+            )
+            messages.append(tool_message)
+            await persist_transition(
+                "message.tool_result",
+                operation_id=(
+                    f"iteration:{iteration}:tool:{call_index}:{call.id or call.name}"
+                ),
+                message=tool_message,
+                payload={
+                    "iteration": iteration,
+                    "tool_call_id": call.id,
+                    "tool_name": call.name,
+                    "outcome": (
+                        "error"
+                        if isinstance(result, dict) and "error" in result
+                        else "success"
+                    ),
+                },
             )
 
         if iteration_new_tools:
@@ -333,6 +518,16 @@ async def run_native_agent_loop(
         ),
     )
     messages.append(terminal)
+    await persist_transition(
+        "response.truncated",
+        operation_id=f"iteration:{iteration}:truncated",
+        message=terminal,
+        payload={
+            "iteration": iteration,
+            "lifetime_usage": asdict(usage),
+            "reason": "recursion_limit",
+        },
+    )
     return {
         "messages": messages,
         "iteration": iteration,
@@ -344,6 +539,7 @@ async def run_native_agent_loop(
 
 
 __all__ = [
+    "AgentContextTransitionSink",
     "AgentToolSpec",
     "add_usage",
     "run_native_llm_step",

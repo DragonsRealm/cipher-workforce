@@ -16,6 +16,33 @@ from services.llm.protocol import Message, ThinkingConfig, ToolCall, ToolDef
 # ---------------------------------------------------------------------------
 
 
+def _stream_returning(response):
+    """Stand-in for ``client.messages.stream``.
+
+    The real call is a plain method returning an async context manager whose
+    ``get_final_message()`` yields the accumulated ``Message``.
+    """
+    stream = MagicMock()
+    stream.get_final_message = AsyncMock(return_value=response)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=stream)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=ctx)
+
+
+def _text_response(text: str = "ok"):
+    resp = MagicMock()
+    resp.content = [MagicMock(type="text", text=text)]
+    resp.usage = MagicMock(
+        input_tokens=5,
+        output_tokens=2,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+    resp.stop_reason = "end_turn"
+    return resp
+
+
 class TestAnthropicProvider:
     @pytest.fixture
     def provider(self):
@@ -73,11 +100,7 @@ class TestAnthropicProvider:
     @pytest.mark.asyncio
     async def test_chat_sets_thinking_params(self, provider):
         """When thinking enabled, budget_tokens and temperature=1 are set."""
-        mock_resp = MagicMock()
-        mock_resp.content = [MagicMock(type="text", text="ok")]
-        mock_resp.usage = MagicMock(input_tokens=5, output_tokens=2, cache_creation_input_tokens=0, cache_read_input_tokens=0)
-        mock_resp.stop_reason = "end_turn"
-        provider._client.messages.create = AsyncMock(return_value=mock_resp)
+        provider._client.messages.stream = _stream_returning(_text_response())
 
         thinking = ThinkingConfig(enabled=True, budget=4096)
         await provider.chat(
@@ -86,7 +109,7 @@ class TestAnthropicProvider:
             thinking=thinking,
         )
 
-        call_kwargs = provider._client.messages.create.call_args[1]
+        call_kwargs = provider._client.messages.stream.call_args[1]
         assert call_kwargs["thinking"]["budget_tokens"] == 4096
         assert call_kwargs["temperature"] == 1
 
@@ -94,16 +117,7 @@ class TestAnthropicProvider:
     async def test_chat_clamps_thinking_budget_and_expands_max_tokens(
         self, provider
     ):
-        mock_resp = MagicMock()
-        mock_resp.content = [MagicMock(type="text", text="ok")]
-        mock_resp.usage = MagicMock(
-            input_tokens=5,
-            output_tokens=2,
-            cache_creation_input_tokens=0,
-            cache_read_input_tokens=0,
-        )
-        mock_resp.stop_reason = "end_turn"
-        provider._client.messages.create = AsyncMock(return_value=mock_resp)
+        provider._client.messages.stream = _stream_returning(_text_response())
 
         await provider.chat(
             [Message(role="user", content="test")],
@@ -112,9 +126,124 @@ class TestAnthropicProvider:
             thinking=ThinkingConfig(enabled=True, budget=100),
         )
 
-        call_kwargs = provider._client.messages.create.call_args.kwargs
+        call_kwargs = provider._client.messages.stream.call_args.kwargs
         assert call_kwargs["thinking"]["budget_tokens"] == 1024
         assert call_kwargs["max_tokens"] == 2048
+
+    @pytest.mark.asyncio
+    async def test_sampling_params_dropped_on_current_models(self, provider):
+        """`temperature` is a 400 on Claude 4.7+ generations, not a warning."""
+        provider._client.messages.stream = _stream_returning(_text_response())
+
+        await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-opus-5",
+            temperature=0.7,
+        )
+
+        call_kwargs = provider._client.messages.stream.call_args.kwargs
+        assert "temperature" not in call_kwargs
+        assert "top_p" not in call_kwargs
+        assert "top_k" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_adaptive_thinking_replaces_budget_tokens(self, provider):
+        """`budget_tokens` was removed on these models; adaptive replaces it."""
+        provider._client.messages.stream = _stream_returning(_text_response())
+
+        await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-opus-5",
+            thinking=ThinkingConfig(enabled=True, budget=8000),
+        )
+
+        call_kwargs = provider._client.messages.stream.call_args.kwargs
+        assert call_kwargs["thinking"] == {
+            "type": "adaptive",
+            "display": "summarized",
+        }
+        assert "temperature" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_thinking_omitted_rather_than_disabled(self, provider):
+        """`{"type": "disabled"}` is itself a 400 on Fable/Mythos."""
+        provider._client.messages.stream = _stream_returning(_text_response())
+
+        await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-fable-5",
+            thinking=ThinkingConfig(enabled=False),
+        )
+
+        assert "thinking" not in provider._client.messages.stream.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_legacy_models_keep_budget_thinking_and_temperature(
+        self, provider
+    ):
+        """4.6 and older still accept both — don't change what works."""
+        provider._client.messages.stream = _stream_returning(_text_response())
+
+        await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-sonnet-4-6",
+            temperature=0.3,
+            thinking=ThinkingConfig(enabled=True, budget=4096),
+        )
+
+        call_kwargs = provider._client.messages.stream.call_args.kwargs
+        assert call_kwargs["thinking"] == {
+            "type": "enabled",
+            "budget_tokens": 4096,
+        }
+        assert call_kwargs["temperature"] == 1
+
+    @pytest.mark.asyncio
+    async def test_chat_streams_instead_of_create(self, provider):
+        """The non-streaming path raises for the max_tokens we actually send.
+
+        ``resolve_max_tokens`` hands the provider the model's full output cap
+        (128K on every current Claude model), and the SDK rejects any
+        non-streaming request that large before it leaves the process, so
+        ``chat`` must never reach ``messages.create``.
+        """
+        provider._client.messages.stream = _stream_returning(_text_response())
+        provider._client.messages.create = AsyncMock(
+            side_effect=AssertionError("chat() must not use the non-streaming path")
+        )
+
+        result = await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-opus-5",
+            max_tokens=128_000,
+        )
+
+        assert result.content == "ok"
+        provider._client.messages.create.assert_not_awaited()
+        assert provider._client.messages.stream.call_args.kwargs["max_tokens"] == 128_000
+
+    @pytest.mark.asyncio
+    async def test_compaction_streams_on_the_beta_endpoint(self, provider):
+        provider._client.beta.messages.stream = _stream_returning(_text_response())
+        provider._client.beta.messages.create = AsyncMock(
+            side_effect=AssertionError("compaction must not use the non-streaming path")
+        )
+
+        await provider.chat(
+            [Message(role="user", content="test")],
+            model="claude-opus-5",
+            max_tokens=128_000,
+            context_management={
+                "type": "compaction",
+                "compact_threshold": 150_000,
+            },
+        )
+
+        call_kwargs = provider._client.beta.messages.stream.call_args.kwargs
+        assert call_kwargs["betas"] == ["compact-2026-01-12"]
+        edit = call_kwargs["context_management"]["edits"][0]
+        assert edit["type"] == "compact_20260112"
+        assert edit["trigger"] == {"type": "input_tokens", "value": 150_000}
 
 
 # ---------------------------------------------------------------------------

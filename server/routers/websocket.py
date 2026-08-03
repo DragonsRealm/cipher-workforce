@@ -135,7 +135,10 @@ async def handle_get_node_parameters(data: Dict[str, Any], websocket: WebSocket)
     node_id = data["node_id"]
     parameters = await database.get_node_parameters(node_id)
     logger.debug(f"[GET_PARAMS] Node ID: {node_id}")
-    logger.debug(f"[GET_PARAMS] Raw from DB: {parameters}")
+    logger.debug(
+        "[GET_PARAMS] Parameter keys: %s",
+        sorted(parameters) if isinstance(parameters, dict) else [],
+    )
     logger.debug(f"[GET_PARAMS] Code length: {len(parameters.get('code', '')) if parameters and 'code' in parameters else 'no code field'}")
     return {"node_id": node_id, "parameters": parameters or {}, "version": 1, "timestamp": time.time()}
 
@@ -144,11 +147,48 @@ async def handle_get_node_parameters(data: Dict[str, Any], websocket: WebSocket)
 async def handle_get_all_node_parameters(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
     """Get parameters for multiple nodes."""
     database = container.database()
+    node_ids = data.get("node_ids", [])
+    if not isinstance(node_ids, list) or len(node_ids) > 1000:
+        raise ValueError("node_ids must be a list of at most 1000 ids")
+
+    export_mode = data.get("purpose") == "export"
+    if export_mode:
+        workflow_id = str(data.get("workflow_id") or "")
+        if not workflow_id:
+            raise ValueError("workflow_id is required for export")
+        workflow = await database.get_workflow(workflow_id)
+        if workflow is None:
+            raise ValueError("Workflow not found")
+        graph = workflow.data if isinstance(workflow.data, dict) else {}
+        authenticated_owner = str(
+            getattr(getattr(websocket, "state", None), "user_id", None)
+            or "owner"
+        )
+        stored_owner = str(graph.get("owner_id") or "")
+        if stored_owner and stored_owner != authenticated_owner:
+            raise ValueError("Workflow access denied")
+        workflow_node_ids = {
+            str(node.get("id"))
+            for node in graph.get("nodes", [])
+            if isinstance(node, dict) and node.get("id")
+        }
+        requested_ids = {str(node_id) for node_id in node_ids}
+        if not requested_ids.issubset(workflow_node_ids):
+            raise ValueError("Export contains nodes outside the workflow")
+        from services.workflow_sanitizer import sanitize_runtime_payload
+
     result = {}
-    for node_id in data.get("node_ids", []):
+    for node_id in node_ids:
         parameters = await database.get_node_parameters(node_id)
         if parameters:
-            result[node_id] = {"parameters": parameters, "version": 1}
+            result[node_id] = {
+                "parameters": (
+                    sanitize_runtime_payload(parameters)
+                    if export_mode
+                    else parameters
+                ),
+                "version": 1,
+            }
     return {"parameters": result, "timestamp": time.time()}
 
 
@@ -423,6 +463,15 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
         )
         if key in data
     }
+    socket_path = str((getattr(websocket, "scope", {}) or {}).get("path") or "")
+    user_id = str(
+        (
+            data.get("user_id")
+            if socket_path == "/ws/internal"
+            else getattr(getattr(websocket, "state", None), "user_id", None)
+        )
+        or "owner"
+    )
 
     await broadcaster.update_node_status(
         node_id,
@@ -446,6 +495,7 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
             workflow_id=workflow_id,
             outputs=data.get("outputs", {}),  # Upstream node outputs for data flow
             extras=invocation_extras or None,
+            user_id=user_id,
         )
 
         if result.get("success"):
@@ -912,6 +962,10 @@ async def handle_execute_workflow(data: Dict[str, Any], websocket: WebSocket) ->
             session_id=session_id,
             status_callback=status_callback,
             workflow_id=workflow_id,
+            user_id=str(
+                getattr(getattr(websocket, "state", None), "user_id", None)
+                or "owner"
+            ),
         )
     finally:
         # Always release the active-run counter so the button never gets stuck
@@ -953,6 +1007,15 @@ async def handle_execute_ai_node(data: Dict[str, Any], websocket: WebSocket) -> 
     node_id, node_type = data["node_id"], data["node_type"]
     workflow_id = data.get("workflow_id")  # Per-workflow isolation for tool node glowing
     execution_id = str(data.get("execution_id") or uuid.uuid4().hex)
+    socket_path = str((getattr(websocket, "scope", {}) or {}).get("path") or "")
+    user_id = str(
+        (
+            data.get("user_id")
+            if socket_path == "/ws/internal"
+            else getattr(getattr(websocket, "state", None), "user_id", None)
+        )
+        or "owner"
+    )
 
     await broadcaster.update_node_status(node_id, "executing", {"execution_id": execution_id}, workflow_id=workflow_id)
     await broadcaster.workflow_run_started(workflow_id)
@@ -967,6 +1030,7 @@ async def handle_execute_ai_node(data: Dict[str, Any], websocket: WebSocket) -> 
             session_id=data.get("session_id", "default"),
             execution_id=execution_id,
             workflow_id=workflow_id,
+            user_id=user_id,
         )
 
         if result.get("success"):
@@ -1553,6 +1617,7 @@ async def websocket_status_endpoint(websocket: WebSocket):
     # Check if auth is disabled (VITE_AUTH_ENABLED=false)
     auth_disabled = settings.vite_auth_enabled and settings.vite_auth_enabled.lower() == "false"
 
+    authenticated_user_id = "owner"
     if not auth_disabled:
         # Auth enabled - verify token
         from core.auth_cookies import get_session_token
@@ -1569,6 +1634,15 @@ async def websocket_status_endpoint(websocket: WebSocket):
         if not payload:
             await websocket.close(code=4001, reason="Invalid or expired session")
             return
+
+        authenticated_user_id = str(payload.get("sub") or "")
+        if not authenticated_user_id:
+            await websocket.close(code=4001, reason="Invalid session subject")
+            return
+
+    # Plugin-owned handlers resolve namespace ownership from trusted
+    # connection state. Client payloads cannot choose a Memory/Context owner.
+    websocket.state.user_id = authenticated_user_id
 
     broadcaster = get_status_broadcaster()
     await broadcaster.connect(websocket)

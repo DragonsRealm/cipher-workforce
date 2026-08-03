@@ -54,7 +54,13 @@ async def import_examples_for_user(database) -> int:
     Returns the count of workflows imported.
     """
     from services.workflow_import import remap_node_ids
-    from services.workflow_naming import canonicalize_node_ids, next_available_slug
+    from services.workflow_naming import next_available_slug
+    from services.workflow_migrations import normalize_workflow_graph
+    from services.workflow_context_migration import (
+        import_legacy_context_receipts,
+        persist_parameter_aliases,
+    )
+    from services.workflow_sanitizer import sanitize_workflow_graph
     from services.workflow_validator import validate_workflow
 
     examples = get_example_workflows()
@@ -74,11 +80,15 @@ async def import_examples_for_user(database) -> int:
             example.get("edges", []),
             example.get("nodeParameters", {}),
         )
-        nodes, edges, node_aliases = canonicalize_node_ids(workflow_id, nodes, edges)
-        node_parameters = {
-            node_aliases.get(node_id, node_id): params
-            for node_id, params in node_parameters.items()
-        }
+        normalization = normalize_workflow_graph(
+            workflow_id,
+            nodes,
+            edges,
+            node_parameters,
+        )
+        nodes = normalization.nodes
+        edges = normalization.edges
+        node_parameters = normalization.node_parameters
         # Pre-save validation. parameters_by_id is the freshly-remapped
         # map so INVALID_PARAM check sees the configured defaults instead
         # of empty dicts.
@@ -118,20 +128,28 @@ async def import_examples_for_user(database) -> int:
             name=example_name,
             slug=slug,
             description=example.get("description"),
-            data={"nodes": nodes, "edges": edges},
+            data=sanitize_workflow_graph(
+                {
+                    "graphVersion": normalization.graph_version,
+                    "nodes": nodes,
+                    "edges": edges,
+                }
+            ),
         )
 
         if success:
             imported += 1
             logger.info(f"Imported example: {example.get('name')}")
 
-            # Save embedded nodeParameters under the remapped node ids.
-            for node_id, params in node_parameters.items():
-                if params:
-                    try:
-                        await database.save_node_parameters(node_id, params)
-                        logger.debug(f"Saved parameters for node {node_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to save parameters for node {node_id}: {e}")
+            await import_legacy_context_receipts(
+                database,
+                normalization.state_imports,
+            )
+            await persist_parameter_aliases(
+                database,
+                aliases={},
+                parameters=node_parameters,
+                context_import_completed=True,
+            )
 
     return imported

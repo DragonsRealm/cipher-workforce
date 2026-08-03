@@ -78,88 +78,8 @@ async def test_controller_control_update_rejects_unknown_state_without_mutation(
     assert controller.status()["revision"] == 0
 
 
-def test_pause_scheduling_changes_are_replay_patch_guarded():
-    from nodes.scheduler.cron_scheduler import _workflow as cron_module
-    from services.temporal import agent_workflow as agent_module
-    from services.temporal import polling_trigger_workflow as polling_module
-    from services.temporal import trigger_listener_workflow as trigger_module
-    from services.temporal import workflow as machina_module
-    from services.temporal import workflow_control_workflow as control_module
-
-    expected = {
-        machina_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(MachinaWorkflow.run),
-        polling_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(PollingTriggerWorkflow.run),
-        agent_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(AgentWorkflow.run),
-        agent_module.DELEGATED_TASK_COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(DelegatedTaskWorkflow.run),
-        agent_module.DELEGATION_PERMIT_CLEANUP_PATCH:
-            inspect.getsource(AgentWorkflow.run),
-        agent_module.DELEGATION_ACQUIRE_CANCELLATION_PATCH:
-            inspect.getsource(AgentWorkflow.run),
-        agent_module.DELEGATED_TASK_CANCELLATION_TERMINAL_PATCH:
-            inspect.getsource(DelegatedTaskWorkflow.run),
-        control_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(WorkflowControlWorkflow.run),
-        trigger_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(TriggerListenerWorkflow.run),
-        cron_module.COOPERATIVE_PAUSE_SCHEDULING_PATCH:
-            inspect.getsource(CronTriggerWorkflow.run),
-    }
-
-    assert set(expected) == {
-        "machina-cooperative-pause-scheduling-v1",
-        "polling-trigger-cooperative-pause-scheduling-v1",
-        "agent-cooperative-pause-scheduling-v1",
-        "delegated-task-cooperative-pause-scheduling-v1",
-        "agent-delegation-permit-cleanup-v1",
-        "agent-delegation-acquire-cancellation-v1",
-        "delegated-task-cancellation-terminal-v1",
-        "workflow-control-cooperative-pause-scheduling-v1",
-        "trigger-cooperative-pause-scheduling-v1",
-        "cron-cooperative-pause-scheduling-v1",
-    }
-    for patch_id, source in expected.items():
-        assert "workflow.patched(" in source
-        assert "COOPERATIVE_PAUSE_SCHEDULING_PATCH" in source
-        assert patch_id.endswith("-v1")
 
 
-@pytest.mark.asyncio
-async def test_controller_preserves_legacy_admission_and_patch_gates_metadata(
-    monkeypatch,
-):
-    from services.temporal.trigger_listener_workflow import (
-        TriggerListenerWorkflow,
-    )
-
-    spawn = AsyncMock()
-    monkeypatch.setattr(TriggerListenerWorkflow, "_spawn_child_run", spawn)
-    controller = WorkflowControlWorkflow()
-    spec = {
-        "listener_args": {
-            "trigger_node_id": "push-1",
-            "workflow_id": "workflow-1",
-        }
-    }
-
-    controller._use_cooperative_pause_schedule_gate = False
-    await controller._spawn_push_run({"id": "legacy"}, spec)
-    assert (
-        spawn.await_args.kwargs["admission_check"]
-        == controller._wait_until_running
-    )
-    assert spawn.await_args.kwargs["search_attributes"] is None
-
-    controller._use_cooperative_pause_schedule_gate = True
-    await controller._spawn_push_run({"id": "new"}, spec)
-    assert (
-        spawn.await_args.kwargs["admission_check"]
-        == controller._wait_until_running
-    )
-    assert spawn.await_args.kwargs["search_attributes"] is not None
 
 
 async def _wait_for_predicate(predicate, blocked: asyncio.Event) -> None:
@@ -207,7 +127,7 @@ async def test_machina_rechecks_pause_between_ready_child_starts(monkeypatch):
     monkeypatch.setattr(
         MachinaWorkflow,
         "_resolve_dispatch",
-        lambda self, _node_type: {
+        lambda self, _node_type, **_kwargs: {
             "kind": "child_workflow",
             "name": "AgentWorkflow",
         },
@@ -463,11 +383,11 @@ async def test_agent_rechecks_pause_before_tool_command_batch(monkeypatch):
 
     async def execute_activity(name, *, args, **_kwargs):
         nonlocal llm_step
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _agent_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             llm_step += 1
             if llm_step == 1:
                 instance._control_paused = True
@@ -490,9 +410,9 @@ async def test_agent_rechecks_pause_before_tool_command_batch(monkeypatch):
         if name == "node.testTool.v1":
             tool_started.set()
             return {"success": True}
-        if name == "agent.store_output.v1":
+        if name == "agent.store_output":
             return {"stored": True}
-        if name == "agent.skill.clear.v1":
+        if name == "agent.skill.clear":
             return {"cleared": True}
         raise AssertionError(f"Unexpected activity {name}")
 
@@ -544,13 +464,13 @@ async def test_agent_rechecks_pause_after_tool_phase_before_activity(monkeypatch
 
     async def execute_activity(name, *, args, **_kwargs):
         nonlocal llm_step
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _agent_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             if args[0]["phase"] == "executing_tool":
                 instance._control_paused = True
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             llm_step += 1
             if llm_step == 1:
                 return {
@@ -562,9 +482,9 @@ async def test_agent_rechecks_pause_after_tool_phase_before_activity(monkeypatch
         if name == "node.testTool.v1":
             tool_started.set()
             return {"success": True}
-        if name == "agent.store_output.v1":
+        if name == "agent.store_output":
             return {"stored": True}
-        if name == "agent.skill.clear.v1":
+        if name == "agent.skill.clear":
             return {"cleared": True}
         raise AssertionError(f"Unexpected activity {name}")
 
@@ -707,7 +627,7 @@ async def test_acquire_activity_compensates_cancelled_attempt(monkeypatch):
     ]
 
 
-@pytest.mark.parametrize("patch_enabled", [False, True])
+@pytest.mark.parametrize("patch_enabled", [True])
 @pytest.mark.asyncio
 async def test_delegated_acquire_cancellation_type_is_replay_patch_guarded(
     monkeypatch,
@@ -739,9 +659,9 @@ async def test_delegated_acquire_cancellation_type_is_replay_patch_guarded(
     acquire_kwargs: dict = {}
 
     async def execute_activity(name, *, args, **kwargs):
-        if name == "agent.register_task_execution.v1":
+        if name == "agent.register_task_execution":
             return {}
-        if name == "agent.acquire_subagent_permit.v1":
+        if name == "agent.acquire_subagent_permit":
             acquire_kwargs.update(kwargs)
             raise asyncio.CancelledError
         raise AssertionError(f"Unexpected activity {name}")
@@ -767,7 +687,7 @@ async def test_delegated_acquire_cancellation_type_is_replay_patch_guarded(
         assert "cancellation_type" not in acquire_kwargs
 
 
-@pytest.mark.parametrize("patch_enabled", [False, True])
+@pytest.mark.parametrize("patch_enabled", [True])
 @pytest.mark.asyncio
 async def test_agent_acquire_cancellation_type_is_replay_patch_guarded(
     monkeypatch,
@@ -799,11 +719,11 @@ async def test_agent_acquire_cancellation_type_is_replay_patch_guarded(
     acquire_kwargs: dict = {}
 
     async def execute_activity(name, *, args, **kwargs):
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _delegation_agent_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             return {
                 "kind": "tool_calls",
                 "calls": [{
@@ -813,9 +733,9 @@ async def test_agent_acquire_cancellation_type_is_replay_patch_guarded(
                 }],
                 "usage": {},
             }
-        if name == "agent.queue_delegation.v1":
+        if name == "agent.queue_delegation":
             return {}
-        if name == "agent.acquire_subagent_permit.v1":
+        if name == "agent.acquire_subagent_permit":
             acquire_kwargs.update(kwargs)
             raise asyncio.CancelledError
         raise AssertionError(f"Unexpected activity {name}")
@@ -840,7 +760,7 @@ async def test_agent_acquire_cancellation_type_is_replay_patch_guarded(
 
 @pytest.mark.parametrize(
     "failing_cleanup",
-    [None, "agent.cancel_delegation.v1", "agent.release_subagent_permit.v1"],
+    [None, "agent.cancel_delegation", "agent.release_subagent_permit"],
 )
 @pytest.mark.asyncio
 async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
@@ -876,21 +796,21 @@ async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
     async def execute_activity(name, *, args, **_kwargs):
         nonlocal register_count
         calls.append((name, args[0]))
-        if name == "agent.register_task_execution.v1":
+        if name == "agent.register_task_execution":
             register_count += 1
             if register_count == 2:
                 child_registered.set()
             return {}
         if name in {
-            "agent.acquire_subagent_permit.v1",
-            "agent.begin_delegation.v1",
+            "agent.acquire_subagent_permit",
+            "agent.begin_delegation",
         }:
             return {}
         if name == failing_cleanup:
             raise RuntimeError(f"{name} failed")
         if name in {
-            "agent.cancel_delegation.v1",
-            "agent.release_subagent_permit.v1",
+            "agent.cancel_delegation",
+            "agent.release_subagent_permit",
         }:
             return {}
         raise AssertionError(f"Unexpected activity {name}")
@@ -923,15 +843,15 @@ async def test_delegated_cancellation_persists_terminal_releases_and_reraises(
     terminal = next(
         payload
         for name, payload in calls
-        if name == "agent.cancel_delegation.v1"
+        if name == "agent.cancel_delegation"
     )
     assert terminal["reason"] == "Delegated task workflow cancelled"
     assert terminal["terminal_event_id"] == "task-1:terminal"
     # The normal finish path applies retry/requeue policy and must never run
     # for a cancellation.
-    assert not any(name == "agent.finish_delegation.v1" for name, _ in calls)
+    assert not any(name == "agent.finish_delegation" for name, _ in calls)
     assert any(
-        name == "agent.release_subagent_permit.v1"
+        name == "agent.release_subagent_permit"
         for name, _payload in calls
     )
 
@@ -964,11 +884,11 @@ async def test_agent_cancellation_releases_all_started_delegation_permits(
     releases: list[tuple[str, str]] = []
 
     async def execute_activity(name, *, args, **kwargs):
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _two_delegation_agent_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             return {
                 "kind": "tool_calls",
                 "calls": [
@@ -985,7 +905,7 @@ async def test_agent_cancellation_releases_all_started_delegation_permits(
                 ],
                 "usage": {},
             }
-        if name == "agent.release_subagent_permit.v1":
+        if name == "agent.release_subagent_permit":
             releases.append(
                 (kwargs["activity_id"], args[0]["permit_id"])
             )
@@ -993,10 +913,10 @@ async def test_agent_cancellation_releases_all_started_delegation_permits(
                 raise RuntimeError("release failed")
             return {"released": True}
         if name in {
-            "agent.queue_delegation.v1",
-            "agent.acquire_subagent_permit.v1",
-            "agent.begin_delegation.v1",
-            "agent.register_task_execution.v1",
+            "agent.queue_delegation",
+            "agent.acquire_subagent_permit",
+            "agent.begin_delegation",
+            "agent.register_task_execution",
         }:
             return {}
         raise AssertionError(f"Unexpected activity {name}")
@@ -1041,8 +961,8 @@ async def test_agent_cancellation_releases_all_started_delegation_permits(
 @pytest.mark.parametrize(
     ("pause_activity", "blocked_command"),
     [
-        ("agent.acquire_subagent_permit.v1", "agent.begin_delegation.v1"),
-        ("agent.begin_delegation.v1", "start_child_workflow"),
+        ("agent.acquire_subagent_permit", "agent.begin_delegation"),
+        ("agent.begin_delegation", "start_child_workflow"),
     ],
 )
 @pytest.mark.asyncio
@@ -1073,11 +993,11 @@ async def test_agent_rechecks_pause_between_delegation_commands(
 
     async def execute_activity(name, *, args, **_kwargs):
         nonlocal llm_step
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _delegation_agent_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             llm_step += 1
             if llm_step == 1:
                 return {
@@ -1093,20 +1013,20 @@ async def test_agent_rechecks_pause_between_delegation_commands(
                 }
             return {"kind": "final", "content": "done", "usage": {}}
         if name in {
-            "agent.queue_delegation.v1",
-            "agent.acquire_subagent_permit.v1",
-            "agent.begin_delegation.v1",
-            "agent.register_task_execution.v1",
-            "agent.release_subagent_permit.v1",
-            "agent.finish_delegation.v1",
+            "agent.queue_delegation",
+            "agent.acquire_subagent_permit",
+            "agent.begin_delegation",
+            "agent.register_task_execution",
+            "agent.release_subagent_permit",
+            "agent.finish_delegation",
         }:
             scheduled_commands.append(name)
             if name == pause_activity:
                 instance._control_paused = True
             return {}
-        if name == "agent.store_output.v1":
+        if name == "agent.store_output":
             return {"stored": True}
-        if name == "agent.skill.clear.v1":
+        if name == "agent.skill.clear":
             return {"cleared": True}
         raise AssertionError(f"Unexpected activity {name}")
 
@@ -1143,13 +1063,13 @@ async def test_agent_rechecks_pause_between_delegation_commands(
     assert child_started.is_set()
     assert result["success"] is True
     assert scheduled_commands == [
-        "agent.queue_delegation.v1",
-        "agent.acquire_subagent_permit.v1",
-        "agent.begin_delegation.v1",
+        "agent.queue_delegation",
+        "agent.acquire_subagent_permit",
+        "agent.begin_delegation",
         "start_child_workflow",
-        "agent.register_task_execution.v1",
-        "agent.release_subagent_permit.v1",
-        "agent.finish_delegation.v1",
+        "agent.register_task_execution",
+        "agent.release_subagent_permit",
+        "agent.finish_delegation",
     ]
 
 
@@ -1195,11 +1115,11 @@ async def test_agent_rechecks_pause_before_task_manager_preflight_batch(monkeypa
     preflight_started = asyncio.Event()
 
     async def execute_activity(name, *, args, **kwargs):
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _mixed_preflight_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             return {
                 "kind": "tool_calls",
                 "calls": [
@@ -1220,7 +1140,7 @@ async def test_agent_rechecks_pause_before_task_manager_preflight_batch(monkeypa
                 "usage": {},
             }
         if (
-            name == "agent.release_subagent_permit.v1"
+            name == "agent.release_subagent_permit"
             and kwargs.get("activity_id") == "yield-own-permit-1"
         ):
             instance._control_paused = True
@@ -1287,11 +1207,11 @@ async def test_agent_rechecks_pause_before_task_manager_child_start(monkeypatch)
 
     async def execute_activity(name, *, args, **_kwargs):
         nonlocal llm_step
-        if name == "agent.prepare_payload.v1":
+        if name == "agent.prepare_payload":
             return _mixed_preflight_payload()
-        if name == "agent.broadcast_progress.v1":
+        if name == "agent.broadcast_progress":
             return {"emitted": True}
-        if name == "agent.execute_llm_step.v1":
+        if name == "agent.execute_llm_step":
             llm_step += 1
             if llm_step == 1:
                 return {
@@ -1309,12 +1229,12 @@ async def test_agent_rechecks_pause_before_task_manager_child_start(monkeypatch)
                     "usage": {},
                 }
             return {"kind": "final", "content": "done", "usage": {}}
-        if name == "agent.queue_delegation.v1":
+        if name == "agent.queue_delegation":
             instance._control_paused = True
             return {"queued": True}
-        if name == "agent.store_output.v1":
+        if name == "agent.store_output":
             return {"stored": True}
-        if name == "agent.skill.clear.v1":
+        if name == "agent.skill.clear":
             return {"cleared": True}
         raise AssertionError(f"Unexpected activity {name}")
 

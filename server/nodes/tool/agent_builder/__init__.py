@@ -62,6 +62,9 @@ _MASTER_SKILL_TYPE = "masterSkill"
 _MASTER_SKILL_LABEL = "Master Skill"
 _AGENT_BUILDER_TYPE = "agentBuilder"
 _TASK_MANAGER_TYPE = "taskManager"
+_CONTEXT_TYPE = "context"
+_CONTEXT_INPUT_HANDLE = "input-context"
+_CONTEXT_OUTPUT_HANDLE = "output-context"
 _TEAM_LEAD_TYPES = frozenset({"orchestrator_agent", "ai_employee"})
 _DENIED_TOOL_TYPES = frozenset({_AGENT_BUILDER_TYPE, _MASTER_SKILL_TYPE, _TASK_MANAGER_TYPE})
 _KEY_PARAM_FIELDS = ("provider", "model", "operation", "url", "query")
@@ -1173,8 +1176,29 @@ class AgentBuilderNode(ToolNode):
             position=workflow_ops.anchored(caller_id, offset_x=300, offset_y=200),
         )
         add_node_op["minted_id"] = minted_id
+        context_ref = f"{client_ref}_context"
+        context_id = _mint_node_id(_CONTEXT_TYPE)
+        context_op = workflow_ops.add_node(
+            context_ref,
+            _CONTEXT_TYPE,
+            {},
+            label="Context",
+            position=workflow_ops.anchored(
+                minted_id,
+                offset_x=-360,
+                offset_y=0,
+            ),
+        )
+        context_op["minted_id"] = context_id
         ops = [
             add_node_op,
+            context_op,
+            workflow_ops.add_edge(
+                {"client_ref": context_ref},
+                {"client_ref": client_ref},
+                source_handle=_CONTEXT_OUTPUT_HANDLE,
+                target_handle=_CONTEXT_INPUT_HANDLE,
+            ),
             workflow_ops.add_edge(
                 {"client_ref": client_ref},
                 caller_id,

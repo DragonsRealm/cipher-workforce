@@ -44,7 +44,7 @@ class MasterSkillNode(ActionNode):
     group = ("tool",)
     description = "Aggregate multiple skills with enable/disable toggles"
     component_kind = "tool"
-    handles = ({"name": "output-skill", "kind": "output", "position": "top", "label": "Skill", "role": "skill"},)
+    handles = ({"name": "output-tool", "kind": "output", "position": "top", "label": "Skill", "role": "skill"},)
     ui_hints = {
         "isToolPanel": True,
         "isMasterSkillEditor": True,

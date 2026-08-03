@@ -40,6 +40,10 @@ from services.memory.runtime import (
     append_memory_turns_atomic,
     update_memory_parameters_atomic,
 )
+from services.memory.tool_store import (
+    MemoryScope,
+    MemoryToolStore,
+)
 
 __all__ = [
     # Markdown helpers — used by every agent bridge (aiAgent /
@@ -64,4 +68,7 @@ __all__ = [
     # Transactional runtime writes.
     "append_memory_turns_atomic",
     "update_memory_parameters_atomic",
+    # Explicit durable Memory tool.
+    "MemoryScope",
+    "MemoryToolStore",
 ]

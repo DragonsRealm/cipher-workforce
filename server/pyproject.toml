@@ -7,7 +7,6 @@ dependencies = [
     # Core
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-    "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
 
     # Database
@@ -76,7 +75,6 @@ dependencies = [
     # Utils
     "python-dotenv>=1.0.0",
     "qrcode[pil]>=8.0",
-    "pytz>=2024.1",
     # IANA timezone database for stdlib zoneinfo on Windows (no system
     # tz db there). Was a hidden transitive dep of apscheduler until
     # Wave 15.2 retired it; currentTimeTool's ZoneInfo(...) needs it.
@@ -122,7 +120,6 @@ dependencies = [
     "google-api-python-client>=2.100.0",
     "google-auth>=2.27.0",
     "google-auth-oauthlib>=1.2.0",
-    "google-auth-httplib2>=0.2.0",
 
     # Temporal (durable workflow execution). Floor 1.25: Wave 18 uses
     # PollerBehaviorAutoscaling + max_activities_per_second +
