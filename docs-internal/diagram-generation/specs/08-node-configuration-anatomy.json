@@ -1,0 +1,58 @@
+{
+  "id": "08-node-configuration-anatomy",
+  "title": "Node Configuration Anatomy",
+  "subtitle": "A schema-driven modal combines draggable upstream data, a local parameter draft, per-node execution, and correlated live output",
+  "category": "product-panel",
+  "diagramType": "annotated panel flow",
+  "description": "An anatomy of the Node Configuration modal showing the real header actions, the 0.7 / 1.6 / 0.7 Input–Parameters–Output layout, NodeSpec-driven variants, local edit-buffer persistence, save-before-run execution, and WebSocket-correlated output handling.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": "client/src/ParameterPanel.tsx", "reason": "Modal shell, selected-node identity, Run/Save/Cancel-or-Stop actions, canvas-lock gating, and per-node execution reducer."},
+    {"path": "client/src/components/parameterPanel/ParameterPanelLayout.tsx", "reason": "Authoritative three-column composition and 0.7 / 1.6 / 0.7 flex proportions."},
+    {"path": "client/src/components/parameterPanel/InputSection.tsx", "reason": "Connected upstream output/schema discovery, inherited config-node inputs, recursive variable rendering, and drag source behavior."},
+    {"path": "client/src/components/parameterPanel/MiddleSection.tsx", "reason": "Schema parameter rendering and uiHints-selected specialized panels, Connected Skills, Token Usage, and Console sections."},
+    {"path": "client/src/components/parameterPanel/OutputSection.tsx", "reason": "Local execution plus WebSocket status/output merge and execution_id deduplication."},
+    {"path": "client/src/hooks/useParameterPanel.ts", "reason": "Defaults + saved-parameters edit buffer, dirty comparison, save, cancel/revert, and selected NodeSpec resolution."},
+    {"path": "client/src/hooks/useNodeParamsQuery.ts", "reason": "TanStack Query get/save node-parameter contract and optimistic versioned cache update."},
+    {"path": "client/src/services/executionService.ts", "reason": "Save-aware WebSocket node execution and normalized ExecutionResult contract."},
+    {"path": "server/routers/websocket.py", "reason": "get_node_parameters, save_node_parameters, output/status, and event-wait cancellation request handlers."},
+    {"path": "server/core/database.py", "reason": "Persistent node_parameters and node_outputs backing the panel's live and saved data."}
+  ],
+  "groups": [
+    {"id": "configuration-modal", "label": "NODE CONFIGURATION MODAL", "role": "interface", "x": 50, "y": 125, "w": 1820, "h": 620},
+    {"id": "panel-data-plane", "label": "LIVE DATA & PERSISTENCE", "role": "runtime", "x": 50, "y": 775, "w": 1820, "h": 180}
+  ],
+  "nodes": [
+    {"id": "node-identity", "label": "Node identity", "type": "modal header", "role": "interface", "x": 90, "y": 175, "w": 560, "h": 110, "detail": ["Icon · display name · dirty marker"]},
+    {"id": "save-action", "label": "Save", "type": "header action", "role": "trigger", "x": 700, "y": 175, "w": 220, "h": 110, "detail": ["Disabled when clean or canvas locked"]},
+    {"id": "run-action", "label": "Run", "type": "header action", "role": "trigger", "x": 960, "y": 175, "w": 220, "h": 110, "detail": ["Hidden by uiHints when passive"]},
+    {"id": "cancel-action", "label": "Cancel / Stop", "type": "header action", "role": "trigger", "x": 1220, "y": 175, "w": 270, "h": 110, "detail": ["Revert draft or cancel active wait"]},
+    {"id": "close-action", "label": "Close (X)", "type": "modal action", "role": "neutral", "x": 1530, "y": 175, "w": 300, "h": 110, "detail": ["Cancel draft and deselect node"]},
+    {"id": "input-column", "label": "Input Data & Variables", "labelLines": ["Input Data &", "Variables"], "type": "left column · 0.7", "role": "interface", "x": 90, "y": 350, "w": 430, "h": 340, "detail": ["Upstream execution values or output schema", "Recursive object and array fields", "Drag template variables into parameters"]},
+    {"id": "parameters-column", "label": "Parameters", "type": "middle column · 1.6", "role": "interface", "x": 560, "y": 350, "w": 760, "h": 340, "detail": ["Schema-rendered local edit buffer", "Specialized middle panels selected by uiHints", "Connected Skills · Token Usage · Console"]},
+    {"id": "output-column", "label": "Output", "type": "right column · 0.7", "role": "result", "x": 1360, "y": 350, "w": 470, "h": 340, "detail": ["Local run results + WebSocket status", "Deduplicates matching execution_id", "Clear results without changing parameters"]},
+    {"id": "node-spec", "label": "NodeSpec metadata", "type": "schema source", "role": "data", "x": 90, "y": 820, "w": 330, "h": 110, "detail": ["properties · handles · uiHints"]},
+    {"id": "parameter-state", "label": "Parameter query + draft", "labelLines": ["Parameter query", "+ draft"], "type": "client state", "role": "runtime", "x": 500, "y": 820, "w": 380, "h": 125, "detail": ["defaults + saved params", "dirty edit buffer + query cache"]},
+    {"id": "execution-service", "label": "ExecutionService", "type": "per-node runtime", "role": "runtime", "x": 940, "y": 820, "w": 360, "h": 110, "detail": ["save-before-run · executeNode", "per-node reducer"]},
+    {"id": "websocket-database", "label": "WebSocket + workflow.db", "labelLines": ["WebSocket +", "workflow.db"], "type": "live data plane", "role": "data", "x": 1370, "y": 820, "w": 460, "h": 125, "detail": ["node_parameters · node_outputs", "node status + wait cancellation"]}
+  ],
+  "relationships": [
+    {"id": "r-spec-identity", "from": "node-spec", "to": "node-identity", "label": "supplies icon and display name", "fromSide": "top", "toSide": "bottom", "waypoints": [[255, 760], [370, 760]], "labelAt": [370, 760]},
+    {"id": "r-spec-parameters", "from": "node-spec", "to": "parameters-column", "label": "renders fields and panel variants", "fromSide": "top", "toSide": "bottom", "waypoints": [[255, 720], [940, 720]], "labelAt": [600, 720]},
+    {"id": "r-input-parameters", "from": "input-column", "to": "parameters-column", "label": "drag template variable", "fromSide": "top", "toSide": "top", "waypoints": [[305, 320], [940, 320]], "labelAt": [620, 320]},
+    {"id": "r-parameters-draft", "from": "parameters-column", "to": "parameter-state", "label": "onParameterChange updates local draft", "fromSide": "bottom", "toSide": "top", "waypoints": [[940, 750], [690, 750]], "labelAt": [815, 750]},
+    {"id": "r-save-draft", "from": "save-action", "to": "parameter-state", "label": "handleSave commits draft", "fromSide": "bottom", "toSide": "top", "waypoints": [[810, 310], [460, 310], [460, 760], [690, 760]], "labelAt": [575, 760]},
+    {"id": "r-run-execution", "from": "run-action", "to": "execution-service", "label": "save if dirty, then execute node", "fromSide": "bottom", "toSide": "top", "waypoints": [[1070, 310], [1120, 760]], "labelAt": [1120, 760]},
+    {"id": "r-execution-output", "from": "execution-service", "to": "output-column", "label": "appends correlated ExecutionResult", "fromSide": "top", "toSide": "bottom", "waypoints": [[1120, 735], [1595, 735]], "labelAt": [1370, 735]},
+    {"id": "r-websocket-output", "from": "websocket-database", "to": "output-column", "label": "broadcasts node status and output", "protocol": "execution_id", "fromSide": "top", "toSide": "bottom", "waypoints": [[1600, 780], [1760, 780], [1760, 720], [1595, 720]], "labelAt": [1705, 720]},
+    {"id": "r-cancel-websocket", "from": "cancel-action", "to": "websocket-database", "label": "cancel wait or close draft", "fromSide": "bottom", "toSide": "top", "waypoints": [[1355, 310], [1850, 310], [1850, 760], [1600, 760]], "labelAt": [1720, 760]},
+    {"id": "r-draft-database", "from": "parameter-state", "to": "websocket-database", "label": "save_node_parameters", "protocol": "TanStack Query + WS", "fromSide": "bottom", "toSide": "bottom", "waypoints": [[690, 970], [1600, 970]], "labelAt": [1145, 970]}
+  ],
+  "callouts": [],
+  "prompt": {
+    "primaryRequest": "Create an annotated product-panel anatomy of the Node Configuration modal with its real header controls, three proportional columns, and the live client/server data flows that drive configuration, execution, and output.",
+    "composition": "Use one wide modal frame above a shallow live-data frame. In the modal header place Node identity, Save, Run, Cancel / Stop, and Close. Beneath it, preserve the visibly narrow-wide-narrow 0.7 / 1.6 / 0.7 Input Data & Variables, Parameters, and Output columns. Align NodeSpec, parameter draft/query, ExecutionService, and WebSocket + workflow.db cards below their consumers.",
+    "constraints": ["Preserve the 0.7 / 1.6 / 0.7 column hierarchy", "Show Save, Run, Cancel / Stop, and Close as distinct controls", "Represent NodeSpec uiHints as the source of hidden sections and specialized middle panels", "Show the local edit buffer separately from persisted node_parameters", "Show output correlation by execution_id", "Keep all relationships directed and labelled"],
+    "avoid": ["invented toolbar controls", "a generic settings form unrelated to the real panel", "equal-width content columns", "unlabelled arrows", "bidirectional arrows"]
+  }
+}

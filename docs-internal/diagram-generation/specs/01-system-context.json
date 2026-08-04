@@ -1,0 +1,48 @@
+{
+  "id": "01-system-context",
+  "title": "OpenCompany System Context",
+  "subtitle": "Who uses the system and which external capabilities it orchestrates",
+  "category": "architecture",
+  "diagramType": "C4 system context",
+  "description": "A C4-style system context view of OpenCompany as an automation workspace between human users and external model, productivity, messaging, device, developer, and retrieval services.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": "README.md", "reason": "Product scope, workflow-builder positioning, supported integrations, and user-facing capabilities."},
+    {"path": "server/nodes/groups.py", "reason": "Canonical node families that establish the external capability categories."},
+    {"path": "server/config/credential_providers.json", "reason": "Configured provider catalogue for model, productivity, messaging, search, and developer integrations."},
+    {"path": "server/main.py", "reason": "Authoritative application boundary and exposed HTTP, WebSocket, webhook, and MCP surfaces."}
+  ],
+  "groups": [
+    {"id": "opencompany-boundary", "label": "OPENCOMPANY SYSTEM BOUNDARY", "role": "system", "x": 420, "y": 145, "w": 930, "h": 800}
+  ],
+  "nodes": [
+    {"id": "workflow-authors", "label": "Workflow authors", "type": "person", "role": "actor", "x": 55, "y": 265, "w": 285, "h": 125, "detail": ["Build and test automations"]},
+    {"id": "workflow-operators", "label": "Workflow operators", "type": "person", "role": "actor", "x": 55, "y": 640, "w": 285, "h": 125, "detail": ["Deploy and supervise runs"]},
+    {"id": "opencompany", "label": "OpenCompany", "type": "software system", "role": "system", "x": 665, "y": 385, "w": 440, "h": 205, "detail": ["Visual workflow workspace", "Agents, tools, triggers and durable runs"]},
+    {"id": "llm-providers", "label": "LLM providers", "type": "external system", "role": "model", "x": 1480, "y": 130, "w": 365, "h": 105, "detail": ["Hosted and local inference"]},
+    {"id": "productivity-services", "label": "Productivity services", "type": "external system", "role": "tool", "x": 1480, "y": 275, "w": 365, "h": 105, "detail": ["Mail, calendar, docs and CRM"]},
+    {"id": "messaging-channels", "label": "Messaging channels", "type": "external system", "role": "tool", "x": 1480, "y": 420, "w": 365, "h": 105, "detail": ["Chat and social platforms"]},
+    {"id": "connected-devices", "label": "Connected devices", "type": "external system", "role": "tool", "x": 1480, "y": 565, "w": 365, "h": 105, "detail": ["Android and device services"]},
+    {"id": "developer-services", "label": "Developer services", "type": "external system", "role": "interface", "x": 1480, "y": 710, "w": 365, "h": 105, "detail": ["Code, CLI and MCP tools"]},
+    {"id": "search-vector-stores", "label": "Search and vector stores", "labelLines": ["Search and", "vector stores"], "type": "external system", "role": "data", "x": 1480, "y": 855, "w": 365, "h": 110, "detail": ["Retrieval and knowledge indexes"]}
+  ],
+  "relationships": [
+    {"id": "r-authors-design", "from": "workflow-authors", "to": "opencompany", "label": "Design and run automations", "protocol": "Browser UI / CLI", "fromSide": "right", "toSide": "left", "waypoints": [[510, 327], [510, 445]], "labelAt": [500, 365]},
+    {"id": "r-operators-control", "from": "workflow-operators", "to": "opencompany", "label": "Control deployed workflows", "protocol": "Browser UI / WebSocket", "fromSide": "right", "toSide": "left", "waypoints": [[535, 702], [535, 535]], "labelAt": [505, 665]},
+    {"id": "r-opencompany-llm", "from": "opencompany", "to": "llm-providers", "label": "Requests inference", "protocol": "Provider SDK / HTTPS", "fromSide": "right", "toSide": "left", "waypoints": [[1210, 487], [1210, 182]], "labelAt": [1325, 182]},
+    {"id": "r-opencompany-productivity", "from": "opencompany", "to": "productivity-services", "label": "Reads and updates work", "protocol": "OAuth / HTTPS", "fromSide": "right", "toSide": "left", "waypoints": [[1240, 487], [1240, 327]], "labelAt": [1350, 327]},
+    {"id": "r-opencompany-messaging", "from": "opencompany", "to": "messaging-channels", "label": "Sends and receives messages", "protocol": "Webhooks / RPC", "fromSide": "right", "toSide": "left", "waypoints": [[1270, 487], [1270, 472]], "labelAt": [1365, 472]},
+    {"id": "r-opencompany-devices", "from": "opencompany", "to": "connected-devices", "label": "Invokes device actions", "protocol": "RPC / platform APIs", "fromSide": "right", "toSide": "left", "waypoints": [[1270, 487], [1270, 617]], "labelAt": [1360, 617]},
+    {"id": "r-opencompany-developer", "from": "opencompany", "to": "developer-services", "label": "Uses code and dev tools", "protocol": "MCP / CLI / HTTPS", "fromSide": "right", "toSide": "left", "waypoints": [[1240, 487], [1240, 762]], "labelAt": [1350, 762]},
+    {"id": "r-opencompany-search", "from": "opencompany", "to": "search-vector-stores", "label": "Indexes and retrieves knowledge", "protocol": "HTTPS / vector API", "fromSide": "right", "toSide": "left", "waypoints": [[1210, 487], [1210, 910]], "labelAt": [1340, 910]}
+  ],
+  "callouts": [
+    {"id": "system-purpose", "title": "System responsibility", "x": 615, "y": 700, "w": 540, "h": 135, "lines": ["Compose external capabilities as directed graphs.", "Keep execution, credentials and observability", "inside one user-scoped workspace."]}
+  ],
+  "prompt": {
+    "primaryRequest": "Create a precise C4 system-context diagram with OpenCompany centered inside a clearly labelled system boundary, two human actor cards on the left, and six external-system cards stacked on the right.",
+    "composition": "Left-to-right context map. Keep OpenCompany visually dominant in the middle. Route the two inbound human relationships into the left edge of OpenCompany and fan six labelled outbound relationships to a clean right-hand stack. Put the system-responsibility note beneath the central card.",
+    "constraints": ["Treat OpenCompany as one software system at this abstraction level", "Show no internal containers or databases", "Keep all external systems outside the OpenCompany boundary"],
+    "avoid": ["vendor logos", "unlisted integrations", "internal microservice detail", "bidirectional arrows"]
+  }
+}

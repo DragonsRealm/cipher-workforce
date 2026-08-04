@@ -1,0 +1,1178 @@
+{
+  "schemaVersion": 1,
+  "sourceSnapshot": {
+    "commit": "5f7522250eae7b0d02ddfd8ee3740fdf5be4c25e",
+    "description": "See source-snapshot.md"
+  },
+  "diagramCount": 14,
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "visualReview": {
+    "status": "passed",
+    "evidence": "docs-internal/diagram-generation/visual-review.md",
+    "renderSizes": [
+      "1920x1080",
+      "960x540"
+    ],
+    "themes": [
+      "dark",
+      "light"
+    ]
+  },
+  "diagrams": [
+    {
+      "id": "01-system-context",
+      "title": "OpenCompany System Context",
+      "diagramType": "C4 system context",
+      "sourceReview": "reviewed",
+      "components": [
+        "workflow-authors",
+        "workflow-operators",
+        "opencompany",
+        "llm-providers",
+        "productivity-services",
+        "messaging-channels",
+        "connected-devices",
+        "developer-services",
+        "search-vector-stores"
+      ],
+      "relationships": [
+        "r-authors-design",
+        "r-operators-control",
+        "r-opencompany-llm",
+        "r-opencompany-productivity",
+        "r-opencompany-messaging",
+        "r-opencompany-devices",
+        "r-opencompany-developer",
+        "r-opencompany-search"
+      ],
+      "sourceRefs": [
+        {
+          "path": "README.md",
+          "reason": "Product scope, workflow-builder positioning, supported integrations, and user-facing capabilities."
+        },
+        {
+          "path": "server/nodes/groups.py",
+          "reason": "Canonical node families that establish the external capability categories."
+        },
+        {
+          "path": "server/config/credential_providers.json",
+          "reason": "Configured provider catalogue for model, productivity, messaging, search, and developer integrations."
+        },
+        {
+          "path": "server/main.py",
+          "reason": "Authoritative application boundary and exposed HTTP, WebSocket, webhook, and MCP surfaces."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/01-system-context.png",
+          "svg": "docs/diagrams/v2/dark/01-system-context.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/01-system-context.png",
+          "svg": "docs/diagrams/v2/light/01-system-context.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "02-runtime-trust-topology",
+      "title": "Runtime and Trust Topology",
+      "diagramType": "C4 container and deployment hybrid",
+      "sourceReview": "reviewed",
+      "components": [
+        "browser-spa",
+        "opencompany-cli",
+        "webhook-senders",
+        "vite-dev",
+        "fastapi-app",
+        "rest-surface",
+        "status-socket",
+        "internal-socket",
+        "mcp-surface",
+        "webhook-ingress",
+        "production-spa",
+        "temporal-runtime",
+        "nodejs-sidecar",
+        "whatsapp-sidecar"
+      ],
+      "relationships": [
+        "r-browser-vite",
+        "r-vite-fastapi",
+        "r-cli-fastapi",
+        "r-browser-rest",
+        "r-browser-status",
+        "r-cli-mcp",
+        "r-webhook-ingress",
+        "r-surfaces-app",
+        "r-status-app",
+        "r-temporal-internal",
+        "r-fastapi-temporal",
+        "r-fastapi-nodejs",
+        "r-fastapi-whatsapp",
+        "r-fastapi-spa"
+      ],
+      "sourceRefs": [
+        {
+          "path": ".env.template",
+          "reason": "Canonical service port block: app 5678, development backend 5679, Temporal UI/gRPC 5680/5681, Node.js 5682, WhatsApp 5683."
+        },
+        {
+          "path": "client/vite.config.js",
+          "reason": "Same-origin development topology and proxy prefixes from Vite 5678 to Uvicorn 5679."
+        },
+        {
+          "path": "server/main.py",
+          "reason": "FastAPI lifespan, routers, webhook route, MCP mount, lazy service startup, and production SPA serving."
+        },
+        {
+          "path": "server/middleware/auth.py",
+          "reason": "Authentication exclusions and separate protection for public webhooks, internal WebSocket, and MCP."
+        },
+        {
+          "path": "server/routers/websocket.py",
+          "reason": "Canonical /ws/status and /ws/internal endpoints and authenticated status-socket identity."
+        },
+        {
+          "path": "server/services/authz/ws_surface.py",
+          "reason": "Restricted /ws/internal handler allowlist and internal-only payload identity rule."
+        },
+        {
+          "path": "server/services/cli_agent/mcp_server.py",
+          "reason": "Per-batch bearer authentication and MCP-over-HTTP server surface."
+        },
+        {
+          "path": "server/services/temporal/lifecycle.py",
+          "reason": "Temporal client and worker lifecycle wiring."
+        },
+        {
+          "path": "server/nodes/code/_runtime.py",
+          "reason": "Lazy Node.js executor runtime configuration."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/02-runtime-trust-topology.png",
+          "svg": "docs/diagrams/v2/dark/02-runtime-trust-topology.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/02-runtime-trust-topology.png",
+          "svg": "docs/diagrams/v2/light/02-runtime-trust-topology.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "03-workflow-execution-routing",
+      "title": "Workflow Execution Routing",
+      "diagramType": "C4 dynamic flow",
+      "sourceReview": "reviewed",
+      "components": [
+        "single-node-request",
+        "whole-workflow-request",
+        "routing-decision",
+        "temporal-branch",
+        "redis-parallel-branch",
+        "sequential-branch",
+        "parameter-preparation",
+        "template-resolution",
+        "plugin-dispatch",
+        "validated-result",
+        "output-store",
+        "status-broadcast"
+      ],
+      "relationships": [
+        "r-single-pipeline",
+        "r-whole-routing",
+        "r-routing-temporal",
+        "r-routing-parallel",
+        "r-routing-sequential",
+        "r-temporal-node",
+        "r-parallel-node",
+        "r-sequential-node",
+        "r-prepare-resolve",
+        "r-resolve-dispatch",
+        "r-dispatch-result",
+        "r-result-store",
+        "r-store-broadcast"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/services/workflow.py",
+          "reason": "Authoritative single-node adapter and Temporal, Redis-parallel, sequential routing decision."
+        },
+        {
+          "path": "server/services/node_executor.py",
+          "reason": "Canonical parameter preparation, template resolution, plugin dispatch, and output storage pipeline."
+        },
+        {
+          "path": "server/services/execution/executor.py",
+          "reason": "In-process graph orchestration, dependency scheduling, retries, and node callback contract."
+        },
+        {
+          "path": "server/services/temporal/executor.py",
+          "reason": "Temporal graph execution adapter and durable workflow start path."
+        },
+        {
+          "path": "server/services/temporal/workflow.py",
+          "reason": "Durable graph workflow and activity routing."
+        },
+        {
+          "path": "server/services/status_broadcaster.py",
+          "reason": "Per-workflow execution and node status broadcasts."
+        },
+        {
+          "path": "server/routers/workflow.py",
+          "reason": "Internal Temporal node-execution endpoint still present in the current route surface."
+        },
+        {
+          "path": "server/routers/websocket.py",
+          "reason": "Interactive execute_node and execute_ai_node entry points."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/03-workflow-execution-routing.png",
+          "svg": "docs/diagrams/v2/dark/03-workflow-execution-routing.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/03-workflow-execution-routing.png",
+          "svg": "docs/diagrams/v2/light/03-workflow-execution-routing.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "04-durable-deployment-events",
+      "title": "Durable Deployment and Events",
+      "diagramType": "C4 dynamic and event flow",
+      "sourceReview": "reviewed",
+      "components": [
+        "lifecycle-controls",
+        "workflow-control-service",
+        "generation-snapshot",
+        "controller",
+        "local-runtime-state",
+        "push-trigger",
+        "poll-trigger",
+        "cron-trigger",
+        "cloudevent",
+        "event-dispatch",
+        "trigger-registration",
+        "child-graph-workflow",
+        "cron-action-workflow",
+        "execution-status"
+      ],
+      "relationships": [
+        "r-controls-service",
+        "r-service-snapshot",
+        "r-snapshot-controller",
+        "r-controls-controller",
+        "r-service-local-state",
+        "r-push-event",
+        "r-event-dispatch",
+        "r-dispatch-controller",
+        "r-poll-controller",
+        "r-cron-action",
+        "r-registration-controller",
+        "r-controller-child",
+        "r-cron-child",
+        "r-child-status",
+        "r-cron-status"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/services/deployment/handlers.py",
+          "reason": "Start, pause, resume, reset handlers, controller start/rebuild, signals, schedules, trigger state, and cleanup."
+        },
+        {
+          "path": "server/services/deployment/control.py",
+          "reason": "Revision-guarded generation allocation and sanitized immutable graph_snapshot rows."
+        },
+        {
+          "path": "server/services/deployment/triggers.py",
+          "reason": "Trigger preparation and push/poll registration contracts."
+        },
+        {
+          "path": "server/services/temporal/workflow_control_workflow.py",
+          "reason": "Long-lived controller, pause/resume/reset, trigger registration, event queue, poll loops, child spawning, and continue-as-new."
+        },
+        {
+          "path": "server/services/events/envelope.py",
+          "reason": "CloudEvents v1.0 WorkflowEvent envelope."
+        },
+        {
+          "path": "server/services/events/dispatch.py",
+          "reason": "Event-to-controller dispatch using Temporal visibility and on_event signals."
+        },
+        {
+          "path": "server/services/temporal/schedules.py",
+          "reason": "Durable cron schedule creation, pause/unpause, ownership and cleanup."
+        },
+        {
+          "path": "server/nodes/scheduler/cron_scheduler/_workflow.py",
+          "reason": "Cron action workflow that launches the snapshotted graph run."
+        },
+        {
+          "path": "server/services/workflow.py",
+          "reason": "Local deployment admission and legacy fallback state."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/04-durable-deployment-events.png",
+          "svg": "docs/diagrams/v2/dark/04-durable-deployment-events.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/04-durable-deployment-events.png",
+          "svg": "docs/diagrams/v2/light/04-durable-deployment-events.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "05-plugin-agent-team-composition",
+      "title": "Plugin \u2192 Agent \u2192 Team Composition",
+      "diagramType": "layered composition",
+      "sourceReview": "reviewed",
+      "components": [
+        "base-node",
+        "model-plugins",
+        "chat-unifier",
+        "agent-plugins",
+        "context-node",
+        "skill-nodes",
+        "tool-nodes",
+        "prepared-agent-call",
+        "team-lead",
+        "teammates",
+        "task-manager",
+        "durable-team"
+      ],
+      "relationships": [
+        "r-base-model",
+        "r-base-agent",
+        "r-model-unifier",
+        "r-agent-prepare",
+        "r-context-prepare",
+        "r-skills-prepare",
+        "r-tools-prepare",
+        "r-prepare-unifier",
+        "r-teammates-lead",
+        "r-lead-runtime",
+        "r-lead-manager",
+        "r-teammates-state",
+        "r-manager-state"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/services/plugin/base.py",
+          "reason": "Authoritative BaseNode contract, subclass registration, component kinds, Params/Output schemas, handles, and uiHints."
+        },
+        {
+          "path": "server/nodes/model/_base.py",
+          "reason": "ChatModelBase contract and standalone output-model node behavior."
+        },
+        {
+          "path": "server/nodes/agent/_specialized.py",
+          "reason": "Agent Params select provider and model and specialized agents share the agent execution surface."
+        },
+        {
+          "path": "server/nodes/agent/_handles.py",
+          "reason": "Canonical agent and team-lead handle topology for context, skills, tools, tasks, and teammates."
+        },
+        {
+          "path": "server/services/plugin/edge_walker.py",
+          "reason": "Connection discovery, intrinsic Task Manager binding, teammate descriptors, and delegation-tool construction."
+        },
+        {
+          "path": "server/services/llm/unifier.py",
+          "reason": "Shared provider registry and native-SDK LLM facade used by model and agent execution."
+        },
+        {
+          "path": "server/services/agent_team.py",
+          "reason": "Execution-scoped durable team creation and task/member lifecycle service."
+        },
+        {
+          "path": "server/models/database.py",
+          "reason": "Persistent AgentTeam, TeamMember, TeamTask, TeamTaskAttempt, message, and concurrency records."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/05-plugin-agent-team-composition.png",
+          "svg": "docs/diagrams/v2/dark/05-plugin-agent-team-composition.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/05-plugin-agent-team-composition.png",
+          "svg": "docs/diagrams/v2/light/05-plugin-agent-team-composition.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "06-persistence-secret-plane",
+      "title": "Persistence & Secret Plane",
+      "diagramType": "data and trust boundary",
+      "sourceReview": "reviewed",
+      "components": [
+        "runtime-services",
+        "database-service",
+        "workflow-db",
+        "credential-callers",
+        "auth-service",
+        "credential-caches",
+        "credentials-database",
+        "encryption-password",
+        "encryption-service",
+        "credentials-db"
+      ],
+      "relationships": [
+        "r-runtime-database",
+        "r-database-workflow",
+        "r-plugin-auth",
+        "r-auth-cache",
+        "r-auth-credentials",
+        "r-key-encryption",
+        "r-credentials-encryption",
+        "r-credentials-store"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/core/container.py",
+          "reason": "Dependency wiring for Database, CredentialsDatabase, EncryptionService, CacheService, and AuthService."
+        },
+        {
+          "path": "server/main.py",
+          "reason": "Startup ordering: initialize credentials.db, load/create salt, then initialize encryption with the server-scoped key."
+        },
+        {
+          "path": "server/core/database.py",
+          "reason": "Authoritative async SQLModel service for workflow.db persistence."
+        },
+        {
+          "path": "server/models/database.py",
+          "reason": "Operational tables for workflows, node parameters/outputs, executions, context support, teams, tasks, and settings."
+        },
+        {
+          "path": "server/services/auth.py",
+          "reason": "Single credential access surface and the distinct API-key and OAuth display caches; refresh tokens bypass the process cache."
+        },
+        {
+          "path": "server/core/credentials_database.py",
+          "reason": "Separate encrypted SQLite schema with metadata, EncryptedAPIKey, and EncryptedOAuthToken tables."
+        },
+        {
+          "path": "server/core/encryption.py",
+          "reason": "Fernet field encryption and PBKDF2-SHA256 key derivation at 600,000 iterations."
+        },
+        {
+          "path": "server/services/plugin/credential.py",
+          "reason": "Plugin Credential.resolve path that obtains API keys or OAuth tokens through AuthService."
+        },
+        {
+          "path": "server/core/config.py",
+          "reason": "DATA_DIR-rooted workflow/credential database paths and API_KEY_ENCRYPTION_KEY configuration."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/06-persistence-secret-plane.png",
+          "svg": "docs/diagrams/v2/dark/06-persistence-secret-plane.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/06-persistence-secret-plane.png",
+          "svg": "docs/diagrams/v2/light/06-persistence-secret-plane.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "07-workspace-anatomy",
+      "title": "Workspace Anatomy",
+      "diagramType": "filesystem and consumer topology",
+      "sourceReview": "reviewed",
+      "components": [
+        "workflow-record",
+        "workspace-locator",
+        "workspace-base",
+        "workflow-workspace",
+        "workspace-files",
+        "workspace-skills",
+        "cli-worktrees",
+        "workspace-routes",
+        "filesystem-media",
+        "cli-agent-session"
+      ],
+      "relationships": [
+        "r-workflow-locator",
+        "r-locator-base",
+        "r-base-workspace",
+        "r-workspace-files",
+        "r-workspace-skills",
+        "r-workspace-worktrees",
+        "r-routes-resolve",
+        "r-filesystem-files",
+        "r-skills-cli",
+        "r-workspace-cli"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/core/paths.py",
+          "reason": "Canonical DATA_DIR, workspaces_dir, workspace_dir, and shipped example-workflow path rules."
+        },
+        {
+          "path": "server/services/workspace_locator.py",
+          "reason": "Single immutable workflow-id to mutable slug translation and safe default-workspace policy."
+        },
+        {
+          "path": "server/services/workflow.py",
+          "reason": "Workflow service creation and injection of the resolved workspace directory into execution context."
+        },
+        {
+          "path": "server/services/workflow_storage/handlers.py",
+          "reason": "Workflow rename path that moves a slug-keyed workspace directory."
+        },
+        {
+          "path": "server/routers/workspace.py",
+          "reason": "Workspace file-serving and bounded upload routes using immutable workflow IDs and contained relative paths."
+        },
+        {
+          "path": "server/nodes/filesystem/_backend.py",
+          "reason": "WorkspaceBackend and resolve_within path normalization, symlink/junction containment, and atomic write boundary."
+        },
+        {
+          "path": "server/services/media/workspace.py",
+          "reason": "Media references and reads/writes rooted in the executor-injected workspace."
+        },
+        {
+          "path": "server/nodes/agent/claude_code_agent/_skills.py",
+          "reason": "Per-workflow .claude/skills materialization with support-file preservation and diff updates."
+        },
+        {
+          "path": "server/services/cli_agent/session.py",
+          "reason": "Per-node CLI worktree placement and workspace --add-dir behavior."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/07-workspace-anatomy.png",
+          "svg": "docs/diagrams/v2/dark/07-workspace-anatomy.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/07-workspace-anatomy.png",
+          "svg": "docs/diagrams/v2/light/07-workspace-anatomy.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "08-node-configuration-anatomy",
+      "title": "Node Configuration Anatomy",
+      "diagramType": "annotated panel flow",
+      "sourceReview": "reviewed",
+      "components": [
+        "node-identity",
+        "save-action",
+        "run-action",
+        "cancel-action",
+        "close-action",
+        "input-column",
+        "parameters-column",
+        "output-column",
+        "node-spec",
+        "parameter-state",
+        "execution-service",
+        "websocket-database"
+      ],
+      "relationships": [
+        "r-spec-identity",
+        "r-spec-parameters",
+        "r-input-parameters",
+        "r-parameters-draft",
+        "r-save-draft",
+        "r-run-execution",
+        "r-execution-output",
+        "r-websocket-output",
+        "r-cancel-websocket",
+        "r-draft-database"
+      ],
+      "sourceRefs": [
+        {
+          "path": "client/src/ParameterPanel.tsx",
+          "reason": "Modal shell, selected-node identity, Run/Save/Cancel-or-Stop actions, canvas-lock gating, and per-node execution reducer."
+        },
+        {
+          "path": "client/src/components/parameterPanel/ParameterPanelLayout.tsx",
+          "reason": "Authoritative three-column composition and 0.7 / 1.6 / 0.7 flex proportions."
+        },
+        {
+          "path": "client/src/components/parameterPanel/InputSection.tsx",
+          "reason": "Connected upstream output/schema discovery, inherited config-node inputs, recursive variable rendering, and drag source behavior."
+        },
+        {
+          "path": "client/src/components/parameterPanel/MiddleSection.tsx",
+          "reason": "Schema parameter rendering and uiHints-selected specialized panels, Connected Skills, Token Usage, and Console sections."
+        },
+        {
+          "path": "client/src/components/parameterPanel/OutputSection.tsx",
+          "reason": "Local execution plus WebSocket status/output merge and execution_id deduplication."
+        },
+        {
+          "path": "client/src/hooks/useParameterPanel.ts",
+          "reason": "Defaults + saved-parameters edit buffer, dirty comparison, save, cancel/revert, and selected NodeSpec resolution."
+        },
+        {
+          "path": "client/src/hooks/useNodeParamsQuery.ts",
+          "reason": "TanStack Query get/save node-parameter contract and optimistic versioned cache update."
+        },
+        {
+          "path": "client/src/services/executionService.ts",
+          "reason": "Save-aware WebSocket node execution and normalized ExecutionResult contract."
+        },
+        {
+          "path": "server/routers/websocket.py",
+          "reason": "get_node_parameters, save_node_parameters, output/status, and event-wait cancellation request handlers."
+        },
+        {
+          "path": "server/core/database.py",
+          "reason": "Persistent node_parameters and node_outputs backing the panel's live and saved data."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/08-node-configuration-anatomy.png",
+          "svg": "docs/diagrams/v2/dark/08-node-configuration-anatomy.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/08-node-configuration-anatomy.png",
+          "svg": "docs/diagrams/v2/light/08-node-configuration-anatomy.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "09-credentials-architecture",
+      "title": "Credentials Architecture",
+      "diagramType": "layered-security-data-flow",
+      "sourceReview": "reviewed",
+      "components": [
+        "credentials-modal",
+        "client-state",
+        "ws-handlers",
+        "credential-registries",
+        "status-broadcaster",
+        "auth-service",
+        "encryption-service",
+        "credentials-db"
+      ],
+      "relationships": [
+        "modal-uses-client-state",
+        "client-calls-handlers",
+        "handlers-dispatch-registry",
+        "handlers-use-auth-service",
+        "registry-stores-valid-result",
+        "registry-publishes-status",
+        "auth-publishes-mutation",
+        "auth-canonical-crud",
+        "db-uses-encryption",
+        "broadcast-invalidates-client"
+      ],
+      "sourceRefs": [
+        {
+          "path": "client/src/components/credentials/CredentialsModal.tsx",
+          "reason": "Defines the thin modal shell, server-owned catalogue consumption, searchable palette, and lazy panel dispatch."
+        },
+        {
+          "path": "client/src/components/credentials/useCredentialPanel.ts",
+          "reason": "Defines per-provider TanStack Query state and credential RPC actions without persisting plaintext in the UI store."
+        },
+        {
+          "path": "server/services/credentials/handlers.py",
+          "reason": "Implements registered validate, get, save, and delete WebSocket handlers and their mutation broadcasts."
+        },
+        {
+          "path": "server/services/plugin/credential.py",
+          "reason": "Defines declarative credential classes, provider-specific probes, runtime resolution, and validation dispatch."
+        },
+        {
+          "path": "server/services/auth.py",
+          "reason": "Defines the sole credential access service, separate API-key and OAuth caches, catalogue invalidation, and refresh-token non-caching rule."
+        },
+        {
+          "path": "server/core/credentials_database.py",
+          "reason": "Defines the canonical encrypted SQLite records, two-table storage split, and calls to EncryptionService."
+        },
+        {
+          "path": "server/core/encryption.py",
+          "reason": "Defines PBKDF2-SHA256 key derivation and the process-held Fernet encrypt/decrypt boundary."
+        },
+        {
+          "path": "server/services/status_broadcaster.py",
+          "reason": "Defines api_key_status and credential_catalogue_updated broadcasts consumed by connected clients."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/09-credentials-architecture.png",
+          "svg": "docs/diagrams/v2/dark/09-credentials-architecture.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/09-credentials-architecture.png",
+          "svg": "docs/diagrams/v2/light/09-credentials-architecture.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "10-team-operations",
+      "title": "Team Operations",
+      "diagramType": "state-machine-and-control-surfaces",
+      "sourceReview": "reviewed",
+      "components": [
+        "team-lead",
+        "task-manager",
+        "agent-team-service",
+        "human-views",
+        "blocked",
+        "queued",
+        "running",
+        "submitted",
+        "accepted",
+        "failed",
+        "cancelled",
+        "team-completed"
+      ],
+      "relationships": [
+        "lead-calls-task-manager",
+        "task-manager-uses-service",
+        "human-manages-service",
+        "service-updates-human",
+        "service-assigns-ready",
+        "dependencies-unblock",
+        "worker-claims",
+        "worker-submits",
+        "lead-accepts",
+        "worker-fails",
+        "failed-requeues",
+        "submitted-requeues",
+        "cancelled-requeues",
+        "accepted-finishes-team",
+        "cancelled-is-resolved"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/nodes/tool/task_manager/__init__.py",
+          "reason": "Defines the intrinsic model-facing operations, connected-teammate resolution, and trusted execution scope."
+        },
+        {
+          "path": "server/services/agent_team.py",
+          "reason": "Defines durable assignment, authorized mutation transitions, submission versus acceptance semantics, and finish-team gating."
+        },
+        {
+          "path": "server/services/agent_teams/handlers.py",
+          "reason": "Defines human WebSocket reads and revision-checked task management operations."
+        },
+        {
+          "path": "server/services/temporal/agent_workflow.py",
+          "reason": "Implements detached delegated task execution, concurrency permits, child completion, and terminal cleanup."
+        },
+        {
+          "path": "client/src/components/parameterPanel/TaskManagerPanel.tsx",
+          "reason": "Defines the operational task UI, status-specific actions, revision checks, execution history, and Temporal trace inspection."
+        },
+        {
+          "path": "client/src/components/parameterPanel/TeamMonitorPanel.tsx",
+          "reason": "Defines the read-only teammate and task snapshot, lifecycle counts, execution selector, and event-driven refresh."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/10-team-operations.png",
+          "svg": "docs/diagrams/v2/dark/10-team-operations.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/10-team-operations.png",
+          "svg": "docs/diagrams/v2/light/10-team-operations.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "11-agent-context-memory",
+      "title": "Agent Context vs. Simple Memory",
+      "diagramType": "side-by-side-comparison",
+      "sourceReview": "reviewed",
+      "components": [
+        "context-node",
+        "context-journal",
+        "context-checkpoint",
+        "agent-runtime",
+        "memory-node",
+        "memory-store",
+        "memory-items"
+      ],
+      "relationships": [
+        "context-binds-runtime",
+        "runtime-appends-context",
+        "journal-compacts",
+        "checkpoint-replays",
+        "memory-registers-tool",
+        "runtime-invokes-memory",
+        "memory-persists-items",
+        "memory-returns-items"
+      ],
+      "sourceRefs": [
+        {
+          "path": "server/nodes/context/__init__.py",
+          "reason": "Defines the visible system-managed Context policy node, output-context handle, compaction policy, and metadata-only output."
+        },
+        {
+          "path": "server/nodes/context/_descriptor.py",
+          "reason": "Defines generation-scoped Context descriptors, thread selection, and delegated-task isolation."
+        },
+        {
+          "path": "server/services/agent_context/store.py",
+          "reason": "Defines transactional append-only Context threads, epochs, revisions, journal events, and checkpoints."
+        },
+        {
+          "path": "server/services/agent_context/compaction.py",
+          "reason": "Defines provider-native versus portable compaction and exact replay-tail behavior under context pressure."
+        },
+        {
+          "path": "server/nodes/context/_handlers.py",
+          "reason": "Defines active-epoch journal inspection so Reset and Clear expose the fresh live epoch while retaining prior events as archived history."
+        },
+        {
+          "path": "server/nodes/tool/simple_memory/__init__.py",
+          "reason": "Defines Simple Memory V2 as an explicit locked-schema tool with remember, recall, list, get, update, and forget operations."
+        },
+        {
+          "path": "server/services/memory/tool_store.py",
+          "reason": "Defines isolated owner/workflow/node namespaces, versioned durable items, idempotent mutations, and lexical or embedding retrieval."
+        },
+        {
+          "path": "client/src/components/parameterPanel/ContextPanel.tsx",
+          "reason": "Defines the authorized exact-journal and active-replay inspector, including pressure, checkpoints, fork, export, and epoch clear."
+        },
+        {
+          "path": "client/src/components/parameterPanel/MemoryToolPanel.tsx",
+          "reason": "Defines human-authored durable facts, search, update, forget, and isolated bulk-clear controls."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/11-agent-context-memory.png",
+          "svg": "docs/diagrams/v2/dark/11-agent-context-memory.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/11-agent-context-memory.png",
+          "svg": "docs/diagrams/v2/light/11-agent-context-memory.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "12-master-skill-editor",
+      "title": "Master Skill Editor",
+      "diagramType": "product panel with configuration and runtime data flow",
+      "sourceReview": "reviewed",
+      "components": [
+        "skill-ws-handlers",
+        "builtin-skill-files",
+        "user-skill-store",
+        "tanstack-skill-cache",
+        "skill-catalogue-pane",
+        "instructions-editor-pane",
+        "query-projection",
+        "skills-config",
+        "master-skill-expander",
+        "agent-skill-runtime",
+        "skill-status-projection"
+      ],
+      "relationships": [
+        "handlers-scan-builtins",
+        "handlers-crud-user-skills",
+        "handlers-refresh-cache",
+        "cache-builds-projection",
+        "projection-populates-catalogue",
+        "catalogue-selects-editor",
+        "catalogue-writes-toggle",
+        "editor-writes-instructions",
+        "editor-user-skill-crud",
+        "config-expands",
+        "expander-builds-runtime",
+        "runtime-publishes-status",
+        "status-back-to-catalogue"
+      ],
+      "sourceRefs": [
+        {
+          "path": "client/src/components/parameterPanel/MasterSkillEditor.tsx",
+          "reason": "Defines the split catalogue/editor surface, folder and user-skill queries, enable toggles, instruction editing, CRUD actions, skills_config writes, and runtime row badges."
+        },
+        {
+          "path": "client/src/hooks/useFolderSkills.ts",
+          "reason": "Defines the folderSkills TanStack query and scan_skill_folder metadata mapping used by the catalogue."
+        },
+        {
+          "path": "server/services/skills/handlers.py",
+          "reason": "Owns the list/scan/content handlers, user-skill CRUD, and lifecycle-producing mutation paths used by the editor."
+        },
+        {
+          "path": "server/nodes/skill/master_skill/__init__.py",
+          "reason": "Defines the passive Master Skill node, required assistant Skill entry, skills_config parameter shape, and editor UI hints."
+        },
+        {
+          "path": "server/nodes/skill/_expander.py",
+          "reason": "Expands enabled skills_config entries into per-skill descriptors for connected agents."
+        },
+        {
+          "path": "server/services/skill_runtime.py",
+          "reason": "Loads authoritative instructions progressively and publishes loading, loaded, used, or failed activity to the agent and exact Master Skill node."
+        },
+        {
+          "path": "server/nodes/skill/master_skill/_events.py",
+          "reason": "Defines the skill_lifecycle CloudEvent used to invalidate userSkills, folderSkills, and skillContent caches across clients."
+        },
+        {
+          "path": "client/src/contexts/WebSocketContext.tsx",
+          "reason": "Routes skill_lifecycle invalidation and live node-status data consumed by the editor."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/12-master-skill-editor.png",
+          "svg": "docs/diagrams/v2/dark/12-master-skill-editor.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/12-master-skill-editor.png",
+          "svg": "docs/diagrams/v2/light/12-master-skill-editor.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "13-workspace-files",
+      "title": "Workspace Files",
+      "diagramType": "product panel with transport and execution paths",
+      "sourceReview": "reviewed",
+      "components": [
+        "workspace-panel-header",
+        "workspace-browser",
+        "workspace-file-actions",
+        "gallery-node-parameters",
+        "list-workspace-files-handler",
+        "workspace-http-routes",
+        "workspace-listing-service",
+        "contained-workspace-root",
+        "gallery-node-runtime",
+        "gallery-file-ref-output"
+      ],
+      "relationships": [
+        "header-opens-upload",
+        "browser-activates-file",
+        "browser-requests-listing",
+        "handler-selects-listing-mode",
+        "listing-reads-workspace",
+        "actions-use-http",
+        "http-reads-writes-workspace",
+        "browser-controls-path",
+        "actions-control-selection",
+        "params-drive-gallery-run",
+        "gallery-reuses-listing-service",
+        "gallery-emits-output"
+      ],
+      "sourceRefs": [
+        {
+          "path": "client/src/components/parameterPanel/GalleryPanel.tsx",
+          "reason": "Defines the Workspace Files header, upload action, preview, pinning, controlled path/selection parameters, and Gallery-panel integration."
+        },
+        {
+          "path": "client/src/components/parameterPanel/gallery/WorkspaceBrowser.tsx",
+          "reason": "Defines breadcrumbs, debounced workspace-wide search, grid/list views, refresh and polling, row activation, pinning, and drag payload behavior."
+        },
+        {
+          "path": "server/nodes/filesystem/gallery/_handlers.py",
+          "reason": "Defines list_workspace_files as the WebSocket listing/search channel and its workflow-root resolution."
+        },
+        {
+          "path": "server/nodes/filesystem/gallery/_service.py",
+          "reason": "Defines directory and recursive glob listing, caps, sorting, crumbs, self-sufficient FileRef rows, URLs, and preview verdicts."
+        },
+        {
+          "path": "server/nodes/filesystem/gallery/__init__.py",
+          "reason": "Defines Gallery node parameters and execution branches that emit workspace FileRef rows downstream."
+        },
+        {
+          "path": "server/nodes/filesystem/_backend.py",
+          "reason": "Provides the contained WorkspaceBackend used for ls/glob and safe workspace path handling."
+        },
+        {
+          "path": "server/routers/workspace.py",
+          "reason": "Defines the HTTP upload and file-content surface used for upload, preview, download, and Range reads."
+        },
+        {
+          "path": "docs-internal/node-logic-flows/code_fs_process/gallery.md",
+          "reason": "Documents the reviewed Gallery panel/execution contract and the separation between WebSocket listing and HTTP content."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/13-workspace-files.png",
+          "svg": "docs/diagrams/v2/dark/13-workspace-files.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/13-workspace-files.png",
+          "svg": "docs/diagrams/v2/light/13-workspace-files.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    },
+    {
+      "id": "14-runtime-observability-dock",
+      "title": "Runtime Observability Dock",
+      "diagramType": "runtime observability product panel and stream topology",
+      "sourceReview": "reviewed",
+      "components": [
+        "console-node-producer",
+        "terminal-log-producers",
+        "chat-trigger-consumers",
+        "status-broadcaster",
+        "dock-ws-handlers",
+        "workflow-history-db",
+        "terminal-ring-buffer",
+        "websocket-context-state",
+        "chat-pane",
+        "console-tab",
+        "terminal-tab",
+        "dock-preferences"
+      ],
+      "relationships": [
+        "console-broadcasts-log",
+        "runtime-broadcasts-terminal",
+        "broadcaster-persists-console",
+        "broadcaster-retains-terminal",
+        "handlers-query-db",
+        "handlers-query-terminal-cache",
+        "handlers-dispatch-chat-trigger",
+        "live-events-update-context",
+        "handlers-hydrate-context",
+        "chat-sends-handler-request",
+        "context-renders-chat",
+        "context-renders-console",
+        "context-renders-terminal",
+        "prefs-shape-chat-pane",
+        "prefs-select-log-tab"
+      ],
+      "sourceRefs": [
+        {
+          "path": "client/src/components/ui/ConsolePanel.tsx",
+          "reason": "Defines the collapsible, resizable Chat / Console dock, chat target selector, Console and Terminal tabs, filters, clear controls, auto-scroll, pretty-print, and persisted preferences."
+        },
+        {
+          "path": "client/src/contexts/WebSocketContext.tsx",
+          "reason": "Owns live chat/console/terminal arrays, reconnect and workflow-switch hydration, clear commands, send_chat_message, and 100/200-entry client caps."
+        },
+        {
+          "path": "server/nodes/utility/console/__init__.py",
+          "reason": "Produces structured Console-node log records and broadcasts them while passing workflow data through."
+        },
+        {
+          "path": "server/services/status_broadcaster.py",
+          "reason": "Persists and broadcasts Console logs, retains the last 100 in memory, and retains/broadcasts the last 200 Terminal logs."
+        },
+        {
+          "path": "server/routers/websocket.py",
+          "reason": "Defines workflow-scoped chat send/history/clear, Console history/clear, and Terminal history/clear request handlers."
+        },
+        {
+          "path": "server/nodes/trigger/chat_trigger/_events.py",
+          "reason": "Dispatches workflow-scoped chat_message_received CloudEvents to waiting chatTrigger consumers and the frontend."
+        },
+        {
+          "path": "server/services/process_service.py",
+          "reason": "Streams managed-process output into the Terminal log channel."
+        },
+        {
+          "path": "server/core/logging.py",
+          "reason": "Streams server logger records into the Terminal log broadcaster."
+        },
+        {
+          "path": "docs-internal/node-logic-flows/chat_utility/console.md",
+          "reason": "Documents the reviewed Console node record shape and StatusBroadcaster side effect consumed by the dock."
+        }
+      ],
+      "artifacts": {
+        "dark": {
+          "draft": "docs-internal/diagram-generation/drafts/dark/14-runtime-observability-dock.png",
+          "svg": "docs/diagrams/v2/dark/14-runtime-observability-dock.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        },
+        "light": {
+          "draft": "docs-internal/diagram-generation/drafts/light/14-runtime-observability-dock.png",
+          "svg": "docs/diagrams/v2/light/14-runtime-observability-dock.svg",
+          "draftPresent": true,
+          "svgPresent": true
+        }
+      },
+      "validationStatus": "validated"
+    }
+  ],
+  "validationStatus": "validated"
+}

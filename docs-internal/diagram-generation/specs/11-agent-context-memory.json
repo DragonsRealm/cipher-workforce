@@ -1,0 +1,410 @@
+{
+  "id": "11-agent-context-memory",
+  "title": "Agent Context vs. Simple Memory",
+  "subtitle": "Automatic replay continuity and explicit durable knowledge are separate systems",
+  "category": "architecture",
+  "diagramType": "side-by-side-comparison",
+  "description": "Agent Context is the system-managed exact journal, provider binding, replay checkpoint, and context-pressure policy connected through input-context. Simple Memory is a separate explicit tool connected through input-tools; the model or a human chooses when to remember, recall, update, or forget versioned facts in an isolated namespace, and those items are never injected as automatic transcript replay.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {
+      "path": "server/nodes/context/__init__.py",
+      "reason": "Defines the visible system-managed Context policy node, output-context handle, compaction policy, and metadata-only output."
+    },
+    {
+      "path": "server/nodes/context/_descriptor.py",
+      "reason": "Defines generation-scoped Context descriptors, thread selection, and delegated-task isolation."
+    },
+    {
+      "path": "server/services/agent_context/store.py",
+      "reason": "Defines transactional append-only Context threads, epochs, revisions, journal events, and checkpoints."
+    },
+    {
+      "path": "server/services/agent_context/compaction.py",
+      "reason": "Defines provider-native versus portable compaction and exact replay-tail behavior under context pressure."
+    },
+    {
+      "path": "server/nodes/context/_handlers.py",
+      "reason": "Defines active-epoch journal inspection so Reset and Clear expose the fresh live epoch while retaining prior events as archived history."
+    },
+    {
+      "path": "server/nodes/tool/simple_memory/__init__.py",
+      "reason": "Defines Simple Memory V2 as an explicit locked-schema tool with remember, recall, list, get, update, and forget operations."
+    },
+    {
+      "path": "server/services/memory/tool_store.py",
+      "reason": "Defines isolated owner/workflow/node namespaces, versioned durable items, idempotent mutations, and lexical or embedding retrieval."
+    },
+    {
+      "path": "client/src/components/parameterPanel/ContextPanel.tsx",
+      "reason": "Defines the authorized exact-journal and active-replay inspector, including pressure, checkpoints, fork, export, and epoch clear."
+    },
+    {
+      "path": "client/src/components/parameterPanel/MemoryToolPanel.tsx",
+      "reason": "Defines human-authored durable facts, search, update, forget, and isolated bulk-clear controls."
+    }
+  ],
+  "groups": [
+    {
+      "id": "context-plane",
+      "x": 72,
+      "y": 140,
+      "w": 720,
+      "h": 800,
+      "label": "AGENT CONTEXT · AUTOMATIC REPLAY",
+      "role": "system"
+    },
+    {
+      "id": "memory-plane",
+      "x": 1128,
+      "y": 140,
+      "w": 720,
+      "h": 800,
+      "label": "SIMPLE MEMORY · EXPLICIT TOOL",
+      "role": "tool"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "context-node",
+      "x": 120,
+      "y": 220,
+      "w": 280,
+      "h": 160,
+      "label": "Context Node",
+      "type": "POLICY",
+      "role": "system",
+      "detail": [
+        "output-context → input-context",
+        "compaction + tail policy"
+      ]
+    },
+    {
+      "id": "context-journal",
+      "x": 120,
+      "y": 510,
+      "w": 300,
+      "h": 185,
+      "label": "AgentContextStore",
+      "type": "EXACT JOURNAL",
+      "role": "data",
+      "detail": [
+        "append-only observable events",
+        "thread · epoch · revision",
+        "provider-bound replay state"
+      ]
+    },
+    {
+      "id": "context-checkpoint",
+      "x": 440,
+      "y": 760,
+      "w": 300,
+      "h": 150,
+      "label": "Replay Checkpoint",
+      "type": "CONTEXT STATE",
+      "role": "workflow",
+      "detail": [
+        "native or portable summary",
+        "exact recent tail retained"
+      ]
+    },
+    {
+      "id": "agent-runtime",
+      "x": 810,
+      "y": 395,
+      "w": 300,
+      "h": 250,
+      "label": "Agent Runtime",
+      "type": "SHARED CONSUMER",
+      "role": "agent",
+      "detail": [
+        "replays Context automatically",
+        "invokes Memory explicitly",
+        "keeps both namespaces separate"
+      ]
+    },
+    {
+      "id": "memory-node",
+      "x": 1520,
+      "y": 220,
+      "w": 280,
+      "h": 160,
+      "label": "Simple Memory",
+      "type": "LOCKED TOOL",
+      "role": "tool",
+      "detail": [
+        "output-tool → input-tools",
+        "remember · recall · list",
+        "get · update · forget"
+      ]
+    },
+    {
+      "id": "memory-store",
+      "x": 1500,
+      "y": 510,
+      "w": 300,
+      "h": 185,
+      "label": "MemoryToolStore",
+      "type": "DURABLE DATA",
+      "role": "data",
+      "detail": [
+        "owner / workflow / node scope",
+        "versioned idempotent mutations",
+        "lexical + optional embedding"
+      ]
+    },
+    {
+      "id": "memory-items",
+      "x": 1180,
+      "y": 760,
+      "w": 300,
+      "h": 150,
+      "label": "Facts & Decisions",
+      "type": "MEMORY ITEMS",
+      "role": "result",
+      "detail": [
+        "returned only when recalled",
+        "never automatic transcript"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "context-binds-runtime",
+      "from": "context-node",
+      "to": "agent-runtime",
+      "label": "bind policy at input-context",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "waypoints": [
+        [
+          430,
+          430
+        ],
+        [
+          790,
+          430
+        ]
+      ],
+      "labelAt": [
+        600,
+        430
+      ]
+    },
+    {
+      "id": "runtime-appends-context",
+      "from": "agent-runtime",
+      "to": "context-journal",
+      "label": "append exact observable events",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "right",
+      "waypoints": [
+        [
+          650,
+          520
+        ],
+        [
+          650,
+          603
+        ]
+      ],
+      "labelAt": [
+        650,
+        520
+      ]
+    },
+    {
+      "id": "journal-compacts",
+      "from": "context-journal",
+      "to": "context-checkpoint",
+      "label": "compact at context pressure",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "waypoints": [
+        [
+          270,
+          725
+        ],
+        [
+          590,
+          725
+        ]
+      ],
+      "labelAt": [
+        430,
+        725
+      ]
+    },
+    {
+      "id": "checkpoint-replays",
+      "from": "context-checkpoint",
+      "to": "agent-runtime",
+      "label": "replay checkpoint + exact tail",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "waypoints": [
+        [
+          780,
+          835
+        ],
+        [
+          780,
+          700
+        ],
+        [
+          960,
+          700
+        ]
+      ],
+      "labelAt": [
+        820,
+        720
+      ]
+    },
+    {
+      "id": "memory-registers-tool",
+      "from": "memory-node",
+      "to": "agent-runtime",
+      "label": "register tool at input-tools",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "right",
+      "waypoints": [
+        [
+          1490,
+          430
+        ],
+        [
+          1130,
+          430
+        ]
+      ],
+      "labelAt": [
+        1320,
+        430
+      ]
+    },
+    {
+      "id": "runtime-invokes-memory",
+      "from": "agent-runtime",
+      "to": "memory-store",
+      "label": "remember / recall / update / forget",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "waypoints": [
+        [
+          1290,
+          520
+        ],
+        [
+          1290,
+          603
+        ]
+      ],
+      "labelAt": [
+        1290,
+        520
+      ]
+    },
+    {
+      "id": "memory-persists-items",
+      "from": "memory-store",
+      "to": "memory-items",
+      "label": "persist isolated versioned items",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "waypoints": [
+        [
+          1650,
+          725
+        ],
+        [
+          1330,
+          725
+        ]
+      ],
+      "labelAt": [
+        1490,
+        725
+      ]
+    },
+    {
+      "id": "memory-returns-items",
+      "from": "memory-items",
+      "to": "agent-runtime",
+      "label": "return selected recalled items",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "waypoints": [
+        [
+          1140,
+          835
+        ],
+        [
+          1140,
+          700
+        ],
+        [
+          960,
+          700
+        ]
+      ],
+      "labelAt": [
+        1100,
+        680
+      ]
+    }
+  ],
+  "callouts": [
+    {
+      "id": "context-invariant",
+      "x": 440,
+      "y": 220,
+      "w": 300,
+      "h": 160,
+      "title": "Automatic continuity",
+      "lines": [
+        "System managed; no model tool call",
+        "Exact journal and replay policy",
+        "Clear rotates the active epoch"
+      ]
+    },
+    {
+      "id": "memory-invariant",
+      "x": 1180,
+      "y": 220,
+      "w": 300,
+      "h": 160,
+      "title": "Explicit knowledge",
+      "lines": [
+        "Model or human chooses mutations",
+        "Stable facts and decisions only",
+        "Clear never clears Agent Context"
+      ]
+    }
+  ],
+  "prompt": {
+    "primaryRequest": "Create a precise side-by-side comparison showing that Agent Context and Simple Memory are separate systems around the same Agent Runtime: Context automatically journals and replays exact execution state, while Simple Memory is an explicit tool for versioned durable facts chosen by the model or a human.",
+    "composition": "Mirror two wide bounded lanes around one central Agent Runtime. The left Context lane flows from policy to exact journal to replay checkpoint and back into the runtime. The right Memory lane flows from the explicit tool to a scoped durable store to recalled facts and back into the runtime. Use symmetric geometry so the conceptual contrast is immediate.",
+    "constraints": [
+      "Label Context connection as output-context to input-context and Memory connection as output-tool to input-tools",
+      "Context must be automatic, exact, provider-bound, and system managed",
+      "Simple Memory must expose remember, recall, list, get, update, and forget as explicit operations",
+      "Memory items must never appear as automatically injected transcript replay",
+      "Clearing either system must not imply clearing the other"
+    ],
+    "avoid": [
+      "calling Simple Memory conversation history",
+      "showing Context as a model-invoked tool",
+      "merging Context journal records with Memory items",
+      "implying manual or generation-zero runs always create durable Context"
+    ]
+  }
+}

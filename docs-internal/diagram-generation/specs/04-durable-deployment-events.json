@@ -1,0 +1,67 @@
+{
+  "id": "04-durable-deployment-events",
+  "title": "Durable Deployment and Events",
+  "subtitle": "Generation snapshots, trigger admission, controller signals and child workflow runs",
+  "category": "architecture",
+  "diagramType": "C4 dynamic and event flow",
+  "description": "A deployment lifecycle and event-flow view showing Start/Pause/Resume/Reset controls, immutable per-generation graph snapshots, the long-lived WorkflowControlWorkflow, push/poll/cron trigger paths, CloudEvents dispatch, and child graph execution.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": "server/services/deployment/handlers.py", "reason": "Start, pause, resume, reset handlers, controller start/rebuild, signals, schedules, trigger state, and cleanup."},
+    {"path": "server/services/deployment/control.py", "reason": "Revision-guarded generation allocation and sanitized immutable graph_snapshot rows."},
+    {"path": "server/services/deployment/triggers.py", "reason": "Trigger preparation and push/poll registration contracts."},
+    {"path": "server/services/temporal/workflow_control_workflow.py", "reason": "Long-lived controller, pause/resume/reset, trigger registration, event queue, poll loops, child spawning, and continue-as-new."},
+    {"path": "server/services/events/envelope.py", "reason": "CloudEvents v1.0 WorkflowEvent envelope."},
+    {"path": "server/services/events/dispatch.py", "reason": "Event-to-controller dispatch using Temporal visibility and on_event signals."},
+    {"path": "server/services/temporal/schedules.py", "reason": "Durable cron schedule creation, pause/unpause, ownership and cleanup."},
+    {"path": "server/nodes/scheduler/cron_scheduler/_workflow.py", "reason": "Cron action workflow that launches the snapshotted graph run."},
+    {"path": "server/services/workflow.py", "reason": "Local deployment admission and legacy fallback state."}
+  ],
+  "groups": [
+    {"id": "control-plane", "label": "DEPLOYMENT CONTROL PLANE", "role": "security", "x": 45, "y": 145, "w": 610, "h": 815},
+    {"id": "trigger-plane", "label": "TRIGGER AND EVENT PLANE", "role": "trigger", "x": 690, "y": 145, "w": 710, "h": 815},
+    {"id": "execution-plane", "label": "DURABLE EXECUTION", "role": "workflow", "x": 1435, "y": 145, "w": 440, "h": 815}
+  ],
+  "nodes": [
+    {"id": "lifecycle-controls", "label": "Start · Pause · Resume · Reset", "labelLines": ["Start · Pause", "Resume · Reset"], "type": "operator controls", "role": "actor", "x": 80, "y": 205, "w": 260, "h": 140, "detail": ["Revision-aware commands"]},
+    {"id": "workflow-control-service", "label": "WorkflowControlService", "type": "control service", "role": "security", "x": 370, "y": 205, "w": 250, "h": 140, "detail": ["CAS lifecycle transitions"]},
+    {"id": "generation-snapshot", "label": "Generation control row", "labelLines": ["Generation control", "row"], "type": "durable data", "role": "data", "x": 80, "y": 485, "w": 260, "h": 155, "detail": ["graph_snapshot + owner_id", "generation + revision"]},
+    {"id": "controller", "label": "WorkflowControlWorkflow", "labelLines": ["WorkflowControl", "Workflow"], "type": "long-lived workflow", "role": "workflow", "x": 370, "y": 485, "w": 250, "h": 155, "detail": ["Signals, poll loops, event queue", "continue-as-new"]},
+    {"id": "local-runtime-state", "label": "Local admission state", "type": "process projection", "role": "runtime", "x": 215, "y": 775, "w": 280, "h": 120, "detail": ["running / paused projection"]},
+    {"id": "push-trigger", "label": "Push trigger", "type": "trigger definition", "role": "trigger", "x": 730, "y": 205, "w": 190, "h": 115, "detail": ["Webhook or platform event"]},
+    {"id": "poll-trigger", "label": "Poll trigger", "type": "trigger definition", "role": "trigger", "x": 950, "y": 205, "w": 190, "h": 115, "detail": ["Controller timer + activity"]},
+    {"id": "cron-trigger", "label": "Cron trigger", "type": "trigger definition", "role": "trigger", "x": 1170, "y": 205, "w": 190, "h": 115, "detail": ["Temporal Schedule"]},
+    {"id": "cloudevent", "label": "WorkflowEvent", "type": "CloudEvents 1.0", "role": "event", "x": 730, "y": 455, "w": 250, "h": 130, "detail": ["id · source · type · subject"]},
+    {"id": "event-dispatch", "label": "dispatch.emit", "type": "event router", "role": "event", "x": 1040, "y": 455, "w": 250, "h": 130, "detail": ["Visibility query + signal"]},
+    {"id": "trigger-registration", "label": "Trigger registration", "type": "control signal", "role": "trigger", "x": 875, "y": 745, "w": 300, "h": 120, "detail": ["register_trigger + pause flags"]},
+    {"id": "child-graph-workflow", "label": "Child graph workflow", "type": "Temporal workflow", "role": "workflow", "x": 1480, "y": 295, "w": 350, "h": 145, "detail": ["Snapshotted nodes and edges"]},
+    {"id": "cron-action-workflow", "label": "Cron action workflow", "type": "Temporal workflow", "role": "workflow", "x": 1480, "y": 570, "w": 350, "h": 145, "detail": ["Schedule-owned graph launch"]},
+    {"id": "execution-status", "label": "Run status and events", "type": "observable result", "role": "result", "x": 1515, "y": 810, "w": 280, "h": 115, "detail": ["Database + WebSocket"]}
+  ],
+  "relationships": [
+    {"id": "r-controls-service", "from": "lifecycle-controls", "to": "workflow-control-service", "label": "Requests lifecycle transition", "protocol": "WebSocket command", "fromSide": "right", "toSide": "left", "labelAt": [350, 390]},
+    {"id": "r-service-snapshot", "from": "workflow-control-service", "to": "generation-snapshot", "label": "Allocates or CAS-updates", "protocol": "workflow database", "fromSide": "bottom", "toSide": "top", "waypoints": [[495, 405], [210, 405]], "labelAt": [350, 405]},
+    {"id": "r-snapshot-controller", "from": "generation-snapshot", "to": "controller", "label": "Starts with immutable graph snapshot", "protocol": "Temporal gRPC", "fromSide": "right", "toSide": "left", "labelAt": [350, 700]},
+    {"id": "r-controls-controller", "from": "workflow-control-service", "to": "controller", "label": "Updates pause/resume or signals reset", "protocol": "Temporal Update / Signal", "fromSide": "bottom", "toSide": "top", "labelAt": [495, 405]},
+    {"id": "r-service-local-state", "from": "workflow-control-service", "to": "local-runtime-state", "label": "Projects admission state", "protocol": "in-process", "fromSide": "bottom", "toSide": "top", "waypoints": [[640, 415], [640, 735], [355, 735]], "labelAt": [550, 735]},
+    {"id": "r-push-event", "from": "push-trigger", "to": "cloudevent", "label": "Normalizes inbound event", "protocol": "CloudEvents 1.0", "fromSide": "bottom", "toSide": "top", "labelAt": [825, 385]},
+    {"id": "r-event-dispatch", "from": "cloudevent", "to": "event-dispatch", "label": "Emits envelope", "protocol": "async dispatch", "fromSide": "right", "toSide": "left", "labelAt": [1010, 645]},
+    {"id": "r-dispatch-controller", "from": "event-dispatch", "to": "controller", "label": "Signals matching controller", "protocol": "Visibility + on_event", "fromSide": "left", "toSide": "right", "waypoints": [[1010, 520], [675, 520]], "labelAt": [825, 520]},
+    {"id": "r-poll-controller", "from": "poll-trigger", "to": "controller", "label": "Registers durable poll loop", "protocol": "register_trigger signal", "fromSide": "bottom", "toSide": "right", "waypoints": [[1045, 365], [675, 365], [675, 562]], "labelAt": [835, 365]},
+    {"id": "r-cron-action", "from": "cron-trigger", "to": "cron-action-workflow", "label": "Fires scheduled action", "protocol": "Temporal Schedule", "fromSide": "right", "toSide": "left", "waypoints": [[1415, 262], [1415, 642]], "labelAt": [1415, 465]},
+    {"id": "r-registration-controller", "from": "trigger-registration", "to": "controller", "label": "Registers definitions and pause state", "protocol": "Temporal Signal", "fromSide": "left", "toSide": "right", "waypoints": [[675, 805], [675, 562]], "labelAt": [675, 720]},
+    {"id": "r-controller-child", "from": "controller", "to": "child-graph-workflow", "label": "Spawns admitted event or poll run", "protocol": "Temporal child workflow", "fromSide": "right", "toSide": "left", "waypoints": [[1410, 562], [1410, 367]], "labelAt": [1225, 367]},
+    {"id": "r-cron-child", "from": "cron-action-workflow", "to": "child-graph-workflow", "label": "Launches snapshotted graph", "protocol": "Temporal child workflow", "fromSide": "top", "toSide": "bottom", "labelAt": [1655, 505]},
+    {"id": "r-child-status", "from": "child-graph-workflow", "to": "execution-status", "label": "Persists and broadcasts run state", "protocol": "database + WebSocket", "fromSide": "bottom", "toSide": "top", "labelAt": [1655, 760]},
+    {"id": "r-cron-status", "from": "cron-action-workflow", "to": "execution-status", "label": "Reports scheduled run state", "protocol": "Temporal + WebSocket", "fromSide": "bottom", "toSide": "top", "style": "dashed", "labelAt": [1775, 760]}
+  ],
+  "callouts": [
+    {"id": "legacy-fallback", "title": "Optional legacy path", "x": 735, "y": 885, "w": 630, "h": 65, "lines": ["Local DeploymentManager / event-waiter remain optional fallbacks."]}
+  ],
+  "prompt": {
+    "primaryRequest": "Build a deployment lifecycle and event-routing diagram that connects operator controls, revision-guarded generation snapshots, a long-lived Temporal controller, push/poll/cron trigger paths, and durable child graph runs.",
+    "composition": "Use three vertical planes: control, trigger/event, and durable execution. Flow lifecycle commands and generation data down the left, push/poll/cron sources across the center, and child/cron workflows plus status on the right. Make the controller the visual hub without crossing connectors.",
+    "constraints": ["Show graph_snapshot as immutable per generation", "Show push events as CloudEvents dispatched through Visibility and on_event", "Keep cron as a Temporal Schedule path distinct from controller-owned push/poll paths", "Use dashed styling only for optional or legacy reporting/fallback semantics"],
+    "avoid": ["one workflow per idle trigger", "mutable live canvas as the deployed graph source", "polling through a cron schedule", "unlabelled signals", "Kubernetes or queue infrastructure not present in source"]
+  }
+}

@@ -1,0 +1,357 @@
+{
+  "ok": true,
+  "expectedDiagramCount": 14,
+  "actualDiagramCount": 14,
+  "diagrams": [
+    {
+      "id": "01-system-context",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "7b0bff93951dc145",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "7b0bff93951dc145",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "02-runtime-trust-topology",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "ef4930f8db7feab0",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "ef4930f8db7feab0",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "03-workflow-execution-routing",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "a9db68cb272c047f",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "a9db68cb272c047f",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "04-durable-deployment-events",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "8df81da298fbe73d",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "8df81da298fbe73d",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "05-plugin-agent-team-composition",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "8152ad164c866305",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "8152ad164c866305",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "06-persistence-secret-plane",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "4dd0e49b0c18cbb7",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "4dd0e49b0c18cbb7",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "07-workspace-anatomy",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "d94e6e84070c5188",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "d94e6e84070c5188",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "08-node-configuration-anatomy",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "35179531c67b57ed",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "35179531c67b57ed",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "09-credentials-architecture",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "516cf648ab56c9c9",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "516cf648ab56c9c9",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "10-team-operations",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "9002f02d01716d7e",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "9002f02d01716d7e",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "11-agent-context-memory",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "c807035cec3f020d",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "c807035cec3f020d",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "12-master-skill-editor",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "37076efb9c516523",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "37076efb9c516523",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "13-workspace-files",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "c97fa2af80f57078",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "c97fa2af80f57078",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    },
+    {
+      "id": "14-runtime-observability-dock",
+      "errors": [],
+      "themes": {
+        "dark": {
+          "svgErrors": [],
+          "geometrySignature": "66d4ac8c11b8cc0a",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        },
+        "light": {
+          "svgErrors": [],
+          "geometrySignature": "66d4ac8c11b8cc0a",
+          "draftError": null,
+          "draftDimensions": [
+            1672,
+            941
+          ]
+        }
+      },
+      "ok": true
+    }
+  ]
+}

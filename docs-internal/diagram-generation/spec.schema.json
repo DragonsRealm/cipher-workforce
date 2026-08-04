@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencompany.sh/schemas/diagram-spec-v1.json",
+  "title": "OpenCompany diagram specification",
+  "type": "object",
+  "required": [
+    "id", "title", "subtitle", "category", "diagramType", "description",
+    "sourceRefs", "groups", "nodes", "relationships", "callouts", "prompt"
+  ],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9]{2}-[a-z0-9-]+$"},
+    "title": {"type": "string"},
+    "subtitle": {"type": "string"},
+    "category": {"enum": ["architecture", "product-panel"]},
+    "diagramType": {"type": "string"},
+    "description": {"type": "string"},
+    "sourceReview": {"enum": ["reviewed", "pending"]},
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "reason"],
+        "properties": {"path": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    },
+    "groups": {"type": "array", "items": {"$ref": "#/$defs/box"}},
+    "nodes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/node"}},
+    "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}},
+    "callouts": {"type": "array", "items": {"$ref": "#/$defs/callout"}},
+    "prompt": {
+      "type": "object",
+      "required": ["primaryRequest", "composition", "constraints", "avoid"],
+      "properties": {
+        "primaryRequest": {"type": "string"},
+        "composition": {"type": "string"},
+        "constraints": {"type": "array", "items": {"type": "string"}},
+        "avoid": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "$defs": {
+    "rect": {
+      "type": "object",
+      "required": ["id", "x", "y", "w", "h"],
+      "properties": {
+        "id": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"},
+        "w": {"type": "number"}, "h": {"type": "number"}
+      }
+    },
+    "box": {
+      "allOf": [
+        {"$ref": "#/$defs/rect"},
+        {"type": "object", "required": ["label", "role"], "properties": {
+          "label": {"type": "string"}, "role": {"type": "string"}, "dash": {"type": "boolean"}
+        }}
+      ]
+    },
+    "node": {
+      "allOf": [
+        {"$ref": "#/$defs/rect"},
+        {"type": "object", "required": ["label", "type", "role"], "properties": {
+          "label": {"type": "string"}, "labelLines": {"type": "array", "items": {"type": "string"}},
+          "type": {"type": "string"}, "role": {"type": "string"},
+          "detail": {"type": "array", "items": {"type": "string"}}
+        }}
+      ]
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["id", "from", "to", "label"],
+      "properties": {
+        "id": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"},
+        "label": {"type": "string"}, "protocol": {"type": "string"},
+        "style": {"enum": ["solid", "dashed"]},
+        "fromSide": {"enum": ["left", "right", "top", "bottom"]},
+        "toSide": {"enum": ["left", "right", "top", "bottom"]},
+        "waypoints": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "minItems": 2, "maxItems": 2}},
+        "labelAt": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "minItems": 2, "maxItems": 2}
+      }
+    },
+    "callout": {
+      "allOf": [
+        {"$ref": "#/$defs/rect"},
+        {"type": "object", "required": ["title", "lines"], "properties": {
+          "title": {"type": "string"}, "lines": {"type": "array", "items": {"type": "string"}}
+        }}
+      ]
+    }
+  }
+}

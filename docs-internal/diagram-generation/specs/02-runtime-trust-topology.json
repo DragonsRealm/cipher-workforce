@@ -1,0 +1,66 @@
+{
+  "id": "02-runtime-trust-topology",
+  "title": "Runtime and Trust Topology",
+  "subtitle": "Development and production paths, authenticated surfaces, durable orchestration and lazy helpers",
+  "category": "architecture",
+  "diagramType": "C4 container and deployment hybrid",
+  "description": "A runtime topology that distinguishes the browser and CLI clients, Vite development proxy, FastAPI application, protected and restricted protocol surfaces, Temporal orchestration, and lazily started helper processes.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": ".env.template", "reason": "Canonical service port block: app 5678, development backend 5679, Temporal UI/gRPC 5680/5681, Node.js 5682, WhatsApp 5683."},
+    {"path": "client/vite.config.js", "reason": "Same-origin development topology and proxy prefixes from Vite 5678 to Uvicorn 5679."},
+    {"path": "server/main.py", "reason": "FastAPI lifespan, routers, webhook route, MCP mount, lazy service startup, and production SPA serving."},
+    {"path": "server/middleware/auth.py", "reason": "Authentication exclusions and separate protection for public webhooks, internal WebSocket, and MCP."},
+    {"path": "server/routers/websocket.py", "reason": "Canonical /ws/status and /ws/internal endpoints and authenticated status-socket identity."},
+    {"path": "server/services/authz/ws_surface.py", "reason": "Restricted /ws/internal handler allowlist and internal-only payload identity rule."},
+    {"path": "server/services/cli_agent/mcp_server.py", "reason": "Per-batch bearer authentication and MCP-over-HTTP server surface."},
+    {"path": "server/services/temporal/lifecycle.py", "reason": "Temporal client and worker lifecycle wiring."},
+    {"path": "server/nodes/code/_runtime.py", "reason": "Lazy Node.js executor runtime configuration."}
+  ],
+  "groups": [
+    {"id": "client-zone", "label": "CLIENTS AND PUBLIC SENDERS", "role": "actor", "x": 40, "y": 135, "w": 350, "h": 830},
+    {"id": "app-zone", "label": "OPENCOMPANY APPLICATION", "role": "system", "x": 425, "y": 135, "w": 1050, "h": 830},
+    {"id": "runtime-zone", "label": "DURABLE AND LAZY RUNTIMES", "role": "runtime", "x": 1510, "y": 135, "w": 370, "h": 830}
+  ],
+  "nodes": [
+    {"id": "browser-spa", "label": "Browser SPA", "type": "client", "role": "actor", "x": 70, "y": 215, "w": 290, "h": 115, "detail": ["React workflow workspace"]},
+    {"id": "opencompany-cli", "label": "OpenCompany CLI", "type": "client", "role": "actor", "x": 70, "y": 470, "w": 290, "h": 115, "detail": ["Typer launcher and agent client"]},
+    {"id": "webhook-senders", "label": "Webhook senders", "type": "external", "role": "trigger", "x": 70, "y": 735, "w": 290, "h": 115, "detail": ["Provider callbacks"]},
+    {"id": "vite-dev", "label": "Vite development server", "labelLines": ["Vite development", "server"], "type": "container", "role": "interface", "x": 455, "y": 190, "w": 280, "h": 135, "detail": ["Port 5678 · development only"]},
+    {"id": "fastapi-app", "label": "FastAPI application", "type": "container", "role": "system", "x": 820, "y": 190, "w": 300, "h": 135, "detail": ["5679 dev · 5678 production"]},
+    {"id": "rest-surface", "label": "Protected REST API", "type": "interface", "role": "interface", "x": 455, "y": 400, "w": 280, "h": 120, "detail": ["Authenticated /api routes"]},
+    {"id": "status-socket", "label": "/ws/status", "type": "websocket", "role": "interface", "x": 820, "y": 400, "w": 280, "h": 120, "detail": ["Cookie-derived user identity"]},
+    {"id": "internal-socket", "label": "/ws/internal", "type": "websocket", "role": "security", "x": 1165, "y": 400, "w": 280, "h": 120, "detail": ["Local allowlist · payload identity"]},
+    {"id": "mcp-surface", "label": "/mcp/ide/mcp", "type": "MCP endpoint", "role": "security", "x": 455, "y": 655, "w": 280, "h": 120, "detail": ["Per-batch bearer token"]},
+    {"id": "webhook-ingress", "label": "/webhook/*", "type": "HTTP ingress", "role": "trigger", "x": 820, "y": 655, "w": 280, "h": 120, "detail": ["Public route · provider verification"]},
+    {"id": "production-spa", "label": "Production SPA assets", "type": "static content", "role": "interface", "x": 1165, "y": 655, "w": 280, "h": 120, "detail": ["Served by FastAPI"]},
+    {"id": "temporal-runtime", "label": "Temporal server and worker", "labelLines": ["Temporal server", "and worker"], "type": "durable runtime", "role": "workflow", "x": 1540, "y": 210, "w": 310, "h": 145, "detail": ["UI 5680 · gRPC 5681"]},
+    {"id": "nodejs-sidecar", "label": "Node.js executor", "type": "lazy sidecar", "role": "runtime", "x": 1540, "y": 475, "w": 310, "h": 125, "detail": ["HTTP · port 5682"]},
+    {"id": "whatsapp-sidecar", "label": "WhatsApp RPC", "type": "lazy sidecar", "role": "runtime", "x": 1540, "y": 735, "w": 310, "h": 125, "detail": ["RPC · port 5683"]}
+  ],
+  "relationships": [
+    {"id": "r-browser-vite", "from": "browser-spa", "to": "vite-dev", "label": "Loads SPA in development", "protocol": "HTTP :5678", "fromSide": "right", "toSide": "left", "labelAt": [405, 238]},
+    {"id": "r-vite-fastapi", "from": "vite-dev", "to": "fastapi-app", "label": "Proxies /api /ws /webhook /health /mcp", "protocol": "HTTP / WS :5679", "fromSide": "right", "toSide": "left", "labelAt": [780, 340]},
+    {"id": "r-cli-fastapi", "from": "opencompany-cli", "to": "fastapi-app", "label": "Launches and administers", "protocol": "Typer / process", "fromSide": "right", "toSide": "left", "waypoints": [[405, 527], [405, 365], [790, 365], [790, 257]], "labelAt": [590, 365]},
+    {"id": "r-browser-rest", "from": "browser-spa", "to": "rest-surface", "label": "Calls protected routes", "protocol": "HTTPS + JWT cookie", "fromSide": "right", "toSide": "left", "waypoints": [[405, 272], [405, 460]], "labelAt": [405, 395]},
+    {"id": "r-browser-status", "from": "browser-spa", "to": "status-socket", "label": "Commands and receives status", "protocol": "WebSocket + cookie", "fromSide": "right", "toSide": "left", "waypoints": [[400, 272], [400, 580], [780, 580], [780, 460]], "labelAt": [585, 580]},
+    {"id": "r-cli-mcp", "from": "opencompany-cli", "to": "mcp-surface", "label": "Invokes scoped tools", "protocol": "MCP over HTTP + Bearer", "fromSide": "right", "toSide": "left", "waypoints": [[405, 527], [405, 715]], "labelAt": [405, 635]},
+    {"id": "r-webhook-ingress", "from": "webhook-senders", "to": "webhook-ingress", "label": "Delivers provider events", "protocol": "HTTPS webhook", "fromSide": "right", "toSide": "left", "labelAt": [585, 815]},
+    {"id": "r-surfaces-app", "from": "rest-surface", "to": "fastapi-app", "label": "Dispatches request", "protocol": "ASGI", "fromSide": "top", "toSide": "bottom", "waypoints": [[595, 365], [970, 365]], "labelAt": [785, 365]},
+    {"id": "r-status-app", "from": "status-socket", "to": "fastapi-app", "label": "Dispatches authenticated message", "protocol": "ASGI WebSocket", "fromSide": "top", "toSide": "bottom", "labelAt": [970, 365]},
+    {"id": "r-temporal-internal", "from": "temporal-runtime", "to": "internal-socket", "label": "Calls legacy node handlers", "protocol": "WebSocket", "style": "dashed", "fromSide": "left", "toSide": "right", "waypoints": [[1500, 282], [1500, 460]], "labelAt": [1500, 390]},
+    {"id": "r-fastapi-temporal", "from": "fastapi-app", "to": "temporal-runtime", "label": "Starts workflows and polls tasks", "protocol": "Temporal gRPC :5681", "fromSide": "right", "toSide": "left", "labelAt": [1325, 255]},
+    {"id": "r-fastapi-nodejs", "from": "fastapi-app", "to": "nodejs-sidecar", "label": "Starts on demand and executes JavaScript", "protocol": "HTTP :5682", "fromSide": "right", "toSide": "left", "waypoints": [[1485, 257], [1485, 537]], "labelAt": [1390, 537]},
+    {"id": "r-fastapi-whatsapp", "from": "fastapi-app", "to": "whatsapp-sidecar", "label": "Starts on demand and sends commands", "protocol": "RPC :5683", "fromSide": "right", "toSide": "left", "waypoints": [[1460, 257], [1460, 797]], "labelAt": [1395, 797]},
+    {"id": "r-fastapi-spa", "from": "fastapi-app", "to": "production-spa", "label": "Serves production fallback", "protocol": "StaticFiles / HTML", "fromSide": "bottom", "toSide": "top", "waypoints": [[970, 605], [1305, 605]], "labelAt": [1140, 605]}
+  ],
+  "callouts": [
+    {"id": "trust-rules", "title": "Trust rules", "x": 535, "y": 795, "w": 835, "h": 155, "lines": ["REST and /ws/status use authenticated server-owned identity.", "/ws/internal is local-only, unauthenticated, and restricted to", "execute_node, execute_ai_node, and ping.", "/mcp/ide/mcp uses a short-lived per-batch Bearer token;", "/webhook/* verifies provider signatures where configured."]}
+  ],
+  "prompt": {
+    "primaryRequest": "Draw a deployment-aware runtime and trust topology for OpenCompany, showing clients on the left, the application and its security surfaces in the center, and Temporal plus lazy helper runtimes on the right.",
+    "composition": "Use three vertical trust zones. Place Vite and FastAPI high in the application zone, API and WebSocket surfaces in the middle, MCP/webhook/static surfaces below, and the trust-rules note at the bottom. Clearly distinguish development proxying from production SPA serving.",
+    "constraints": ["Show exact ports 5678, 5679, 5680, 5681, 5682 and 5683 only where specified", "Use a dashed line only for the legacy Temporal-to-/ws/internal path", "Make public, authenticated, bearer-scoped and internal-restricted boundaries visually distinct"],
+    "avoid": ["Docker or Kubernetes assumptions", "microservices not present in the repository", "a public /ws/internal interpretation", "a removed /api/workflow/execute-node route"]
+  }
+}

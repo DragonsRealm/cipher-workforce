@@ -1,0 +1,62 @@
+{
+  "id": "03-workflow-execution-routing",
+  "title": "Workflow Execution Routing",
+  "subtitle": "Single-node requests and whole-graph runs converge on the same plugin execution pipeline",
+  "category": "architecture",
+  "diagramType": "C4 dynamic flow",
+  "description": "A directed execution flow covering direct single-node execution, the WorkflowService routing decision, Temporal, Redis-backed parallel, and sequential orchestration paths, plus the canonical NodeExecutor pipeline and status persistence.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": "server/services/workflow.py", "reason": "Authoritative single-node adapter and Temporal, Redis-parallel, sequential routing decision."},
+    {"path": "server/services/node_executor.py", "reason": "Canonical parameter preparation, template resolution, plugin dispatch, and output storage pipeline."},
+    {"path": "server/services/execution/executor.py", "reason": "In-process graph orchestration, dependency scheduling, retries, and node callback contract."},
+    {"path": "server/services/temporal/executor.py", "reason": "Temporal graph execution adapter and durable workflow start path."},
+    {"path": "server/services/temporal/workflow.py", "reason": "Durable graph workflow and activity routing."},
+    {"path": "server/services/status_broadcaster.py", "reason": "Per-workflow execution and node status broadcasts."},
+    {"path": "server/routers/workflow.py", "reason": "Internal Temporal node-execution endpoint still present in the current route surface."},
+    {"path": "server/routers/websocket.py", "reason": "Interactive execute_node and execute_ai_node entry points."}
+  ],
+  "groups": [
+    {"id": "entry-zone", "label": "ENTRY", "role": "interface", "x": 45, "y": 150, "w": 300, "h": 790},
+    {"id": "routing-zone", "label": "GRAPH ORCHESTRATION", "role": "workflow", "x": 385, "y": 150, "w": 775, "h": 790},
+    {"id": "node-pipeline-zone", "label": "NODEEXECUTOR PIPELINE", "role": "runtime", "x": 1200, "y": 150, "w": 675, "h": 790}
+  ],
+  "nodes": [
+    {"id": "single-node-request", "label": "Single-node request", "type": "entry point", "role": "interface", "x": 75, "y": 250, "w": 240, "h": 125, "detail": ["WebSocket or internal REST"]},
+    {"id": "whole-workflow-request", "label": "Whole-workflow run", "type": "entry point", "role": "interface", "x": 75, "y": 625, "w": 240, "h": 125, "detail": ["Interactive or deployed"]},
+    {"id": "routing-decision", "label": "WorkflowService routing", "type": "decision", "role": "decision", "x": 455, "y": 250, "w": 300, "h": 145, "detail": ["Temporal → parallel → sequential"]},
+    {"id": "temporal-branch", "label": "Temporal branch", "type": "durable orchestrator", "role": "workflow", "x": 820, "y": 205, "w": 285, "h": 125, "detail": ["Temporal executor is wired"]},
+    {"id": "redis-parallel-branch", "label": "Redis-parallel branch", "labelLines": ["Redis-parallel", "branch"], "type": "graph orchestrator", "role": "workflow", "x": 820, "y": 420, "w": 285, "h": 145, "detail": ["WorkflowExecutor"]},
+    {"id": "sequential-branch", "label": "Sequential fallback", "type": "graph orchestrator", "role": "workflow", "x": 820, "y": 680, "w": 285, "h": 125, "detail": ["Topological loop"]},
+    {"id": "parameter-preparation", "label": "Prepare parameters", "type": "pipeline stage", "role": "runtime", "x": 1240, "y": 195, "w": 285, "h": 125, "detail": ["DB defaults + request overrides", "Pydantic Params + credentials"]},
+    {"id": "template-resolution", "label": "Resolve templates", "type": "pipeline stage", "role": "runtime", "x": 1560, "y": 195, "w": 275, "h": 125, "detail": ["Graph and upstream outputs"]},
+    {"id": "plugin-dispatch", "label": "Dispatch plugin operation", "labelLines": ["Dispatch plugin", "operation"], "type": "pipeline stage", "role": "tool", "x": 1240, "y": 455, "w": 285, "h": 145, "detail": ["Node registry handler"]},
+    {"id": "validated-result", "label": "Validated execution result", "labelLines": ["Validated execution", "result"], "type": "pipeline stage", "role": "result", "x": 1560, "y": 455, "w": 275, "h": 145, "detail": ["Success or typed error"]},
+    {"id": "output-store", "label": "Output store", "type": "persistence", "role": "data", "x": 1240, "y": 745, "w": 285, "h": 125, "detail": ["output_main / top / 0"]},
+    {"id": "status-broadcast", "label": "Status broadcasts", "type": "observable result", "role": "result", "x": 1560, "y": 745, "w": 275, "h": 125, "detail": ["Per-workflow WebSocket stream"]}
+  ],
+  "relationships": [
+    {"id": "r-single-pipeline", "from": "single-node-request", "to": "parameter-preparation", "label": "Executes directly", "protocol": "WorkflowService.execute_node", "fromSide": "right", "toSide": "left", "waypoints": [[360, 312], [360, 120], [1180, 120], [1180, 257]], "labelAt": [780, 120]},
+    {"id": "r-whole-routing", "from": "whole-workflow-request", "to": "routing-decision", "label": "Submits nodes, edges and identity", "protocol": "WorkflowService.execute_workflow", "fromSide": "right", "toSide": "left", "waypoints": [[365, 687], [365, 322]], "labelAt": [365, 505]},
+    {"id": "r-routing-temporal", "from": "routing-decision", "to": "temporal-branch", "label": "Chooses when requested and wired", "protocol": "Temporal", "fromSide": "right", "toSide": "left", "labelAt": [790, 235]},
+    {"id": "r-routing-parallel", "from": "routing-decision", "to": "redis-parallel-branch", "label": "Else chooses when parallel and Redis enabled", "protocol": "in-process + Redis", "fromSide": "right", "toSide": "left", "waypoints": [[785, 322], [785, 492]], "labelAt": [790, 405]},
+    {"id": "r-routing-sequential", "from": "routing-decision", "to": "sequential-branch", "label": "Otherwise falls back", "protocol": "in-process", "fromSide": "right", "toSide": "left", "waypoints": [[785, 322], [785, 742]], "labelAt": [790, 640]},
+    {"id": "r-temporal-node", "from": "temporal-branch", "to": "parameter-preparation", "label": "Schedules node activities", "protocol": "Temporal task queue", "fromSide": "right", "toSide": "left", "labelAt": [1170, 225]},
+    {"id": "r-parallel-node", "from": "redis-parallel-branch", "to": "parameter-preparation", "label": "Calls node adapter with retries", "protocol": "async callback", "fromSide": "right", "toSide": "left", "waypoints": [[1170, 492], [1170, 257]], "labelAt": [1170, 385]},
+    {"id": "r-sequential-node", "from": "sequential-branch", "to": "parameter-preparation", "label": "Calls each ready node", "protocol": "await", "fromSide": "right", "toSide": "left", "waypoints": [[1170, 742], [1170, 257]], "labelAt": [1170, 650]},
+    {"id": "r-prepare-resolve", "from": "parameter-preparation", "to": "template-resolution", "label": "Passes validated parameters", "protocol": "Python dict", "fromSide": "right", "toSide": "left", "labelAt": [1542, 347]},
+    {"id": "r-resolve-dispatch", "from": "template-resolution", "to": "plugin-dispatch", "label": "Builds handler context", "protocol": "NodeContext", "fromSide": "bottom", "toSide": "top", "waypoints": [[1697, 380], [1382, 380]], "labelAt": [1540, 380]},
+    {"id": "r-dispatch-result", "from": "plugin-dispatch", "to": "validated-result", "label": "Returns standardized result", "protocol": "ExecutionResult", "fromSide": "right", "toSide": "left", "labelAt": [1542, 665]},
+    {"id": "r-result-store", "from": "validated-result", "to": "output-store", "label": "Persists successful outputs", "protocol": "database callback", "fromSide": "bottom", "toSide": "top", "waypoints": [[1697, 680], [1382, 680]], "labelAt": [1540, 680]},
+    {"id": "r-store-broadcast", "from": "output-store", "to": "status-broadcast", "label": "Publishes execution state", "protocol": "WebSocket broadcast", "fromSide": "right", "toSide": "left", "labelAt": [1542, 925]}
+  ],
+  "callouts": [
+    {"id": "routing-invariant", "title": "Routing invariant", "x": 455, "y": 830, "w": 650, "h": 110, "lines": ["Temporal requested but not wired logs an error, then falls through.", "The next eligible path is Redis-parallel or sequential.", "Every branch invokes WorkflowService.execute_node → NodeExecutor."]}
+  ],
+  "prompt": {
+    "primaryRequest": "Create a source-accurate dynamic execution-routing diagram showing a direct single-node path, a whole-workflow routing decision with three ordered branches, and a shared six-stage NodeExecutor pipeline.",
+    "composition": "Use three vertical bands: entries, graph orchestration, and NodeExecutor pipeline. Put the direct single-node connector above the graph router. Stack Temporal, Redis-parallel, and sequential branches in priority order. Arrange the pipeline as a compact two-column serpentine flow ending in output storage and status broadcasts.",
+    "constraints": ["Preserve the routing precedence Temporal requested+wired, else parallel+Redis, else sequential", "Show that the single-node request bypasses graph routing", "Show all graph branches converging on the same NodeExecutor pipeline"],
+    "avoid": ["claiming Redis is the executor itself", "claiming Temporal is always mandatory", "a removed public execute-node REST route", "parallel arrows without labels"]
+  }
+}

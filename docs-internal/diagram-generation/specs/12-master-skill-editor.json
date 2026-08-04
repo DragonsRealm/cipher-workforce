@@ -1,0 +1,381 @@
+{
+  "id": "12-master-skill-editor",
+  "title": "Master Skill Editor",
+  "subtitle": "One split panel joins the skill catalogue, authoritative instructions, node configuration, and live retrieval state.",
+  "category": "product-panel",
+  "diagramType": "product panel with configuration and runtime data flow",
+  "description": "Source-backed anatomy of the Master Skill editor: built-in and user skill sources flow through WebSocket handlers and TanStack caches into the catalogue and instruction editor, while enabled skills persist in skills_config, expand for a connected agent, and report safe runtime badges back to the exact Master Skill row.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {
+      "path": "client/src/components/parameterPanel/MasterSkillEditor.tsx",
+      "reason": "Defines the split catalogue/editor surface, folder and user-skill queries, enable toggles, instruction editing, CRUD actions, skills_config writes, and runtime row badges."
+    },
+    {
+      "path": "client/src/hooks/useFolderSkills.ts",
+      "reason": "Defines the folderSkills TanStack query and scan_skill_folder metadata mapping used by the catalogue."
+    },
+    {
+      "path": "server/services/skills/handlers.py",
+      "reason": "Owns the list/scan/content handlers, user-skill CRUD, and lifecycle-producing mutation paths used by the editor."
+    },
+    {
+      "path": "server/nodes/skill/master_skill/__init__.py",
+      "reason": "Defines the passive Master Skill node, required assistant Skill entry, skills_config parameter shape, and editor UI hints."
+    },
+    {
+      "path": "server/nodes/skill/_expander.py",
+      "reason": "Expands enabled skills_config entries into per-skill descriptors for connected agents."
+    },
+    {
+      "path": "server/services/skill_runtime.py",
+      "reason": "Loads authoritative instructions progressively and publishes loading, loaded, used, or failed activity to the agent and exact Master Skill node."
+    },
+    {
+      "path": "server/nodes/skill/master_skill/_events.py",
+      "reason": "Defines the skill_lifecycle CloudEvent used to invalidate userSkills, folderSkills, and skillContent caches across clients."
+    },
+    {
+      "path": "client/src/contexts/WebSocketContext.tsx",
+      "reason": "Routes skill_lifecycle invalidation and live node-status data consumed by the editor."
+    }
+  ],
+  "groups": [
+    {
+      "id": "skill-sources",
+      "x": 70,
+      "y": 130,
+      "w": 500,
+      "h": 700,
+      "label": "SKILL SOURCES + WIRE HANDLERS",
+      "role": "data"
+    },
+    {
+      "id": "editor-surface",
+      "x": 610,
+      "y": 130,
+      "w": 760,
+      "h": 700,
+      "label": "MASTER SKILL EDITOR",
+      "role": "interface"
+    },
+    {
+      "id": "agent-runtime",
+      "x": 1410,
+      "y": 130,
+      "w": 440,
+      "h": 700,
+      "label": "CONNECTED AGENT RUNTIME",
+      "role": "runtime"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "skill-ws-handlers",
+      "x": 110,
+      "y": 200,
+      "w": 420,
+      "h": 160,
+      "label": "Skill WebSocket handlers",
+      "labelLines": ["Skill WebSocket", "handlers"],
+      "type": "service",
+      "role": "system",
+      "detail": ["list / scan / get content", "create / update / delete", "skill_lifecycle broadcasts"]
+    },
+    {
+      "id": "builtin-skill-files",
+      "x": 110,
+      "y": 430,
+      "w": 195,
+      "h": 150,
+      "label": "Built-in SKILL.md",
+      "labelLines": ["Built-in", "SKILL.md"],
+      "type": "source",
+      "role": "data",
+      "detail": ["server/skills/*", "metadata + instructions"]
+    },
+    {
+      "id": "user-skill-store",
+      "x": 335,
+      "y": 430,
+      "w": 195,
+      "h": 150,
+      "label": "User skill store",
+      "labelLines": ["User skill", "store"],
+      "type": "database",
+      "role": "data",
+      "detail": ["custom records", "display + instructions"]
+    },
+    {
+      "id": "tanstack-skill-cache",
+      "x": 110,
+      "y": 650,
+      "w": 420,
+      "h": 130,
+      "label": "TanStack skill caches",
+      "labelLines": ["TanStack skill caches"],
+      "type": "client state",
+      "role": "data",
+      "detail": ["userSkills · folderSkills", "skillContent by name"]
+    },
+    {
+      "id": "skill-catalogue-pane",
+      "x": 650,
+      "y": 200,
+      "w": 320,
+      "h": 330,
+      "label": "Skills catalogue pane",
+      "labelLines": ["Skills catalogue", "pane"],
+      "type": "interface",
+      "role": "interface",
+      "detail": ["folder selector + search", "enable / required / custom", "Loading · Loaded · Failed", "enabled count + create"]
+    },
+    {
+      "id": "instructions-editor-pane",
+      "x": 1010,
+      "y": 200,
+      "w": 320,
+      "h": 330,
+      "label": "Instructions editor pane",
+      "labelLines": ["Instructions editor", "pane"],
+      "type": "interface",
+      "role": "interface",
+      "detail": ["authoritative markdown", "create / edit / delete", "reset built-in default", "customized state"]
+    },
+    {
+      "id": "query-projection",
+      "x": 650,
+      "y": 620,
+      "w": 320,
+      "h": 150,
+      "label": "Catalogue projection",
+      "labelLines": ["Catalogue projection"],
+      "type": "view model",
+      "role": "neutral",
+      "detail": ["folder rows + user rows", "selected skill buffer"]
+    },
+    {
+      "id": "skills-config",
+      "x": 1010,
+      "y": 620,
+      "w": 320,
+      "h": 150,
+      "label": "Master Skill skills_config",
+      "labelLines": ["Master Skill", "skills_config"],
+      "type": "node params",
+      "role": "security",
+      "detail": ["enabled · instructions", "isCustomized · required"]
+    },
+    {
+      "id": "master-skill-expander",
+      "x": 1450,
+      "y": 200,
+      "w": 360,
+      "h": 150,
+      "label": "Master Skill expander",
+      "labelLines": ["Master Skill", "expander"],
+      "type": "runtime",
+      "role": "runtime",
+      "detail": ["enabled entries only", "per-skill descriptors"]
+    },
+    {
+      "id": "agent-skill-runtime",
+      "x": 1450,
+      "y": 430,
+      "w": 360,
+      "h": 160,
+      "label": "Agent Skill runtime",
+      "labelLines": ["Agent Skill runtime"],
+      "type": "tool runtime",
+      "role": "agent",
+      "detail": ["progressive load", "declared resources", "bounded safe events"]
+    },
+    {
+      "id": "skill-status-projection",
+      "x": 1450,
+      "y": 660,
+      "w": 360,
+      "h": 120,
+      "label": "Exact-node status projection",
+      "labelLines": ["Exact-node status", "projection"],
+      "type": "observability",
+      "role": "event",
+      "detail": ["active_skills / last_skills"]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "handlers-scan-builtins",
+      "from": "skill-ws-handlers",
+      "to": "builtin-skill-files",
+      "label": "scan and load metadata + instructions",
+      "protocol": "filesystem",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "waypoints": [[220, 390], [208, 390]],
+      "labelAt": [205, 390]
+    },
+    {
+      "id": "handlers-crud-user-skills",
+      "from": "skill-ws-handlers",
+      "to": "user-skill-store",
+      "label": "list and mutate custom skills",
+      "protocol": "database",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "waypoints": [[430, 390], [433, 390]],
+      "labelAt": [430, 390]
+    },
+    {
+      "id": "handlers-refresh-cache",
+      "from": "skill-ws-handlers",
+      "to": "tanstack-skill-cache",
+      "label": "query results and lifecycle invalidation",
+      "protocol": "WebSocket",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "left",
+      "waypoints": [[90, 280], [90, 715]],
+      "labelAt": [270, 615]
+    },
+    {
+      "id": "cache-builds-projection",
+      "from": "tanstack-skill-cache",
+      "to": "query-projection",
+      "label": "cached folder, user, and content records",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [590, 690]
+    },
+    {
+      "id": "projection-populates-catalogue",
+      "from": "query-projection",
+      "to": "skill-catalogue-pane",
+      "label": "render and filter rows",
+      "style": "solid",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [810, 575]
+    },
+    {
+      "id": "catalogue-selects-editor",
+      "from": "skill-catalogue-pane",
+      "to": "instructions-editor-pane",
+      "label": "select skill",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [990, 350]
+    },
+    {
+      "id": "catalogue-writes-toggle",
+      "from": "skill-catalogue-pane",
+      "to": "skills-config",
+      "label": "toggle enabled / keep required",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "waypoints": [[810, 570], [990, 570], [990, 695]],
+      "labelAt": [900, 560]
+    },
+    {
+      "id": "editor-writes-instructions",
+      "from": "instructions-editor-pane",
+      "to": "skills-config",
+      "label": "write instructions + customized flag",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1170, 575]
+    },
+    {
+      "id": "editor-user-skill-crud",
+      "from": "instructions-editor-pane",
+      "to": "skill-ws-handlers",
+      "label": "create / update / delete user skill",
+      "protocol": "WebSocket",
+      "style": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "waypoints": [[1170, 170], [320, 170]],
+      "labelAt": [750, 165]
+    },
+    {
+      "id": "config-expands",
+      "from": "skills-config",
+      "to": "master-skill-expander",
+      "label": "expand enabled entries",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "waypoints": [[1385, 695], [1385, 275]],
+      "labelAt": [1385, 485]
+    },
+    {
+      "id": "expander-builds-runtime",
+      "from": "master-skill-expander",
+      "to": "agent-skill-runtime",
+      "label": "descriptors + Skill tool catalogue",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1630, 390]
+    },
+    {
+      "id": "runtime-publishes-status",
+      "from": "agent-skill-runtime",
+      "to": "skill-status-projection",
+      "label": "loading / loaded / used / failed",
+      "protocol": "node status + CloudEvents",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1630, 625]
+    },
+    {
+      "id": "status-back-to-catalogue",
+      "from": "skill-status-projection",
+      "to": "skill-catalogue-pane",
+      "label": "project safe state onto matching row",
+      "style": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "waypoints": [[1630, 840], [595, 840], [595, 365]],
+      "labelAt": [1090, 835]
+    }
+  ],
+  "callouts": [
+    {
+      "id": "master-skill-invariant",
+      "x": 70,
+      "y": 880,
+      "w": 1780,
+      "h": 90,
+      "title": "Configuration is authoritative; observability is sanitized",
+      "lines": [
+        "skills_config keeps the enabled flag and instruction body used by the connected agent.",
+        "Runtime events expose names and states only—never prompts, arguments, results, secrets, or raw exceptions."
+      ]
+    }
+  ],
+  "prompt": {
+    "primaryRequest": "Draw a source-backed product-panel schematic of the Master Skill Editor, showing its split skill catalogue and instructions editor, the built-in and user skill sources, the persisted skills_config, expansion into the connected Agent Skill runtime, and the safe runtime-status feedback loop.",
+    "composition": "Use three clearly bounded vertical zones matching the supplied coordinates: source handlers on the left, the split editor and its view/config state in the center, and the connected agent runtime on the right. Keep the bottom status-feedback route outside the cards and reserve the final band for the invariant callout.",
+    "constraints": [
+      "Show the Skills catalogue pane and Instructions editor pane as equal peers in one editor surface",
+      "Keep built-in SKILL.md content distinct from database-backed user skills",
+      "Show skills_config as the authoritative enabled/instructions configuration, not a runtime log",
+      "Show the runtime feedback arrow returning to the matching catalogue row",
+      "Use the exact handler/cache/config/runtime labels supplied in the spec"
+    ],
+    "avoid": [
+      "generic prompt-engineering imagery",
+      "implying every skill body is eagerly injected into the system prompt",
+      "showing runtime events that contain instruction text or secrets",
+      "merging built-in files and user skills into one storage box"
+    ]
+  }
+}

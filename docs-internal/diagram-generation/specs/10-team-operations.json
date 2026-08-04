@@ -1,0 +1,507 @@
+{
+  "id": "10-team-operations",
+  "title": "Team Operations",
+  "subtitle": "Execution-scoped durable tasks: assign, run, review, recover, and finish",
+  "category": "architecture",
+  "diagramType": "state-machine-and-control-surfaces",
+  "description": "A team lead uses its intrinsic Task Manager to persist bounded work for graph-connected teammates. AgentTeamService enforces workflow, lead, execution, assignee, and optimistic-revision boundaries while tasks advance from blocked or queued through worker submission and explicit lead acceptance; Task Manager and Team Monitor expose mutable and read-only views of the same durable state.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {
+      "path": "server/nodes/tool/task_manager/__init__.py",
+      "reason": "Defines the intrinsic model-facing operations, connected-teammate resolution, and trusted execution scope."
+    },
+    {
+      "path": "server/services/agent_team.py",
+      "reason": "Defines durable assignment, authorized mutation transitions, submission versus acceptance semantics, and finish-team gating."
+    },
+    {
+      "path": "server/services/agent_teams/handlers.py",
+      "reason": "Defines human WebSocket reads and revision-checked task management operations."
+    },
+    {
+      "path": "server/services/temporal/agent_workflow.py",
+      "reason": "Implements detached delegated task execution, concurrency permits, child completion, and terminal cleanup."
+    },
+    {
+      "path": "client/src/components/parameterPanel/TaskManagerPanel.tsx",
+      "reason": "Defines the operational task UI, status-specific actions, revision checks, execution history, and Temporal trace inspection."
+    },
+    {
+      "path": "client/src/components/parameterPanel/TeamMonitorPanel.tsx",
+      "reason": "Defines the read-only teammate and task snapshot, lifecycle counts, execution selector, and event-driven refresh."
+    }
+  ],
+  "groups": [
+    {
+      "id": "operation-surfaces",
+      "x": 72,
+      "y": 140,
+      "w": 1776,
+      "h": 235,
+      "label": "OPERATION SURFACES",
+      "role": "workflow"
+    },
+    {
+      "id": "task-lifecycle",
+      "x": 72,
+      "y": 410,
+      "w": 1776,
+      "h": 535,
+      "label": "DURABLE TASK LIFECYCLE",
+      "role": "runtime"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "team-lead",
+      "x": 110,
+      "y": 205,
+      "w": 300,
+      "h": 140,
+      "label": "Team Lead",
+      "type": "AGENT",
+      "role": "agent",
+      "detail": [
+        "Orchestrator or AI Employee",
+        "connected teammates are authority"
+      ]
+    },
+    {
+      "id": "task-manager",
+      "x": 500,
+      "y": 205,
+      "w": 330,
+      "h": 140,
+      "label": "Task Manager",
+      "type": "INTRINSIC TOOL",
+      "role": "tool",
+      "detail": [
+        "assign · inspect · review",
+        "retry · reassign · cancel · finish"
+      ]
+    },
+    {
+      "id": "agent-team-service",
+      "x": 920,
+      "y": 205,
+      "w": 360,
+      "h": 140,
+      "label": "AgentTeamService",
+      "type": "DURABLE SERVICE",
+      "role": "runtime",
+      "detail": [
+        "workflow + lead + execution scope",
+        "optimistic revision transitions"
+      ]
+    },
+    {
+      "id": "human-views",
+      "x": 1390,
+      "y": 205,
+      "w": 360,
+      "h": 140,
+      "label": "Task Manager + Team Monitor",
+      "labelLines": [
+        "Task Manager +",
+        "Team Monitor"
+      ],
+      "type": "HUMAN UI",
+      "role": "interface",
+      "detail": [
+        "authorized mutations + trace",
+        "read-only lifecycle snapshot"
+      ]
+    },
+    {
+      "id": "blocked",
+      "x": 110,
+      "y": 520,
+      "w": 250,
+      "h": 140,
+      "label": "Blocked",
+      "type": "TASK STATE",
+      "role": "neutral",
+      "detail": [
+        "dependencies unresolved"
+      ]
+    },
+    {
+      "id": "queued",
+      "x": 440,
+      "y": 520,
+      "w": 250,
+      "h": 140,
+      "label": "Queued",
+      "type": "TASK STATE",
+      "role": "workflow",
+      "detail": [
+        "durably persisted",
+        "awaiting admission"
+      ]
+    },
+    {
+      "id": "running",
+      "x": 770,
+      "y": 520,
+      "w": 250,
+      "h": 140,
+      "label": "Running",
+      "type": "TASK STATE",
+      "role": "runtime",
+      "detail": [
+        "worker claimed task",
+        "detached child execution"
+      ]
+    },
+    {
+      "id": "submitted",
+      "x": 1100,
+      "y": 520,
+      "w": 250,
+      "h": 140,
+      "label": "Submitted",
+      "type": "TASK STATE",
+      "role": "event",
+      "detail": [
+        "worker result awaits review"
+      ]
+    },
+    {
+      "id": "accepted",
+      "x": 1430,
+      "y": 520,
+      "w": 250,
+      "h": 140,
+      "label": "Accepted",
+      "type": "TASK STATE",
+      "role": "result",
+      "detail": [
+        "lead-approved Done state"
+      ]
+    },
+    {
+      "id": "failed",
+      "x": 770,
+      "y": 760,
+      "w": 250,
+      "h": 140,
+      "label": "Failed",
+      "type": "TASK STATE",
+      "role": "event",
+      "detail": [
+        "error retained for recovery"
+      ]
+    },
+    {
+      "id": "cancelled",
+      "x": 1100,
+      "y": 760,
+      "w": 250,
+      "h": 140,
+      "label": "Cancelled",
+      "type": "TASK STATE",
+      "role": "neutral",
+      "detail": [
+        "intentional terminal state"
+      ]
+    },
+    {
+      "id": "team-completed",
+      "x": 1430,
+      "y": 760,
+      "w": 250,
+      "h": 140,
+      "label": "Team Completed",
+      "type": "EXECUTION STATE",
+      "role": "result",
+      "detail": [
+        "all tasks accepted or cancelled"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "lead-calls-task-manager",
+      "from": "team-lead",
+      "to": "task-manager",
+      "label": "call public operations",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        455,
+        180
+      ]
+    },
+    {
+      "id": "task-manager-uses-service",
+      "from": "task-manager",
+      "to": "agent-team-service",
+      "label": "scoped durable mutation",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        875,
+        180
+      ]
+    },
+    {
+      "id": "human-manages-service",
+      "from": "human-views",
+      "to": "agent-team-service",
+      "label": "inspect + permitted review actions",
+      "protocol": "WebSocket",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        1335,
+        245
+      ]
+    },
+    {
+      "id": "service-updates-human",
+      "from": "agent-team-service",
+      "to": "human-views",
+      "label": "snapshots + lifecycle events",
+      "style": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "waypoints": [
+        [
+          1100,
+          365
+        ],
+        [
+          1570,
+          365
+        ]
+      ],
+      "labelAt": [
+        1335,
+        365
+      ]
+    },
+    {
+      "id": "service-assigns-ready",
+      "from": "agent-team-service",
+      "to": "queued",
+      "label": "assign_task persists ready work",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "waypoints": [
+        [
+          1100,
+          395
+        ],
+        [
+          565,
+          395
+        ]
+      ],
+      "labelAt": [
+        830,
+        395
+      ]
+    },
+    {
+      "id": "dependencies-unblock",
+      "from": "blocked",
+      "to": "queued",
+      "label": "dependencies accepted",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        400,
+        495
+      ]
+    },
+    {
+      "id": "worker-claims",
+      "from": "queued",
+      "to": "running",
+      "label": "worker claims task",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        730,
+        495
+      ]
+    },
+    {
+      "id": "worker-submits",
+      "from": "running",
+      "to": "submitted",
+      "label": "worker succeeds",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1060,
+        495
+      ]
+    },
+    {
+      "id": "lead-accepts",
+      "from": "submitted",
+      "to": "accepted",
+      "label": "accept_task",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1390,
+        495
+      ]
+    },
+    {
+      "id": "worker-fails",
+      "from": "running",
+      "to": "failed",
+      "label": "worker errors",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        895,
+        710
+      ]
+    },
+    {
+      "id": "failed-requeues",
+      "from": "failed",
+      "to": "queued",
+      "label": "retry_task / reassign_task",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "waypoints": [
+        [
+          720,
+          700
+        ],
+        [
+          565,
+          700
+        ]
+      ],
+      "labelAt": [
+        640,
+        700
+      ]
+    },
+    {
+      "id": "submitted-requeues",
+      "from": "submitted",
+      "to": "queued",
+      "label": "retry_task / reassign_task",
+      "style": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "waypoints": [
+        [
+          1225,
+          455
+        ],
+        [
+          565,
+          455
+        ]
+      ],
+      "labelAt": [
+        895,
+        455
+      ]
+    },
+    {
+      "id": "cancelled-requeues",
+      "from": "cancelled",
+      "to": "queued",
+      "label": "retry_task / reassign_task",
+      "style": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "waypoints": [
+        [
+          1225,
+          925
+        ],
+        [
+          700,
+          925
+        ],
+        [
+          700,
+          700
+        ]
+      ],
+      "labelAt": [
+        895,
+        925
+      ]
+    },
+    {
+      "id": "accepted-finishes-team",
+      "from": "accepted",
+      "to": "team-completed",
+      "label": "finish_team when all resolved",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1555,
+        690
+      ]
+    },
+    {
+      "id": "cancelled-is-resolved",
+      "from": "cancelled",
+      "to": "team-completed",
+      "label": "cancelled also counts resolved",
+      "style": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1390,
+        735
+      ]
+    }
+  ],
+  "callouts": [
+    {
+      "id": "permitted-mutations",
+      "x": 110,
+      "y": 740,
+      "w": 550,
+      "h": 165,
+      "title": "State-aware controls",
+      "lines": [
+        "modify_task: blocked or queued",
+        "cancel_task: blocked, queued, or running",
+        "list/get/inspect never mutate task state"
+      ]
+    }
+  ],
+  "prompt": {
+    "primaryRequest": "Explain OpenCompany team operations as one integrated schematic: the team lead's intrinsic Task Manager and human panels feed an execution-scoped AgentTeamService, then a durable task state machine makes worker submission, lead acceptance, retries, reassignment, cancellation, and final team completion explicit.",
+    "composition": "A narrow top control band contains Team Lead, Task Manager, AgentTeamService, and the human Task Manager plus Team Monitor. A large lower band contains a left-to-right lifecycle from Blocked through Queued, Running, Submitted, and Accepted, with Failed and Cancelled recovery states below and Team Completed at the lower right. Route recovery arrows around the main path and keep every arrow label readable.",
+    "constraints": [
+      "Submitted must be visibly distinct from Accepted and must not be labelled Done",
+      "Only accepted and cancelled tasks satisfy finish_team",
+      "Show retry and reassign returning failed, submitted, or cancelled work to Queued",
+      "Show optimistic revision-checked mutations at AgentTeamService",
+      "Team Monitor must be described as read-only even though Task Manager UI can mutate"
+    ],
+    "avoid": [
+      "equating worker completion with lead acceptance",
+      "showing arbitrary non-connected agents as valid assignees",
+      "a single undifferentiated completed state",
+      "implying one sibling failure cancels every sibling"
+    ]
+  }
+}

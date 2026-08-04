@@ -1,0 +1,60 @@
+{
+  "id": "05-plugin-agent-team-composition",
+  "title": "Plugin → Agent → Team Composition",
+  "subtitle": "Self-registering node plugins compose provider-backed agents, edge-connected capabilities, and execution-scoped teams",
+  "category": "architecture",
+  "diagramType": "layered composition",
+  "description": "A source-backed composition view showing how BaseNode plugins branch into standalone chat-model and agent plugins, how agents assemble context, skills, and tools before entering the shared LLM runtime, and how team leads turn teammate edges into durable delegation surfaces.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {"path": "server/services/plugin/base.py", "reason": "Authoritative BaseNode contract, subclass registration, component kinds, Params/Output schemas, handles, and uiHints."},
+    {"path": "server/nodes/model/_base.py", "reason": "ChatModelBase contract and standalone output-model node behavior."},
+    {"path": "server/nodes/agent/_specialized.py", "reason": "Agent Params select provider and model and specialized agents share the agent execution surface."},
+    {"path": "server/nodes/agent/_handles.py", "reason": "Canonical agent and team-lead handle topology for context, skills, tools, tasks, and teammates."},
+    {"path": "server/services/plugin/edge_walker.py", "reason": "Connection discovery, intrinsic Task Manager binding, teammate descriptors, and delegation-tool construction."},
+    {"path": "server/services/llm/unifier.py", "reason": "Shared provider registry and native-SDK LLM facade used by model and agent execution."},
+    {"path": "server/services/agent_team.py", "reason": "Execution-scoped durable team creation and task/member lifecycle service."},
+    {"path": "server/models/database.py", "reason": "Persistent AgentTeam, TeamMember, TeamTask, TeamTaskAttempt, message, and concurrency records."}
+  ],
+  "groups": [
+    {"id": "plugin-layer", "label": "PLUGIN & MODEL LAYER", "role": "system", "x": 50, "y": 125, "w": 500, "h": 830},
+    {"id": "agent-layer", "label": "AGENT COMPOSITION", "role": "agent", "x": 590, "y": 125, "w": 700, "h": 830},
+    {"id": "team-layer", "label": "TEAM COMPOSITION", "role": "workflow", "x": 1330, "y": 125, "w": 540, "h": 830}
+  ],
+  "nodes": [
+    {"id": "base-node", "label": "BaseNode plugin contract", "type": "plugin contract", "role": "system", "x": 90, "y": 185, "w": 420, "h": 140, "detail": ["Params · Output · handles · uiHints", "Auto-registers subclasses on import"]},
+    {"id": "model-plugins", "label": "Chat-model plugins", "type": "model plugin", "role": "model", "x": 90, "y": 400, "w": 420, "h": 150, "detail": ["ChatModelBase provider subclasses", "Standalone output-model nodes"]},
+    {"id": "chat-unifier", "label": "ChatUnifier", "type": "LLM facade", "role": "model", "x": 90, "y": 730, "w": 420, "h": 160, "detail": ["Provider registry + native SDK adapters", "Shared model and agent dispatch path"]},
+    {"id": "agent-plugins", "label": "Agent plugins", "type": "agent plugin", "role": "agent", "x": 640, "y": 185, "w": 600, "h": 160, "detail": ["provider · model · prompt · options", "Base, specialized, CLI, and team-lead variants"]},
+    {"id": "context-node", "label": "Context", "type": "connected config", "role": "data", "x": 640, "y": 430, "w": 175, "h": 145, "detail": ["input-context", "policy + thread reference"]},
+    {"id": "skill-nodes", "label": "Skills", "type": "connected capability", "role": "tool", "x": 850, "y": 430, "w": 175, "h": 145, "detail": ["input-skill", "direct or Master Skill"]},
+    {"id": "tool-nodes", "label": "Tools", "type": "connected capability", "role": "tool", "x": 1060, "y": 430, "w": 180, "h": 145, "detail": ["input-tools", "plugin tool schemas"]},
+    {"id": "prepared-agent-call", "label": "Prepared agent call", "type": "runtime payload", "role": "runtime", "x": 650, "y": 720, "w": 580, "h": 170, "detail": ["Edge walk + task/prompt assembly", "Provider-neutral tools and skill content"]},
+    {"id": "team-lead", "label": "Orchestrator / AI Employee", "labelLines": ["Orchestrator /", "AI Employee"], "type": "team-lead agent", "role": "agent", "x": 1380, "y": 185, "w": 440, "h": 150, "detail": ["Same agent runtime", "Adds input-teammates handle"]},
+    {"id": "teammates", "label": "Connected teammate agents", "labelLines": ["Connected teammate", "agents"], "type": "agent set", "role": "agent", "x": 1380, "y": 430, "w": 440, "h": 150, "detail": ["Specialized or custom aiAgent", "Stable delegate tool names"]},
+    {"id": "task-manager", "label": "Task Manager", "type": "intrinsic tool", "role": "tool", "x": 1380, "y": 710, "w": 190, "h": 170, "detail": ["Auto-bound", "Lead-only control"]},
+    {"id": "durable-team", "label": "Durable team state", "labelLines": ["Durable team", "state"], "type": "execution data", "role": "data", "x": 1610, "y": 710, "w": 210, "h": 170, "detail": ["Members · tasks", "Attempts · messages"]}
+  ],
+  "relationships": [
+    {"id": "r-base-model", "from": "base-node", "to": "model-plugins", "label": "specializes as model plugin", "fromSide": "bottom", "toSide": "top", "labelAt": [300, 365]},
+    {"id": "r-base-agent", "from": "base-node", "to": "agent-plugins", "label": "specializes as agent plugin", "fromSide": "bottom", "toSide": "left", "waypoints": [[300, 360], [610, 360], [610, 265]], "labelAt": [475, 360]},
+    {"id": "r-model-unifier", "from": "model-plugins", "to": "chat-unifier", "label": "dispatches chat", "protocol": "provider + model", "fromSide": "bottom", "toSide": "top", "labelAt": [300, 640]},
+    {"id": "r-agent-prepare", "from": "agent-plugins", "to": "prepared-agent-call", "label": "prepares execution payload", "fromSide": "bottom", "toSide": "top", "waypoints": [[940, 385], [940, 680]], "labelAt": [940, 650]},
+    {"id": "r-context-prepare", "from": "context-node", "to": "prepared-agent-call", "label": "adds context descriptor", "fromSide": "bottom", "toSide": "left", "waypoints": [[727, 620], [620, 620], [620, 805]], "labelAt": [620, 665]},
+    {"id": "r-skills-prepare", "from": "skill-nodes", "to": "prepared-agent-call", "label": "injects enabled skill content", "fromSide": "bottom", "toSide": "top", "waypoints": [[937, 630]], "labelAt": [937, 620]},
+    {"id": "r-tools-prepare", "from": "tool-nodes", "to": "prepared-agent-call", "label": "builds tool surface", "fromSide": "bottom", "toSide": "right", "waypoints": [[1150, 620], [1260, 620], [1260, 805]], "labelAt": [1260, 665]},
+    {"id": "r-prepare-unifier", "from": "prepared-agent-call", "to": "chat-unifier", "label": "routes selected provider and model", "fromSide": "bottom", "toSide": "bottom", "waypoints": [[940, 920], [300, 920]], "labelAt": [620, 920]},
+    {"id": "r-teammates-lead", "from": "teammates", "to": "team-lead", "label": "connect via input-teammates", "fromSide": "top", "toSide": "bottom", "labelAt": [1600, 382]},
+    {"id": "r-lead-runtime", "from": "team-lead", "to": "prepared-agent-call", "label": "executes through shared agent runtime", "fromSide": "left", "toSide": "right", "waypoints": [[1320, 260], [1320, 650], [1260, 650], [1260, 805]], "labelAt": [1195, 650]},
+    {"id": "r-lead-manager", "from": "team-lead", "to": "task-manager", "label": "auto-binds intrinsic tool", "fromSide": "bottom", "toSide": "top", "waypoints": [[1600, 650], [1475, 650]], "labelAt": [1515, 650]},
+    {"id": "r-teammates-state", "from": "teammates", "to": "durable-team", "label": "registers execution members", "fromSide": "bottom", "toSide": "top", "waypoints": [[1600, 640], [1715, 640]], "labelAt": [1700, 640]},
+    {"id": "r-manager-state", "from": "task-manager", "to": "durable-team", "label": "persists task lifecycle", "fromSide": "bottom", "toSide": "bottom", "waypoints": [[1475, 920], [1715, 920]], "labelAt": [1595, 920]}
+  ],
+  "callouts": [],
+  "prompt": {
+    "primaryRequest": "Create a precise three-layer composition diagram that explains how self-registering plugins become chat-model and agent nodes, how an agent assembles context, skills, and tools before LLM dispatch, and how a team lead converts connected teammates into durable delegation state.",
+    "composition": "Three framed columns from left to right: Plugin & Model Layer, Agent Composition, and Team Composition. Keep the BaseNode-to-model/agent branching explicit, arrange Context/Skills/Tools as a capability row feeding one prepared agent payload, and show team lead, teammates, intrinsic Task Manager, and durable team state as a clean vertical composition.",
+    "constraints": ["Do not draw standalone chat-model nodes as a required input to ordinary agents; agents select provider and model in their own Params", "Show every capability and teammate connection as a directed labelled edge", "Keep the shared ChatUnifier visible for both standalone model execution and agent execution", "Treat Task Manager as intrinsic to team leads, not a palette-connected tool"],
+    "avoid": ["class-count claims not shown in source", "implying teammate-to-teammate communication is required for composition", "unlabelled containment lines", "bidirectional arrows"]
+  }
+}

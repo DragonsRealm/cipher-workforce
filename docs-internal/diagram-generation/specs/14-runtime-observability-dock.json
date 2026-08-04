@@ -1,0 +1,421 @@
+{
+  "id": "14-runtime-observability-dock",
+  "title": "Runtime Observability Dock",
+  "subtitle": "One resizable dock combines workflow chat, Console-node output, and live server/process logs without conflating their scopes.",
+  "category": "product-panel",
+  "diagramType": "runtime observability product panel and stream topology",
+  "description": "Source-backed topology of the collapsible Chat / Console dock: chat messages, Console node records, and terminal logs use distinct producers and retention paths, converge in WebSocketContext state, and render in a resizable chat pane plus Console and Terminal tabs with targeted filters and clear actions.",
+  "sourceReview": "reviewed",
+  "sourceRefs": [
+    {
+      "path": "client/src/components/ui/ConsolePanel.tsx",
+      "reason": "Defines the collapsible, resizable Chat / Console dock, chat target selector, Console and Terminal tabs, filters, clear controls, auto-scroll, pretty-print, and persisted preferences."
+    },
+    {
+      "path": "client/src/contexts/WebSocketContext.tsx",
+      "reason": "Owns live chat/console/terminal arrays, reconnect and workflow-switch hydration, clear commands, send_chat_message, and 100/200-entry client caps."
+    },
+    {
+      "path": "server/nodes/utility/console/__init__.py",
+      "reason": "Produces structured Console-node log records and broadcasts them while passing workflow data through."
+    },
+    {
+      "path": "server/services/status_broadcaster.py",
+      "reason": "Persists and broadcasts Console logs, retains the last 100 in memory, and retains/broadcasts the last 200 Terminal logs."
+    },
+    {
+      "path": "server/routers/websocket.py",
+      "reason": "Defines workflow-scoped chat send/history/clear, Console history/clear, and Terminal history/clear request handlers."
+    },
+    {
+      "path": "server/nodes/trigger/chat_trigger/_events.py",
+      "reason": "Dispatches workflow-scoped chat_message_received CloudEvents to waiting chatTrigger consumers and the frontend."
+    },
+    {
+      "path": "server/services/process_service.py",
+      "reason": "Streams managed-process output into the Terminal log channel."
+    },
+    {
+      "path": "server/core/logging.py",
+      "reason": "Streams server logger records into the Terminal log broadcaster."
+    },
+    {
+      "path": "docs-internal/node-logic-flows/chat_utility/console.md",
+      "reason": "Documents the reviewed Console node record shape and StatusBroadcaster side effect consumed by the dock."
+    }
+  ],
+  "groups": [
+    {
+      "id": "runtime-producers",
+      "x": 70,
+      "y": 130,
+      "w": 460,
+      "h": 700,
+      "label": "RUNTIME PRODUCERS + CONSUMERS",
+      "role": "runtime"
+    },
+    {
+      "id": "observability-transport",
+      "x": 570,
+      "y": 130,
+      "w": 590,
+      "h": 700,
+      "label": "TRANSPORT + RETAINED STATE",
+      "role": "system"
+    },
+    {
+      "id": "observability-dock",
+      "x": 1200,
+      "y": 130,
+      "w": 650,
+      "h": 700,
+      "label": "COLLAPSIBLE CHAT / CONSOLE DOCK",
+      "role": "interface"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "console-node-producer",
+      "x": 110,
+      "y": 200,
+      "w": 380,
+      "h": 150,
+      "label": "Console node output",
+      "labelLines": ["Console node output"],
+      "type": "workflow",
+      "role": "workflow",
+      "detail": ["label · format · formatted data", "workflow + source node IDs"]
+    },
+    {
+      "id": "terminal-log-producers",
+      "x": 110,
+      "y": 430,
+      "w": 380,
+      "h": 150,
+      "label": "Server / process / CLI logs",
+      "labelLines": ["Server / process / CLI", "logs"],
+      "type": "runtime",
+      "role": "runtime",
+      "detail": ["level · message · source", "optional details"]
+    },
+    {
+      "id": "chat-trigger-consumers",
+      "x": 110,
+      "y": 660,
+      "w": 380,
+      "h": 120,
+      "label": "chatTrigger consumers",
+      "labelLines": ["chatTrigger consumers"],
+      "type": "trigger",
+      "role": "trigger",
+      "detail": ["workflow-scoped CloudEvent"]
+    },
+    {
+      "id": "status-broadcaster",
+      "x": 610,
+      "y": 200,
+      "w": 240,
+      "h": 160,
+      "label": "StatusBroadcaster",
+      "labelLines": ["StatusBroadcaster"],
+      "type": "event bus",
+      "role": "event",
+      "detail": ["console_log", "terminal_log", "clear broadcasts"]
+    },
+    {
+      "id": "dock-ws-handlers",
+      "x": 890,
+      "y": 200,
+      "w": 230,
+      "h": 160,
+      "label": "Dock WebSocket handlers",
+      "labelLines": ["Dock WebSocket", "handlers"],
+      "type": "service",
+      "role": "system",
+      "detail": ["send / get / clear", "chat · console · terminal"]
+    },
+    {
+      "id": "workflow-history-db",
+      "x": 610,
+      "y": 440,
+      "w": 240,
+      "h": 130,
+      "label": "Workflow history DB",
+      "labelLines": ["Workflow history DB"],
+      "type": "database",
+      "role": "data",
+      "detail": ["chat_messages", "console_logs"]
+    },
+    {
+      "id": "terminal-ring-buffer",
+      "x": 890,
+      "y": 440,
+      "w": 230,
+      "h": 130,
+      "label": "Terminal ring buffer",
+      "labelLines": ["Terminal ring", "buffer"],
+      "type": "memory",
+      "role": "data",
+      "detail": ["latest 200 entries", "global in process"]
+    },
+    {
+      "id": "websocket-context-state",
+      "x": 760,
+      "y": 660,
+      "w": 260,
+      "h": 120,
+      "label": "WebSocketContext state",
+      "labelLines": ["WebSocketContext", "state"],
+      "type": "client state",
+      "role": "system",
+      "detail": ["chat · console · terminal arrays"]
+    },
+    {
+      "id": "chat-pane",
+      "x": 1240,
+      "y": 200,
+      "w": 260,
+      "h": 500,
+      "label": "Chat pane",
+      "labelLines": ["Chat pane"],
+      "type": "interface",
+      "role": "interface",
+      "detail": ["All Triggers or one target", "user + assistant messages", "Enter to send", "clear current workflow"]
+    },
+    {
+      "id": "console-tab",
+      "x": 1540,
+      "y": 200,
+      "w": 270,
+      "h": 230,
+      "label": "Console tab",
+      "labelLines": ["Console tab"],
+      "type": "interface",
+      "role": "interface",
+      "detail": ["filter by Console node", "search + pretty print", "workflow-scoped clear"]
+    },
+    {
+      "id": "terminal-tab",
+      "x": 1540,
+      "y": 470,
+      "w": 270,
+      "h": 230,
+      "label": "Terminal tab",
+      "labelLines": ["Terminal tab"],
+      "type": "interface",
+      "role": "interface",
+      "detail": ["level threshold", "message / source search", "global clear"]
+    },
+    {
+      "id": "dock-preferences",
+      "x": 1240,
+      "y": 720,
+      "w": 570,
+      "h": 90,
+      "label": "Persisted dock preferences",
+      "labelLines": ["Persisted dock preferences"],
+      "type": "local state",
+      "role": "neutral",
+      "detail": ["height · split width · font · autoscroll · pretty print · tab"]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "console-broadcasts-log",
+      "from": "console-node-producer",
+      "to": "status-broadcaster",
+      "label": "broadcast_console_log",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [550, 265]
+    },
+    {
+      "id": "runtime-broadcasts-terminal",
+      "from": "terminal-log-producers",
+      "to": "status-broadcaster",
+      "label": "broadcast_terminal_log",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "waypoints": [[550, 505], [550, 315]],
+      "labelAt": [550, 410]
+    },
+    {
+      "id": "broadcaster-persists-console",
+      "from": "status-broadcaster",
+      "to": "workflow-history-db",
+      "label": "persist Console records",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [730, 400]
+    },
+    {
+      "id": "broadcaster-retains-terminal",
+      "from": "status-broadcaster",
+      "to": "terminal-ring-buffer",
+      "label": "retain latest Terminal records",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "top",
+      "waypoints": [[870, 280], [870, 405], [1005, 405]],
+      "labelAt": [920, 395]
+    },
+    {
+      "id": "handlers-query-db",
+      "from": "dock-ws-handlers",
+      "to": "workflow-history-db",
+      "label": "get / clear scoped history",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "waypoints": [[1005, 400], [870, 400], [870, 505]],
+      "labelAt": [885, 390]
+    },
+    {
+      "id": "handlers-query-terminal-cache",
+      "from": "dock-ws-handlers",
+      "to": "terminal-ring-buffer",
+      "label": "get / clear terminal history",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1005, 400]
+    },
+    {
+      "id": "handlers-dispatch-chat-trigger",
+      "from": "dock-ws-handlers",
+      "to": "chat-trigger-consumers",
+      "label": "dispatch chat_message_received",
+      "protocol": "workflow-scoped CloudEvent",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "right",
+      "waypoints": [[560, 280], [560, 720]],
+      "labelAt": [560, 600]
+    },
+    {
+      "id": "live-events-update-context",
+      "from": "status-broadcaster",
+      "to": "websocket-context-state",
+      "label": "live console_log / terminal_log",
+      "protocol": "WebSocket broadcast",
+      "style": "solid",
+      "fromSide": "left",
+      "toSide": "left",
+      "waypoints": [[590, 280], [590, 720]],
+      "labelAt": [675, 625]
+    },
+    {
+      "id": "handlers-hydrate-context",
+      "from": "dock-ws-handlers",
+      "to": "websocket-context-state",
+      "label": "hydrate on connect or workflow switch",
+      "style": "dashed",
+      "fromSide": "right",
+      "toSide": "top",
+      "waypoints": [[1140, 280], [1140, 630], [890, 630]],
+      "labelAt": [1135, 520]
+    },
+    {
+      "id": "chat-sends-handler-request",
+      "from": "chat-pane",
+      "to": "dock-ws-handlers",
+      "label": "send_chat_message / clear chat",
+      "protocol": "WebSocket request",
+      "style": "solid",
+      "fromSide": "top",
+      "toSide": "top",
+      "waypoints": [[1370, 165], [1005, 165]],
+      "labelAt": [1190, 160]
+    },
+    {
+      "id": "context-renders-chat",
+      "from": "websocket-context-state",
+      "to": "chat-pane",
+      "label": "chat messages",
+      "style": "solid",
+      "fromSide": "right",
+      "toSide": "left",
+      "waypoints": [[1180, 720], [1180, 450]],
+      "labelAt": [1180, 585]
+    },
+    {
+      "id": "context-renders-console",
+      "from": "websocket-context-state",
+      "to": "console-tab",
+      "label": "Console records",
+      "style": "solid",
+      "fromSide": "top",
+      "toSide": "top",
+      "waypoints": [[890, 610], [1175, 610], [1175, 145], [1675, 145]],
+      "labelAt": [1510, 140]
+    },
+    {
+      "id": "context-renders-terminal",
+      "from": "websocket-context-state",
+      "to": "terminal-tab",
+      "label": "Terminal records",
+      "style": "solid",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "waypoints": [[890, 845], [1675, 845]],
+      "labelAt": [1480, 840]
+    },
+    {
+      "id": "prefs-shape-chat-pane",
+      "from": "dock-preferences",
+      "to": "chat-pane",
+      "label": "height + split width + font",
+      "style": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "waypoints": [[1220, 775], [1220, 720], [1370, 720]],
+      "labelAt": [1300, 715]
+    },
+    {
+      "id": "prefs-select-log-tab",
+      "from": "dock-preferences",
+      "to": "terminal-tab",
+      "label": "selected Console / Terminal tab",
+      "style": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "waypoints": [[1830, 775], [1830, 720], [1675, 720]],
+      "labelAt": [1725, 715]
+    }
+  ],
+  "callouts": [
+    {
+      "id": "observability-scope-contract",
+      "x": 70,
+      "y": 880,
+      "w": 1780,
+      "h": 90,
+      "title": "Scope and retention stay deliberately distinct",
+      "lines": [
+        "Chat and Console history are persisted and scoped to the current workflow; Terminal history is a process-wide in-memory buffer of the latest 200 entries.",
+        "The dock persists only presentation preferences in localStorage—panel height, split width, font size, auto-scroll, pretty print, and selected log tab."
+      ]
+    }
+  ],
+  "prompt": {
+    "primaryRequest": "Draw a source-backed runtime observability schematic of the collapsible Chat / Console dock, showing the three distinct streams—workflow chat, Console-node records, and Terminal server/process logs—from producers and retained state through WebSocketContext into the chat pane and Console/Terminal tabs.",
+    "composition": "Use three vertical zones: runtime producers on the left, transport and retained state in the center, and the actual dock on the right. Inside the dock, show a tall Chat pane beside stacked Console and Terminal tab cards, plus a narrow persisted-preferences bar along the bottom.",
+    "constraints": [
+      "Keep workflow Chat, Console-node output, and Terminal logs visibly separate",
+      "Show chat and Console history as workflow-scoped and database-persisted",
+      "Show Terminal history as a global in-memory latest-200 buffer",
+      "Show live broadcasts and reconnect/workflow-switch hydration as separate labelled flows",
+      "Show the actual chat target, Console-node filter, Terminal-level filter, clear controls, and resizable persisted preferences"
+    ],
+    "avoid": [
+      "merging Console and Terminal into one undifferentiated log stream",
+      "implying Terminal history is workflow-scoped or database-persisted",
+      "showing a generic monitoring dashboard with charts",
+      "extra tabs beyond Chat, Console, and Terminal",
+      "unlabelled bidirectional connectors"
+    ]
+  }
+}
