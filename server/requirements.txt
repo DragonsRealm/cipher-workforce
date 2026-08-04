@@ -75,7 +75,7 @@ colorama==0.4.6
     #   tqdm
 crawlee==1.8.1
     # via opencompany-server
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   google-auth
     #   opencompany-server

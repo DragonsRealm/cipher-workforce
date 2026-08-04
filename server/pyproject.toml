@@ -57,7 +57,10 @@ dependencies = [
     "email-validator>=2.0.0",
 
     # Credential Encryption
-    "cryptography>=44.0.0",
+    # Floor is a security floor: <50.0.0 carries GHSA-g6cj-pr64-35w5
+    # (CVE-2026-69247), a Bleichenbacher oracle in PKCS#7 EnvelopedData
+    # decryption. Do not lower without checking that advisory.
+    "cryptography>=50.0.0",
 
     # Native LLM SDKs. OpenAI also drives the eight OpenAI-compatible
     # providers through configured base URLs.
