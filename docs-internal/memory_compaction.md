@@ -41,7 +41,7 @@ native agent loop
        └─ Temporal AgentWorkflow
             ├─ returns aggregate usage in the workflow result
             └─ when its context counter reaches the prepared threshold:
-                 agent.compact_memory.v1 → compact_context()
+                 agent.compact_memory → compact_context()
 
 compact_context()
   └─ run_native_llm_step(ChatUnifier, selected provider/model)
@@ -261,7 +261,7 @@ path-dependent:
 - `custom_threshold` is honored by `track()` and `stats()` on the in-process
   path.
 - `AgentWorkflow` (F4.B) calculates a ratio-based threshold during
-  `agent.prepare_payload.v1`; it does not read `custom_threshold`.
+  `agent.prepare_payload`; it does not read `custom_threshold`.
 - `compaction_enabled` is stored but is not consulted by `track()` or F4.B.
   Only the global `COMPACTION_ENABLED` value controls `track()` today, and F4.B
   does not currently honor that global enabled flag when it extracts the
@@ -519,8 +519,8 @@ if tracking.get('needs_compaction') and memory_content and api_key:
 
 F4.B performs a parallel check inside `AgentWorkflow` using the workflow's
 active-context usage counter and the ratio-based threshold recorded by
-`agent.prepare_payload.v1`. It invokes the same `compact_context()` method
-through `agent.compact_memory.v1`.
+`agent.prepare_payload`. It invokes the same `compact_context()` method
+through `agent.compact_memory`.
 
 ### AI Service Wiring
 

@@ -257,7 +257,7 @@ similar plugin.
 
 ```
 server/nodes/telegram/
-├── __init__.py          # imports + register_* calls covering six registries (zero logic)
+├── __init__.py          # imports + register_* calls covering seven registries (zero logic)
 ├── _credentials.py      # TelegramCredential subclass
 ├── _service.py          # singleton bot lifecycle (connect / send / poll)
 ├── _handlers.py         # WS_HANDLERS dict (telegram_connect, …)
@@ -314,7 +314,7 @@ Four ideas worth stealing wholesale:
 See [Multi-credential nodes](../../docs-internal/plugin_system.md#multi-credential-nodes)
 for the `ctx.connection(id)` contract and the `routing=` trap that comes with it.
 
-### Six generic registries to plug into
+### Seven generic registries to plug into
 
 Telegram's `__init__.py` is the canonical wiring example. Adding any
 of these concerns to your plugin is one `register_*` call from your
@@ -328,11 +328,12 @@ package's `__init__.py` — the consumer never imports your folder.
 | Trigger pre-execution check | `services.event_waiter.register_trigger_precheck(node_type, async_fn)` | Generic `triggers.py` handler runs `run_trigger_precheck` before entering the wait loop |
 | Service-status refresh on WS connect | `services.status_broadcaster.register_service_refresh(async_callback)` | Callback runs once per `_refresh_all_services` cycle |
 | Output schema | `services.node_output_schemas.register_output_schema(node_type, ModelClass)` | Avoids declaring a duplicate `Output` class in the central schema file |
+| Agent Context descriptor | `services.plugin.edge_walker.register_agent_context_builder(async_fn)` | Turns a node connected on `input-context` into the descriptor the agent runtime consumes. The framework walks the edge but knows nothing about the descriptor's shape — see `nodes/context/_descriptor.py` |
 
-All six are idempotent (same callable / class for the same key is a
+All seven are idempotent (same callable / class for the same key is a
 no-op; conflicts raise `ValueError`).
 
-These six are the core self-contained-folder set; newer concerns have
+These seven are the core self-contained-folder set; newer concerns have
 their own generic `register_*` entrypoints in the same spirit —
 `services.events.register_webhook_source`,
 `services.ws_handler_registry.register_option_loader` /

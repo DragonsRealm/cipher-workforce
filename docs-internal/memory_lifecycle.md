@@ -1,5 +1,27 @@
 # Memory Lifecycle
 
+> ## ⚠ Partly superseded by RFC-0002
+>
+> This document describes the pre-RFC-0002 model, in which `simpleMemory` hung
+> off an agent's `input-memory` handle and held the conversation transcript as
+> Markdown. **That model no longer exists.** Conversation state is now the
+> backend-owned Context journal (`server/nodes/context/`, `input-context`), and
+> `simpleMemory` is a `ToolNode` on `input-tools` holding durable facts the
+> agent explicitly remembers — it has no transcript and no markdown surface.
+>
+> **Still accurate here:** §2 (the `services/memory/` markdown + JSONL helper
+> API), §3 (`services.memory` canonicality, `append_memory_turns_atomic`), §4
+> (vector store), §6 (the `claude_code_agent` stable-`cwd` session bridge), §9,
+> and §10.
+>
+> **Stale here:** §1's framing, §5 (state-clear orchestration — `memory_content`
+> is gone and `clear_memory` moved to `services/skills/handlers.py`), §7 (the
+> seven-step lifecycle), §8 (per-agent memory shapes), and §11's warning about
+> writing to `simpleMemory.memory_content`.
+>
+> For the current model see "Context and Memory (RFC-0002)" in `CLAUDE.md` and
+> [RFC-0002](../RFC-0002-AGENT-CONTEXT-AND-MEMORY.md).
+
 Canonical home for how conversation memory is loaded, appended, trimmed, archived, cleared, and resumed across every OpenCompany agent. Replaces the partial explanations previously scattered across `agent_architecture.md`, `cli_agent_framework.md`, `rlm_service.md`, and `memory_compaction.md`.
 
 > **Related docs:**

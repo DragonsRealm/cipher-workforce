@@ -194,13 +194,25 @@ accepts.
 Recorded explicitly because each of these is easy to assume is handled.
 
 - **`AUTH_MODE=multi` provides authentication, not isolation.**
-  `middleware/auth.py` writes `request.state.user_id` / `user_email` /
-  `is_owner`, and **no file in `server/` reads them** — the only `user_id` in
-  the data layer is the literal `"default"`. Every registered user therefore
-  shares one workflow store and one credential store, and `is_owner` is
-  decorative. Real per-user scoping touches the whole data layer and needs its
-  own design pass; until then treat `multi` as "several people who fully trust
-  each other".
+  The identity is now *resolved* — `services/authz/ws_surface.py`
+  (`execution_principal`) reads the handshake identity and decides what a given
+  execution runs as, and cron/deploy carry the deployer's `user_id` through to
+  every spawned run. What is still missing is *enforcement*: there is no
+  ownership check on workflow get / list / delete, and the checks that exist on
+  the Context and Memory panels are fail-open (`if stored_owner and
+  stored_owner != caller`), so a row with an empty `owner_id` — every legacy
+  row, and every row written through the REST path — authorizes everyone.
+  `get_all_workflows` returns every tenant's rows unfiltered. `is_owner` is
+  still decorative. Until ownership moves to an indexed column with scoped
+  accessors, treat `multi` as "several people who fully trust each other".
+- **`/ws/internal` is unauthenticated by design and must stay narrow.** It is in
+  `PUBLIC_PATHS` and performs no handshake, yet it dispatched through the same
+  registry as the authenticated socket — which made `save_workflow`,
+  `delete_workflow` and all six Memory handlers reachable without credentials.
+  `services/authz/ws_surface.py` now holds a deny-by-default allowlist
+  (`INTERNAL_SOCKET_HANDLERS`); refusal is deliberately indistinguishable from
+  an unknown message type so the socket cannot be probed. Its test is generated
+  from the live registry, so a newly added handler is closed by default.
 - **No CSRF token.** The API is cookie-authenticated and `SameSite` is the only
   defence. Mitigated by every mutating endpoint being `POST` under `/api/` and
   by `SameSite=none` + insecure being rejected at startup. A real double-submit

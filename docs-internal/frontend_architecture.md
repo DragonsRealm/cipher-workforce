@@ -500,7 +500,11 @@ Defined on `INodeTypeDescription.uiHints` ([client/src/types/INodeProperties.ts]
 | `hideRunButton` | `ParameterPanel` | Hide the Run button (skill / memory / tool nodes) |
 | `hasCodeEditor` | `MiddleSection` | Give the params block extra flex space for an embedded code editor |
 | `isMasterSkillEditor` | `MiddleSection`, `Dashboard` (component dispatch), `useAutoSkillEdges` | Render the MasterSkillEditor split panel; route to `ToolkitNode` on the canvas; identify Master Skill aggregators in the auto-skill edge dispatcher |
-| `isMemoryPanel` | `MiddleSection` | Render the memory markdown panel + token usage stats |
+| `isMemoryPanel` | `MiddleSection` | **Legacy.** The pre-RFC-0002 combined markdown/transcript panel. `simpleMemory` no longer declares it; kept while `normalize_workflow_graph` upgrades `input-memory` graphs |
+| `isMemoryToolPanel` | `MiddleSection` | Render the durable Memory item browser (search, edit, forget, clear). Declared by `simpleMemory`, and selected *before* `isMemoryPanel` |
+| `isContextPanel` | `MiddleSection` | Render the Context inspector (journal, active replay, fork/export/clear). Read-only: it observes the agent's journal and must never alter execution |
+| `requiresContext` | backend graph normalization | Declared in `STD_AGENT_HINTS`. Not a rendering flag — `normalize_workflow_graph` pairs every plugin carrying it with a Context companion, and `workflow_validator` enforces the topology |
+| `systemManaged` | canvas | Marks the auto-created Context companion. The backend owns its lifecycle; the user does not add or delete it directly |
 | `isToolPanel` | `MiddleSection` | Surface the ToolSchemaEditor for connected services |
 | `isMonitorPanel` | `MiddleSection`, `ParameterPanel` | Render the team-monitor panel |
 | `isTodoEditor` | `MiddleSection` | Render the editable Current Todos manager (`writeTodos`) instead of the plain params list |

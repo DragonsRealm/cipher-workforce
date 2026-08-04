@@ -52,7 +52,7 @@ collect_agent_connections()               server/services/plugin/edge_walker.py
   Scans edges where target == node_id
   Groups by targetHandle into 5 buckets (returns a 5-tuple
    memory_data, skill_data, tool_data, input_data, task_data):
-    input-memory             -> memory_data
+    input-context            -> context_data
     input-skill              -> skill_data[]
     input-tools              -> tool_data[]
     input-main / input-chat  -> input_data
@@ -192,7 +192,7 @@ Closure responsibilities:
   `tool_executor` can dispatch the new call.
 - The closure is gated on the user toggle: `UserSettings.auto_rebind_tools_after_canvas_change` (default `True`). When off, the LLM is told "Available on your next turn" in the operation summary and the closure isn't wired.
 
-For the F4.B Temporal path, the in-process closure is replaced by the `agent.refresh_tools.v1` activity; see [TEMPORAL_ARCHITECTURE.md](TEMPORAL_ARCHITECTURE.md).
+For the F4.B Temporal path, the in-process closure is replaced by the `agent.refresh_tools` activity; see [TEMPORAL_ARCHITECTURE.md](TEMPORAL_ARCHITECTURE.md).
 
 ### Where it's called
 
@@ -507,14 +507,14 @@ Two settings flags route agent execution through different Temporal paths (see [
 | Flag | Off | On (default) |
 |---|---|---|
 | `TEMPORAL_PER_TYPE_DISPATCH` | Every node routes through the legacy `execute_node_activity` single dispatcher (WS round-trip to the FastAPI handler). | Each node routes through its per-type activity `node.{type}.v{version}` registered via `BaseNode.as_activity()`. Per-plugin retry / timeout / heartbeat configs apply. |
-| `TEMPORAL_AGENT_WORKFLOW_ENABLED` | All specialized + team leads + base agents (`aiAgent` / `chatAgent`) run inside `execute_node_activity` using the in-process native loop. | The migrating agent types become Temporal **child workflows** (`AgentWorkflow`). LLM steps + tool calls become activities; `agent.prepare_payload.v1` resolves the DB-backed payload as the workflow's first step; `agent.refresh_tools.v1` refreshes the native tool surface after canvas mutations. `rlm_agent` / `claude_code_agent` stay on the F4.A per-type activity path (externalised session state). |
+| `TEMPORAL_AGENT_WORKFLOW_ENABLED` | All specialized + team leads + base agents (`aiAgent` / `chatAgent`) run inside `execute_node_activity` using the in-process native loop. | The migrating agent types become Temporal **child workflows** (`AgentWorkflow`). LLM steps + tool calls become activities; `agent.prepare_payload` resolves the DB-backed payload as the workflow's first step; `agent.refresh_tools` refreshes the native tool surface after canvas mutations. `rlm_agent` / `claude_code_agent` stay on the F4.A per-type activity path (externalised session state). |
 
 Both flags default to `true` in `.env.template`.
 
 New `AgentWorkflow` executions record `llm_engine="native"` and
-`message_wire_version=2` in the `agent.prepare_payload.v1` result by default.
+`message_wire_version=2` in the `agent.prepare_payload` result by default.
 Recorded histories whose prepare result predates those markers cannot run:
-`agent.execute_llm_step.v1` refuses them with a non-retryable
+`agent.execute_llm_step` refuses them with a non-retryable
 `InvalidAgentLLMEngine`, because their messages are in a retired wire format.
 Marker-bearing
 native executions never fall back after a provider request starts, and changing
@@ -648,7 +648,7 @@ Handle layouts are declared in `server/nodes/agent/_handles.py` (local to `nodes
 | `input-skill` | input | bottom | 25% | skill |
 | `input-tools` | input | bottom | 75% | tools |
 | `input-main` | input | left | 25% | main |
-| `input-memory` | input | left | 50% | memory |
+| `input-context` | input | left | 50% | context |
 | `input-task` | input | left | 75% | task |
 | `output-main` | output | right | 50% | main |
 | `output-top` | output | top | — | main |

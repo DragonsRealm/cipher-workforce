@@ -309,7 +309,7 @@ For each matching edge, it checks the target handle:
 
 | Handle | Action |
 |--------|--------|
-| `input-memory` | Loads markdown memory content from child's connected `simpleMemory` node |
+| `input-context` | Resolves the child's Context thread (RFC-0002). Memory is now an ordinary tool on `input-tools`. |
 | `input-skill` | Loads skill instructions; expands masterSkill into individual enabled skills |
 | `input-tools` | Discovers directly connected tool nodes, including Android services |
 | `input-main` / `input-chat` | Reads upstream node output for auto-prompt fallback |
@@ -728,7 +728,7 @@ Please report this error to the user and suggest next steps if appropriate.
 
 Post-Wave-11 the frontend `specializedAgentNodes.ts` definition file no longer exists — handle topology is declared on the backend plugin classes and the frontend renders it from each NodeSpec via `useNodeSpec(type)`. Every specialized agent subclasses `SpecializedAgentBase` (`server/nodes/agent/_specialized.py`), which provides the standard handle set through `std_agent_handles()` (declared in `server/nodes/agent/_handles.py`):
 
-- **Left**: `input-main` (Input), `input-memory` (Memory), `input-task` (Task)
+- **Left**: `input-main` (Input), `input-context` (Context), `input-task` (Task)
 - **Bottom**: `input-skill` (Skill), `input-tools` (Tool)
 - **Top**: `output-top` (Output)
 

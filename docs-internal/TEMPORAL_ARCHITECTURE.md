@@ -323,7 +323,7 @@ Env overrides: `TEMPORAL_<QUEUE>_CONCURRENCY` (int) and `TEMPORAL_<QUEUE>_RATE_L
 - **Application observability interceptor** (Wave 17.3, `services/temporal/_interceptors.py`): workers explicitly register `ObservabilityWorkerInterceptor` for `activity_retry` WARN logs when `activity.info().attempt > 1` — the "worker died and Temporal re-dispatched" signal — and replay-guarded `workflow_start` logs. This is separate from SDK tracing and remains worker-owned.
 - **Periodic activity heartbeat** (Wave 17.6, `plugin/base.py::as_activity`): 30s background beat during long bodies so a laptop-sleep crash is detected within one `heartbeat_timeout` (2 min) instead of `start_to_close` (10 min).
 - **Cron catch-up bound** (Wave 17.1, `services/temporal/schedules.py`): `SchedulePolicy(catchup_window=24h)` + `SKIP` overlap — a laptop offline a week does not replay 168 hourly ticks on wake.
-- **One-shot LLM-step retry** (Wave 17.2): `LLM_STEP_RETRY(maximum_attempts=1)` on `agent.execute_llm_step.v1` — LLM calls are not idempotent; the workflow surfaces the failure instead of silently re-billing the prompt. `agent.refresh_tools.v1` deliberately keeps 3 attempts (idempotent canvas rebuild).
+- **One-shot LLM-step retry** (Wave 17.2): `LLM_STEP_RETRY(maximum_attempts=1)` on `agent.execute_llm_step` — LLM calls are not idempotent; the workflow surfaces the failure instead of silently re-billing the prompt. `agent.refresh_tools` deliberately keeps 3 attempts (idempotent canvas rebuild).
 
 **Metric watchlist** (Temporal Web UI / metrics endpoint): `schedule_to_start_latency` (elevated = raise pollers or slots), `worker_task_slots_available` (0 = raise concurrency or add hosts), `poll_success_rate` (target >= 90%), `sticky_cache_evictions` (persistent growth = raise `max_cached_workflows`).
 
@@ -335,7 +335,7 @@ When `TEMPORAL_AGENT_WORKFLOW_ENABLED=true` and the node type is in the migratin
 
 ```
 AgentWorkflow.run(context):
-  0. execute_activity("agent.prepare_payload.v1")
+  0. execute_activity("agent.prepare_payload")
        resolves the DB-backed payload from the canvas context — runs
        workflow_service._param_resolver.resolve so {{node.field}}
        templates in prompt / system_message become real values BEFORE
@@ -348,7 +348,7 @@ AgentWorkflow.run(context):
   emit_phase("starting", status="executing")
   loop until "final" or max_iterations:
     1. emit_phase("llm_step", iteration=N)
-    2. execute_activity("agent.execute_llm_step.v1")
+    2. execute_activity("agent.execute_llm_step")
          returns {kind, assistant_message, calls?, content?, usage}.
          assistant_message is MessageWireV2: ordered text/reasoning/tool
          blocks plus JSON-safe provider continuation state (Gemini thought
@@ -382,7 +382,7 @@ AgentWorkflow.run(context):
     4. for each tool result with an ``operations`` field
        (canvas-mutating tools — today only ``agentBuilder``):
          if payload["auto_rebind_tools"] is True:
-           execute_activity("agent.refresh_tools.v1", {operations: …})
+           execute_activity("agent.refresh_tools", {operations: …})
               translates add_node ops with component_kind=="tool" OR
               usable_as_tool=True (minus chat-model plugins) into the
               same tool_payload shape prepare_agent_payload emits.
@@ -391,15 +391,15 @@ AgentWorkflow.run(context):
            tools.extend(refresh_result["tools"])
            tool_index.update(...)
            # next execute_llm_step.v1 sees the new tools.
-    5. execute_activity("agent.persist_turn.v1")
+    5. execute_activity("agent.persist_turn")
          append_to_memory_markdown(content, "human", prompt) +
          (content, "ai", response); trim window; broadcast
          node_parameters_updated CloudEvents (source_hint="agent").
     6. if token_total >= compaction_threshold:
-         execute_activity("agent.compact_memory.v1")
+         execute_activity("agent.compact_memory")
          null-guarded against worker-bootstrap race; replaces messages
          with summary only when result.success is True.
-  execute_activity("agent.store_output.v1")
+  execute_activity("agent.store_output")
        wraps workflow_service.store_node_output for output_main /
        output_top / output_0 — same writes NodeExecutor.execute does
        at services/node_executor.py:197-199, so downstream nodes
@@ -407,19 +407,19 @@ AgentWorkflow.run(context):
   emit_phase("completed", status="success")
 ```
 
-The `agent.prepare_payload.v1` result is recorded in history and therefore
+The `agent.prepare_payload` result is recorded in history and therefore
 acts as the deterministic engine selector. New executions default to
 `llm_engine="native"` with Message Wire V2 and use `ChatUnifier` plus the
 native provider SDKs for every turn. Histories whose recorded prepare result
 has no engine marker are pre-cutover histories: their messages are in a retired
-wire format the native reader cannot interpret, so `agent.execute_llm_step.v1`
+wire format the native reader cannot interpret, so `agent.execute_llm_step`
 refuses them with a non-retryable
 `ApplicationError(type="InvalidAgentLLMEngine")` rather than misreading them.
 The operator fix is to Reset the deployment, which starts a fresh generation.
 Changing the environment cannot change an execution after it starts,
 and a native run never falls back after a provider request starts.
 
-`emit_phase(phase, status?)` is a thin helper that schedules `agent.broadcast_progress.v1`. The activity emits `WorkflowEvent.agent_progress` (CloudEvents v1.0, `type="com.opencompany.agent.progress"`) for FE consumers; when `status` is supplied it also drives a raw-dict `update_node_status` for the canvas-glow color (executing / success / error). Same dual-channel pattern F4.A's `_node_activity` uses. When this workflow is itself a delegated child (`context["parent_node_id"]` set), every `emit_phase` call ALSO schedules a second broadcast against the parent's `node_id` with `phase="delegating"` — the parent's canvas badge then advances in real time while the child loops, instead of freezing at "executing" glow until the child completes.
+`emit_phase(phase, status?)` is a thin helper that schedules `agent.broadcast_progress`. The activity emits `WorkflowEvent.agent_progress` (CloudEvents v1.0, `type="com.opencompany.agent.progress"`) for FE consumers; when `status` is supplied it also drives a raw-dict `update_node_status` for the canvas-glow color (executing / success / error). Same dual-channel pattern F4.A's `_node_activity` uses. When this workflow is itself a delegated child (`context["parent_node_id"]` set), every `emit_phase` call ALSO schedules a second broadcast against the parent's `node_id` with `phase="delegating"` — the parent's canvas badge then advances in real time while the child loops, instead of freezing at "executing" glow until the child completes.
 
 Each LLM step is one activity and each ordinary tool call is one per-type activity. Team-lead Task Manager assignments are different: persistence happens first, then the lead starts a deterministic detached `DelegatedTaskWorkflow` with `ParentClosePolicy.ABANDON` and receives `queued` immediately. The runner owns the root-wide permit, claim, child `AgentWorkflow`, terminal result/usage persistence, `taskTrigger`, and permit release, so the assigning lead can return without polling. Direct non-team delegation retains the child-workflow path. Non-agent tools and excluded types (`rlm_agent`, `claude_code_agent`) still go through `execute_activity`. Failures surface as durable task failures and trigger review rather than being lost when the lead invocation closes.
 
@@ -434,13 +434,13 @@ core loop activities:
 
 | Activity | Purpose |
 |---|---|
-| `agent.prepare_payload.v1` | Resolves the DB-backed payload (provider / model / system_message / user_prompt / `AgentToolSpec`-derived tool definitions / memory_node_id / memory_content / memory_window_size / max_iterations / thinking_config / compaction_threshold / auto_rebind_tools), records `llm_engine` + `message_wire_version`, and leaves credential resolution at the LLM activity boundary. Reads `UserSettings.agent_recursion_limit` + `UserSettings.auto_rebind_tools_after_canvas_change`. Applies the optional `invocation` field (delegation children) after config resolution — per-invocation input always beats stored parameters. |
-| `agent.execute_llm_step.v1` | One LLM turn. The native branch decodes Message Wire V2, rebuilds `ToolDef` values, calls `run_native_llm_step(ChatUnifier, ...)` with SDK retries disabled, heartbeats while awaiting the provider, and returns the exact assistant message + tool calls + normalized usage. Guards against un-invokable payloads: post-filter system-only message lists raise `ApplicationError(type="EmptyAgentPrompt", non_retryable=True)`. |
-| `agent.refresh_tools.v1` | Translates `workflow_ops` add_node ops (`component_kind="tool"` OR `usable_as_tool=True`) into fresh `AgentToolSpec`-derived `tool_payload` entries via `_build_tool_from_node`. Workflow extends `tools` + `tool_index` from the result. |
-| `agent.persist_turn.v1` | Appends the latest human/assistant exchange to memory markdown, trims the window, broadcasts `node.parameters.updated`. |
-| `agent.compact_memory.v1` | Context-pressure compaction when cumulative active-context tokens hit the threshold. Best-effort: continues with un-compacted history on failure; it is not an agent termination control. |
-| `agent.store_output.v1` | Writes `output_main` / `output_top` / `output_0` so downstream nodes resolve `{{aiAgent.response}}` via `ParameterResolver`. |
-| `agent.broadcast_progress.v1` | Emits `WorkflowEvent.agent_progress` (CloudEvents v1.0) + optional raw-dict `update_node_status` for canvas-glow color. Single helper drives every phase emit. |
+| `agent.prepare_payload` | Resolves the DB-backed payload (provider / model / system_message / user_prompt / `AgentToolSpec`-derived tool definitions / memory_node_id / memory_content / memory_window_size / max_iterations / thinking_config / compaction_threshold / auto_rebind_tools), records `llm_engine` + `message_wire_version`, and leaves credential resolution at the LLM activity boundary. Reads `UserSettings.agent_recursion_limit` + `UserSettings.auto_rebind_tools_after_canvas_change`. Applies the optional `invocation` field (delegation children) after config resolution — per-invocation input always beats stored parameters. |
+| `agent.execute_llm_step` | One LLM turn. The native branch decodes Message Wire V2, rebuilds `ToolDef` values, calls `run_native_llm_step(ChatUnifier, ...)` with SDK retries disabled, heartbeats while awaiting the provider, and returns the exact assistant message + tool calls + normalized usage. Guards against un-invokable payloads: post-filter system-only message lists raise `ApplicationError(type="EmptyAgentPrompt", non_retryable=True)`. |
+| `agent.refresh_tools` | Translates `workflow_ops` add_node ops (`component_kind="tool"` OR `usable_as_tool=True`) into fresh `AgentToolSpec`-derived `tool_payload` entries via `_build_tool_from_node`. Workflow extends `tools` + `tool_index` from the result. |
+| `agent.persist_turn` | Appends the latest human/assistant exchange to memory markdown, trims the window, broadcasts `node.parameters.updated`. |
+| `agent.compact_memory` | Context-pressure compaction when cumulative active-context tokens hit the threshold. Best-effort: continues with un-compacted history on failure; it is not an agent termination control. |
+| `agent.store_output` | Writes `output_main` / `output_top` / `output_0` so downstream nodes resolve `{{aiAgent.response}}` via `ParameterResolver`. |
+| `agent.broadcast_progress` | Emits `WorkflowEvent.agent_progress` (CloudEvents v1.0) + optional raw-dict `update_node_status` for canvas-glow color. Single helper drives every phase emit. |
 
 The other nine support skills and durable delegation:
 
@@ -448,13 +448,13 @@ The other nine support skills and durable delegation:
 |---|---|
 | `agent.skill.invoke.v1` | Executes one progressive skill action with a history-recorded, retry-safe result. |
 | `agent.skill.clear.v1` | Clears the agent's turn-scoped skill state. |
-| `agent.begin_delegation.v1` | Idempotently persists and claims a direct delegation before child startup. |
-| `agent.queue_delegation.v1` | Persists a team task before it waits for a root-wide concurrency permit. |
-| `agent.acquire_subagent_permit.v1` | Heartbeats while polling the durable root coordinator for a subagent permit. |
-| `agent.release_subagent_permit.v1` | Idempotently releases a root-wide subagent permit. |
-| `agent.register_task_execution.v1` | Persists the runner and child Temporal identities for trace inspection. |
-| `agent.finish_delegation.v1` | Idempotently records a delegated child's terminal result and usage. |
-| `agent.finalize_team.v1` | Finalizes a team after its required tasks reach accepted or terminal states. |
+| `agent.begin_delegation` | Idempotently persists and claims a direct delegation before child startup. |
+| `agent.queue_delegation` | Persists a team task before it waits for a root-wide concurrency permit. |
+| `agent.acquire_subagent_permit` | Heartbeats while polling the durable root coordinator for a subagent permit. |
+| `agent.release_subagent_permit` | Idempotently releases a root-wide subagent permit. |
+| `agent.register_task_execution` | Persists the runner and child Temporal identities for trace inspection. |
+| `agent.finish_delegation` | Idempotently records a delegated child's terminal result and usage. |
+| `agent.finalize_team` | Finalizes a team after its required tasks reach accepted or terminal states. |
 
 The F4.B compaction threshold is prepared from the model context length and
 the ratio configuration. It currently does not read
@@ -519,7 +519,7 @@ server/services/temporal/
 │   └── _execute_via_websocket()  # WebSocket execution
 ├── plugin_activities.py # collect_plugin_activities() -> per-type node.{type}.v{ver} activities (F4.A)
 ├── agent_workflow.py    # AgentWorkflow loop + detached DelegatedTaskWorkflow
-├── agent_activities.py  # collect_agent_activities() -> 16 agent.*.v1 activities (F4.B)
+├── agent_activities.py  # collect_agent_activities() -> the agent.* activities (F4.B)
 ├── workflow.py          # MachinaWorkflow class
 │   ├── run()                     # Main orchestrator
 │   ├── _filter_executable_graph() # Config node filtering

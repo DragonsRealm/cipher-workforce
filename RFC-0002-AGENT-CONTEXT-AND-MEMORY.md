@@ -237,28 +237,38 @@ embedding projections are rebuildable accelerators.
 Memory does not automatically inject prompts, recall vectors, persist
 transcripts, own provider identity, or compact Context.
 
-## 10. Temporal V2
+## 10. Temporal
 
-New identities isolate deterministic histories:
+**Superseded.** This section originally specified a parallel `…V2` identity set
+(`AgentWorkflowV2`, `agent.*.v2`) so V1 and V2 histories could run side by side.
+That split was never needed — history back-compatibility is not a requirement
+here — and it has been folded away. There is one workflow class, `AgentWorkflow`,
+and one unsuffixed activity per concern: `agent.prepare_context`,
+`agent.execute_llm_step`, `agent.append_context`, `agent.compact_context`.
 
-```text
-AgentWorkflowV2
-agent.prepare_context.v2
-agent.execute_llm_step.v2
-agent.append_context.v2
-agent.compact_context.v2
-```
+What still holds: the child workflow carries only `AgentContextRef`, operation
+IDs/hashes and iteration state, so provider messages and large tool results stay
+out of Event History. The LLM activity keeps its one-attempt retry policy while
+database commits retry idempotently, so an ambiguous provider outcome is recorded
+rather than silently rebilled. `AgentWorkflow` uses Continue-As-New with a
+bounded Context reference.
 
-The child workflow carries only `AgentContextRef`, operation IDs/hashes,
-iteration state, and pending tool identities. Activities load payloads from
-the Context store. Provider messages and large tool results do not enter Event
-History. The LLM activity retains the existing one-attempt retry policy;
-database commits retry idempotently. An ambiguous provider outcome is recorded
-and surfaced rather than silently rebilled.
+**Corrected by implementation — the Context journal does not feed the request.**
+This RFC's replay-first framing led to an LLM step that reconstructed its request
+from the journal whenever a Context node was attached. That is wrong in kind: the
+Context node is an observation surface, and a node whose purpose is to *show* the
+agent's state must not change what the agent sends. It also failed in practice —
+the reconstruction dropped the user's prompt, so connecting a Context node made
+the agent answer an empty question.
 
-`AgentWorkflowV2` uses Continue-As-New with a bounded Context reference and
-pending state. Existing V1 native histories keep their recorded command
-sequence. Pre-native histories still require Reset.
+The rule is now inverted and load-bearing: **the request is always built from
+`messages`; the journal records what was sent.** `agent.execute_llm_step` writes
+each turn from the exact list it hands to `ChatUnifier.chat`, after the call
+returns. `agent.prepare_context` journals nothing, because it runs before a
+request exists and could only fabricate one. Journal operation ids derive from
+the per-firing `context_execution_id`; deriving them from the generation-scoped
+`execution_id` made every turn in a generation collide on idempotency and
+silently discarded all but the first.
 
 ## 11. Graph normalization and lifecycle
 

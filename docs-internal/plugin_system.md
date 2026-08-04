@@ -481,14 +481,14 @@ flips agent dispatch from activity to **child workflow**. The
 ```
 AgentWorkflow.run(payload):
   loop until "final" or max_iterations:
-    1. execute_activity("agent.execute_llm_step.v1") -> kind + content/calls
+    1. execute_activity("agent.execute_llm_step") -> kind + content/calls
     2. if kind == "tool_calls":
          for each call: execute_activity(f"node.{tool_type}.v{version}")
-    3. execute_activity("agent.persist_turn.v1")   # append memory per turn
-    4. if compaction threshold: execute_activity("agent.compact_memory.v1")
+    3. execute_activity("agent.persist_turn")   # append memory per turn
+    4. if compaction threshold: execute_activity("agent.compact_memory")
 ```
 
-The worker registers 16 `agent.*.v1` activities alongside the per-type
+The worker registers the `agent.*` activities alongside the per-type
 activities. The three shown above are the core model/persistence/compaction
 steps; the remainder cover payload preparation, progress and output
 persistence, tool/skill refresh, delegation lifecycle, and team finalization.
@@ -549,7 +549,7 @@ themselves** into those registries from their package `__init__.py`.
 
 ```
 server/nodes/telegram/
-├── __init__.py          # imports + register_* calls covering six registries (no logic)
+├── __init__.py          # imports + register_* calls covering seven registries (no logic)
 ├── _credentials.py      # TelegramCredential (ApiKeyCredential)
 ├── _service.py          # TelegramService singleton (bot lifecycle)
 ├── _handlers.py         # WebSocket handlers + WS_HANDLERS dict
@@ -564,7 +564,7 @@ Underscore-prefixed files are package-private; the `nodes` walker
 skips them. The two non-underscore files are the plugin classes (one
 per node type) — same pattern as every other folder.
 
-### Up to six cross-cutting registries — use only what your plugin needs
+### Up to seven cross-cutting registries — use only what your plugin needs
 
 | Concern | Registry module | Register from plugin via |
 |---|---|---|
@@ -574,6 +574,7 @@ per node type) — same pattern as every other folder.
 | Service-status refresh on WebSocket connect | `services.status_broadcaster` | `register_service_refresh(callback)` |
 | Per-node output schema (when not auto-derivable) | `services.node_output_schemas` | `register_output_schema(node_type, ModelClass)` |
 | FastAPI HTTP router (OAuth callbacks, webhook receivers, etc.) | `services.ws_handler_registry` | `register_router(router, name='<plugin>')` — Wave 11.I; declare a `_router.py` exposing an `APIRouter` and call from `__init__.py`. Discovered at startup via `services.ws_handler_registry.get_routers()`. |
+| Agent Context descriptor (node connected on `input-context`) | `services.plugin.edge_walker` | `register_agent_context_builder(async_fn)` — RFC-0002; the framework walks the edge but owns no knowledge of the descriptor's keys or thread-selection rules. Reference: `nodes/context/_descriptor.py`. |
 
 All accept idempotent re-imports (same callable / class for the
 same key is a no-op; conflicts raise `ValueError`).
@@ -862,7 +863,7 @@ All Wave 10 invariants in `test_node_spec.py` still run; Wave 11 invariants in `
   remains.)
 - Wave 11.G — Nodes cookbook (`server/nodes/README.md`) + CLAUDE.md
   plugin section + this file refreshed to match shipped state.
-- Wave 11.H — Self-contained plugin folders. Six generic registries
+- Wave 11.H — Self-contained plugin folders. Seven generic registries
   replace per-plugin hardcoding in core services:
   `services.ws_handler_registry.register_ws_handlers` (WebSocket
   commands), `services.ws_handler_registry.register_router` (FastAPI
