@@ -10,6 +10,7 @@ The contract in one line: **a node returns an**
 :mod:`services.media.limits` for the measured reason.
 """
 
+from services.media.fetch import fetch_to_workspace
 from services.media.inspect import AudioProbe, inspect_audio
 from services.media.limits import (
     MEDIA_MAX_AUDIO_SECONDS,
@@ -46,6 +47,7 @@ __all__ = [
     "TEMPORAL_PAYLOAD_ERROR_BYTES",
     "TEMPORAL_PAYLOAD_WARN_BYTES",
     "coerce_file_param",
+    "fetch_to_workspace",
     "inspect_audio",
     "read_media_bytes",
     "resolve_media",
