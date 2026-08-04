@@ -315,6 +315,16 @@ async def _execute_native_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     assistant_wire = message_to_wire(assistant)
     usage = asdict(response.usage)
 
+    # Record the turn exactly as it happened: the message list this activity
+    # just sent to the provider, and the reply it got back. ``messages`` above
+    # IS the argument handed to ``ChatUnifier.chat`` — nothing is rebuilt,
+    # inferred, or re-typed, so the journal cannot drift from the request.
+    await _journal_llm_turn(
+        payload,
+        sent=[dict(message_to_wire(message)) for message in messages],
+        assistant_wire=dict(assistant_wire),
+    )
+
     if response.tool_calls:
         calls = []
         for tool_call in response.tool_calls:
@@ -352,14 +362,53 @@ async def _execute_native_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+async def _journal_llm_turn(
+    payload: Dict[str, Any],
+    *,
+    sent: List[Dict[str, Any]],
+    assistant_wire: Dict[str, Any],
+) -> None:
+    """Append this turn to the Context journal, when one is attached.
+
+    Observation only: it never influences the request. ``request.snapshot``
+    carries the exact list sent, which is what
+    :func:`services.agent_context.runtime.reconstruct_message_wire_v2`
+    documents that event to be — the render boundary that later assistant and
+    tool transitions are applied on top of.
+    """
+    ref_data = payload.get("context_ref")
+    operation_id = str(payload.get("journal_operation_id") or "")
+    if not ref_data or not operation_id:
+        return
+    store = _context_store()
+    ref = _context_ref(ref_data)
+    provider = str(payload.get("provider") or "")
+    ref = await _append_event(
+        store,
+        ref,
+        event_type="request.snapshot",
+        operation_id=f"{operation_id}:request",
+        provider=provider,
+        payload_ref=await store.put_blob({"messages": sent}),
+    )
+    await _append_event(
+        store,
+        ref,
+        event_type="message.assistant",
+        operation_id=f"{operation_id}:assistant",
+        provider=provider,
+        message_wire_v2=assistant_wire,
+    )
+
+
 @activity.defn(name="agent.execute_llm_step")
 async def execute_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run one LLM turn with bound tools and return the structured response.
 
-    The single LLM-step activity. A ``context_ref`` in the payload selects
-    the journal-backed path (transcript reconstructed from the Context
-    store rather than carried in the payload); everything else is
-    identical, so callers do not pick an implementation.
+    The single LLM-step activity. There is exactly one implementation: the
+    request is always built from ``payload["messages"]``. A ``context_ref``
+    only asks for the turn to be journalled afterwards — attaching a Context
+    node observes the agent, it never changes what the agent sends.
 
     ``payload`` shape::
 
@@ -388,9 +437,6 @@ async def execute_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     Heartbeats every 30 s so long LLM streams don't trip
     ``heartbeat_timeout``.
     """
-
-    if payload.get("context_ref"):
-        return await _execute_context_llm_step(payload)
 
     activity.logger.info(
         f"Agent LLM step: provider={payload.get('provider')} " f"model={payload.get('model')} messages={len(payload.get('messages', []))}"
@@ -885,7 +931,16 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # ---- Edge walking ---------------------------------------------------
+    # Carry the execution context through rather than rebuilding it from a
+    # fixed key list. Connected nodes decide what they need from it: the
+    # Context descriptor requires ``generation`` and refuses to build without
+    # one, then reads ``session_id`` / ``explicit_session_id`` /
+    # ``delegated_task_id`` to pick its thread. A four-key rebuild dropped all
+    # of them, so every Temporal run walked edges as if it had no admitted
+    # generation and the agent journalled nothing — while the in-process path
+    # (nodes/agent/_inline.py) passed the context whole and worked.
     walk_context = {
+        **context,
         "nodes": context.get("nodes") or [],
         "edges": context.get("edges") or [],
         "workflow_id": workflow_id,
@@ -2167,28 +2222,22 @@ async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         generation=generation,
         **_thread_inputs(context),
     )
+    # The runtime configuration is machinery, not context: it carries the
+    # whole canvas graph, node positions, execution/team identifiers and
+    # routing flags. It stays addressable through ``runtime_config_ref``,
+    # which the LLM and append activities receive directly — it is NOT a
+    # journal event. Pointing ``request.snapshot`` at it put several hundred
+    # lines of scaffolding into the operator's view of the conversation, and
+    # broke reconstruction as well: that reader expects a snapshot payload to
+    # contain ``messages`` (services/agent_context/runtime.py), found a config
+    # blob instead, and silently skipped the boundary.
     runtime_config_ref = await store.put_blob(runtime_snapshot)
-    thread = await _append_event(
-        store,
-        thread,
-        event_type="request.snapshot",
-        operation_id=f"{operation_id}:snapshot",
-        provider=str(prepared.get("provider") or ""),
-        payload_ref=runtime_config_ref,
-    )
-
-    prompt = str(prepared.get("user_prompt") or "")
-    if prompt:
-        thread = await _append_event(
-            store,
-            thread,
-            event_type="message.user",
-            operation_id=f"{operation_id}:user",
-            provider=str(prepared.get("provider") or ""),
-            message_wire_v2=message_to_wire(
-                Message(role="user", content=prompt)
-            ),
-        )
+    # Nothing is journalled here. This activity runs BEFORE the request exists,
+    # so anything it wrote would be a reconstruction from configuration rather
+    # than a record of what was sent — which is how the journal came to hold a
+    # fabricated request, the system prompt typed as a tool result, and the
+    # user's prompt twice. ``agent.execute_llm_step`` journals each turn from
+    # the exact message list it hands to ``ChatUnifier.chat``.
 
     return {
         "context_ref": _ref_dict(thread),
@@ -2231,158 +2280,6 @@ def _pending_tool_identities(
             }
         )
     return pending
-async def _execute_context_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Journal-backed variant: load checkpoint-plus-tail, call once, commit.
-
-    Not an activity of its own — ``execute_llm_step`` dispatches here when
-    the payload carries a ``context_ref``, so there is exactly one LLM-step
-    activity regardless of whether the agent is journal-backed.
-    """
-
-    from services.agent_context import (
-        ContextCompactionPolicy,
-        provider_context_request_options,
-        reconstruct_message_wire_v2,
-    )
-    from services.llm.protocol import Message, message_to_wire
-
-    store = _context_store()
-    ref = _context_ref(payload["context_ref"])
-    config = await _runtime_config(
-        store,
-        str(payload["runtime_config_ref"]),
-    )
-    prepared = dict(config["prepared"])
-    provider = str(prepared.get("provider") or "")
-    policy = ContextCompactionPolicy.from_mapping(
-        dict(config.get("context_policy") or {})
-    )
-    operation_id = str(payload["operation_id"])
-    iteration = int(payload.get("iteration") or 1)
-
-    current_ref, wires = await reconstruct_message_wire_v2(store, ref)
-    system_message = str(prepared.get("system_message") or "")
-    messages = list(wires)
-    if system_message:
-        messages.insert(
-            0,
-            message_to_wire(
-                Message(role="system", content=system_message)
-            ),
-        )
-    llm_payload = {
-        "node_id": prepared.get("node_id"),
-        "provider": provider,
-        "model": prepared.get("model"),
-        "messages": messages,
-        "tools": [
-            tool.get("definition") or {}
-            for tool in prepared.get("tools") or []
-            if not tool.get("llm_hidden")
-        ],
-        "temperature": prepared.get("temperature", 0.7),
-        "max_tokens": prepared.get("max_tokens", 4096),
-        "thinking_config": prepared.get("thinking_config"),
-        "message_wire_version": prepared.get("message_wire_version", 2),
-        "include_finish_reason": True,
-        "context_management": provider_context_request_options(
-            provider=provider,
-            model=str(prepared.get("model") or ""),
-            policy=policy,
-        ),
-    }
-
-    activity.heartbeat(
-        f"Context V2 LLM step starting: {prepared.get('model')}"
-    )
-    try:
-        result = dict(await _execute_native_llm_step(llm_payload))
-    except BaseException as exc:
-        # The provider may have accepted a request even though the caller did
-        # not receive a response.  Record the ambiguity and let the one-shot
-        # Temporal policy surface it; never silently rebill.
-        ambiguous_ref = await store.put_blob(
-            {
-                "iteration": iteration,
-                "error_type": type(exc).__name__,
-                "ambiguous": True,
-            }
-        )
-        try:
-            await _append_event(
-                store,
-                current_ref,
-                event_type="provider.outcome_ambiguous",
-                operation_id=f"{operation_id}:ambiguous",
-                provider=provider,
-                payload_ref=ambiguous_ref,
-            )
-        except Exception:
-            activity.logger.exception(
-                "Could not persist ambiguous Context V2 provider outcome"
-            )
-        raise
-
-    response_ref = await store.put_blob(
-        {
-            "kind": result.get("kind"),
-            "assistant_message": result.get("assistant_message"),
-            "calls": result.get("calls") or [],
-            "content": result.get("content") or "",
-            "thinking": result.get("thinking"),
-            "usage": result.get("usage") or {},
-            "finish_reason": result.get("finish_reason"),
-            "iteration": iteration,
-        }
-    )
-    current_ref = await _append_event(
-        store,
-        current_ref,
-        event_type="message.assistant",
-        operation_id=f"{operation_id}:assistant",
-        provider=provider,
-        message_wire_v2=dict(result["assistant_message"]),
-        payload_ref=response_ref,
-    )
-    finish_reason = str(result.get("finish_reason") or "").strip().lower()
-    if finish_reason == "compaction":
-        current_ref = await _append_event(
-            store,
-            current_ref,
-            event_type="provider.compaction_paused",
-            operation_id=f"{operation_id}:compaction-pause",
-            provider=provider,
-            payload_ref=response_ref,
-        )
-
-    usage = dict(result.get("usage") or {})
-    pending = _pending_tool_identities(
-        result.get("calls") or [],
-        prepared.get("tools") or [],
-    )
-    return {
-        "context_ref": _ref_dict(current_ref),
-        "response_ref": response_ref,
-        "response_hash": _hash_from_ref(response_ref),
-        "iteration": iteration,
-        "status": (
-            "compaction_pause"
-            if finish_reason == "compaction"
-            else (
-                "tool_calls"
-                if result.get("kind") == "tool_calls"
-                else "final"
-            )
-        ),
-        "pending_tools": pending,
-        # Delegation builds its child prompt from candidate["args"] in the
-        # workflow; pending_tools is identity-only and cannot carry them.
-        "calls": list(result.get("calls") or []),
-        "assistant_message": result.get("assistant_message"),
-        "kind": result.get("kind"),
-        "active_input_tokens": int(usage.get("input_tokens") or 0),
-        "output_tokens": int(usage.get("output_tokens") or 0),
-    }
 def _find_call(
     response: Mapping[str, Any],
     pending: Mapping[str, Any],

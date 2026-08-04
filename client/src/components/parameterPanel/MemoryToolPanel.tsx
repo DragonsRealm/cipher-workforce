@@ -367,6 +367,12 @@ const MemoryToolPanel: React.FC<MemoryToolPanelProps> = ({
       </section>
 
       <section className="min-h-0 overflow-y-auto p-4">
+        {/* This panel replaces the generic parameter list, so it has to render
+            `reset_policy` itself — the options below duplicate the backend
+            Literal in `simple_memory/__init__.py` and must be kept in step
+            with it. (`server_controlled_fields` marks the field so the MODEL
+            cannot override it through tool arguments; the operator still
+            sets it here.) */}
         <div className="mb-4 grid gap-3 rounded-md border border-border bg-card p-3 sm:grid-cols-2">
           <label className="text-xs font-medium text-muted-foreground">
             Workflow Reset policy
@@ -403,7 +409,11 @@ const MemoryToolPanel: React.FC<MemoryToolPanelProps> = ({
               <h4 className="font-medium">{selected ? 'Edit Memory item' : 'Remember something'}</h4>
               {selected && (
                 <Badge variant="outline">
-                  {selected.indexing_state || 'indexed'} · v{selected.version}
+                  {/* 'indexed' is not a member of the backend enum
+                      (lexical | embedding_ready | embedding_failed), so
+                      defaulting to it rendered an embedding failure — or an
+                      absent verdict — as success. */}
+                  {selected.indexing_state || 'unknown'} · v{selected.version}
                 </Badge>
               )}
             </div>

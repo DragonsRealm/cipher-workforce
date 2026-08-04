@@ -62,7 +62,20 @@ async def build_agent_context_descriptor(
     if generation <= 0:
         return None
 
-    policy = await database.get_node_parameters(source_node_id) or {}
+    # Only this node's DECLARED policy travels in the descriptor. Reading the
+    # stored row verbatim shipped whatever else happened to be saved against
+    # the node — migrated graphs still carry the legacy ``memory_content``
+    # markdown here — which then landed in the runtime snapshot, was persisted
+    # into the journal, and was rendered to the operator as though it were
+    # part of the model's context.
+    from . import AgentContextParams
+
+    stored = await database.get_node_parameters(source_node_id) or {}
+    policy = {
+        name: stored[name]
+        for name in AgentContextParams.model_fields
+        if name in stored
+    }
     delegated_task_id = (
         context.get("delegated_task_id")
         or context.get("parent_task_id")

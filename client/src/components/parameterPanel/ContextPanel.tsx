@@ -178,7 +178,10 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
     onError: () => toast.error('Failed to export Context'),
   });
 
-  const pressurePercent = useMemo(() => {
+  // ``null`` means the server could not compute pressure — it has no context
+  // window for this thread. Rendering that as 0% would claim an empty context
+  // window, which reads as healthy; the bar is hidden instead.
+  const pressurePercent = useMemo<number | null>(() => {
     if (typeof snapshot.pressure_ratio === 'number') {
       return Math.max(0, Math.min(100, snapshot.pressure_ratio * 100));
     }
@@ -188,7 +191,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
         Math.min(100, (snapshot.active_token_count / snapshot.context_window) * 100),
       );
     }
-    return 0;
+    return null;
   }, [
     snapshot.active_token_count,
     snapshot.context_window,
@@ -269,7 +272,14 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
         <div className="rounded-md border border-border bg-card p-3">
           <div className="text-xs text-muted-foreground">Replay fidelity</div>
           <div className="mt-1 flex flex-wrap gap-1">
-            <Badge variant={snapshot.resumable === false ? 'warning' : 'success'}>
+            {/* Success is claimed only when the server actually reported both
+                a fidelity and resumability. Defaulting an absent verdict to
+                green asserted a guarantee the server never made. */}
+            <Badge
+              variant={
+                !snapshot.fidelity || snapshot.resumable !== true ? 'warning' : 'success'
+              }
+            >
               {snapshot.fidelity || 'unknown'}
             </Badge>
             {snapshot.resumable === false && <Badge variant="outline">non-resumable</Badge>}
@@ -279,7 +289,9 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
           <div className="text-xs text-muted-foreground">Provider</div>
           <div className="text-sm font-medium">{snapshot.provider || '—'}</div>
           <div className="text-xs text-muted-foreground">
-            Binding {snapshot.provider_binding_status || 'unbound'}
+            {/* "unbound" is a real server verdict, so it must not double as
+                the placeholder for "the server said nothing". */}
+            Binding {snapshot.provider_binding_status || '—'}
           </div>
         </div>
         <div className="rounded-md border border-border bg-card p-3">
@@ -288,7 +300,13 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
             {snapshot.active_token_count ?? 0}
             {snapshot.context_window ? ` / ${snapshot.context_window}` : ' tokens'}
           </div>
-          <Progress value={pressurePercent} />
+          {pressurePercent === null ? (
+            <div className="text-xs text-muted-foreground">
+              Set a context window to track pressure
+            </div>
+          ) : (
+            <Progress value={pressurePercent} />
+          )}
         </div>
       </div>
 

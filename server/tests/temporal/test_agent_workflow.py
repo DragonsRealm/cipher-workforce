@@ -92,6 +92,78 @@ class TestDurableTeamDelegationContract:
         assert '"team_id": payload.get("team_id") or context.get("team_id")' in source
         assert '"execution_id": context.get("execution_id")' in source
 
+
+class TestContextJournalIdentity:
+    """Every firing must journal, and journal each turn exactly once."""
+
+    def test_journal_operation_ids_are_per_firing_not_per_generation(self):
+        """``execution_id`` is generation-scoped, so reusing it for journal
+        operation ids made every chat message in a generation mint identical
+        ids. The store's idempotency guard then discarded turns 2..N as
+        replays and only the generation's first message was ever recorded.
+        """
+        import inspect
+
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        source = inspect.getsource(AgentWorkflow.run)
+        assert 'context.get("context_execution_id")' in source, (
+            "journal operation ids must derive from the per-firing "
+            "context_execution_id"
+        )
+        for suffix in (":prepare", ":append", ":llm"):
+            assert f"{{journal_operation_id}}" in source
+            assert f"{{execution_id}}:iter" not in source
+            assert f'f"{{execution_id}}{suffix}"' not in source
+
+    def test_llm_step_has_a_single_implementation(self):
+        """A Context node observes execution; it must not steer it.
+
+        ``context_ref`` used to select a second, journal-backed LLM
+        implementation that rebuilt the request from the store instead of
+        sending ``messages``. That transcript did not carry the user's prompt,
+        so merely connecting a Context node made the agent answer an empty
+        question.
+        """
+        import inspect
+
+        from services.temporal import agent_activities
+
+        source = inspect.getsource(agent_activities)
+        assert "_execute_context_llm_step" not in source, (
+            "a second LLM implementation selected by context_ref is exactly "
+            "how attaching a Context node changed the agent's request"
+        )
+        step = inspect.getsource(agent_activities.execute_llm_step)
+        assert "if payload.get(\"context_ref\")" not in step
+
+    def test_journal_records_the_exact_request_never_a_reconstruction(self):
+        """The journal must record what was sent, not rebuild it.
+
+        ``prepare_context`` runs before the request exists, so anything it
+        wrote was assembled from configuration — that is how the journal came
+        to hold a fabricated request, the system prompt typed as a tool
+        result, and the user's prompt twice. The turn is journalled from the
+        exact list handed to ``ChatUnifier.chat``.
+        """
+        import inspect
+
+        from services.temporal import agent_activities
+
+        prepare = inspect.getsource(agent_activities.prepare_context)
+        assert "_append_event" not in prepare, (
+            "prepare_context must not journal; it has no request yet"
+        )
+
+        native = inspect.getsource(agent_activities._execute_native_llm_step)
+        sent = native.index("_journal_llm_turn")
+        called = native.index("run_native_llm_step(")
+        assert called < sent, "journal the request only after it was sent"
+        assert "for message in messages" in native, (
+            "the journalled request must be the same `messages` object passed "
+            "to the unifier"
+        )
+
     def test_root_execution_identity_is_initialized_before_agent_loop(self):
         import inspect
 

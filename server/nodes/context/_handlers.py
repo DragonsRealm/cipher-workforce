@@ -287,10 +287,15 @@ async def _snapshot(
         base["next_cursor"] = None
         return base
 
+    # Scope the journal to the live epoch. Workflow Reset (and Clear epoch)
+    # rotate the thread to a fresh epoch and leave the prior events in place
+    # as archived history; reading every epoch made a reset look like it had
+    # done nothing, because the panel still listed every pre-reset turn.
     events, next_after = await store.load_journal_page(
         active.ref,
         after_sequence=_decode_cursor(cursor),
         limit=limit,
+        epoch=active.ref.epoch,
     )
     base["events"] = [
         await _event_view(store, event, hydrate_payload=True)

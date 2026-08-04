@@ -655,6 +655,16 @@ class AgentWorkflow:
         task_scope_execution_id = str(
             payload.get("team_execution_id") or execution_id
         )
+        # Journal operation ids must be unique per FIRING, not per generation.
+        # ``execution_id`` is generation-scoped (``1:execution:10``), so every
+        # chat message within one generation minted identical operation ids
+        # and the store's idempotency guard discarded turns 2..N as replays —
+        # only the first message a generation ever saw was recorded. The
+        # trigger listener already plumbs a per-firing ``context_execution_id``
+        # (the child workflow id) for exactly this purpose.
+        journal_operation_id = (
+            str(context.get("context_execution_id") or "") or execution_id
+        )
         # Needed by every terminal result, including agents that never make a
         # tool call (for example downstream taskTrigger automation).  It was
         # previously initialized only inside the tool-call branch.
@@ -717,12 +727,16 @@ class AgentWorkflow:
         # only references.
         context_ref: Optional[Dict[str, Any]] = None
         runtime_config_ref = ""
-        journalled = 0
         if payload.get("context_descriptor"):
             await self._wait_until_resumed()
             prepared_context = await workflow.execute_activity(
                 "agent.prepare_context",
-                args=[{"context": context, "operation_id": f"{execution_id}:prepare"}],
+                args=[
+                    {
+                        "context": context,
+                        "operation_id": f"{journal_operation_id}:prepare",
+                    }
+                ],
                 activity_id="prepare-context",
                 start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,
                 retry_policy=AGENT_ACTIVITY_RETRY,
@@ -813,28 +827,6 @@ class AgentWorkflow:
             # delegation paths, which never touch the journal, so without
             # this the next reconstruction replays an assistant turn whose
             # tool calls have no answers.
-            if context_ref and len(messages) > journalled:
-                pending_messages = messages[journalled:]
-                appended = await workflow.execute_activity(
-                    "agent.append_context",
-                    args=[
-                        {
-                            "action": "append_messages",
-                            "context_ref": context_ref,
-                            "runtime_config_ref": runtime_config_ref,
-                            "messages": pending_messages,
-                            "iteration": iteration,
-                            "operation_id": (
-                                f"{execution_id}:iter:{iteration}:append"
-                            ),
-                        }
-                    ],
-                    activity_id=f"append-context-{iteration + 1}",
-                    start_to_close_timeout=PERSIST_TURN_TIMEOUT,
-                    retry_policy=AGENT_ACTIVITY_RETRY,
-                )
-                context_ref = appended.get("context_ref") or context_ref
-                journalled = len(messages)
 
             # CloudEvents-shaped agent_progress per LLM turn. Mirrors the
             # the in-process agent loop's per-turn broadcast (RFC §6.4).
@@ -871,13 +863,16 @@ class AgentWorkflow:
                     "thinking_config": payload.get("thinking_config"),
                     "llm_engine": NATIVE_LLM_ENGINE,
                     "message_wire_version": message_wire_version,
-                    # Present only for journal-backed agents; the activity
-                    # reconstructs the transcript from the store instead of
-                    # trusting `messages`.
+                    # Journalling only. The activity always builds its request
+                    # from ``messages`` above; these just tell it where to
+                    # record the turn it actually sent. A Context node observes
+                    # the agent, it never steers it.
                     **(
                         {
                             "context_ref": context_ref,
-                            "runtime_config_ref": runtime_config_ref,
+                            "journal_operation_id": (
+                                f"{journal_operation_id}:iter:{iteration}"
+                            ),
                         }
                         if context_ref
                         else {}
@@ -1054,11 +1049,6 @@ class AgentWorkflow:
             assistant_message = step_result.get("assistant_message")
             if assistant_message:
                 messages.append(assistant_message)
-            if context_ref and step_result.get("context_ref"):
-                # The step committed the assistant turn; nothing for the
-                # delta journaller below to re-append.
-                context_ref = step_result["context_ref"]
-                journalled = len(messages)
 
             # A provider that stops to compact has not answered. It carries
             # no tool calls, so it would otherwise be classified "final" and
@@ -1088,6 +1078,9 @@ class AgentWorkflow:
                         retry_policy=AGENT_ACTIVITY_RETRY,
                     )
                 await self._persist_turn(payload, human_text=user_prompt, assistant_text=final_content)
+                # The delta journaller runs at the TOP of each iteration, so
+                # the answer that ends the loop would never reach the journal
+                # without a final flush here.
                 break
 
             if kind != "tool_calls":
@@ -2432,6 +2425,7 @@ class AgentWorkflow:
                 start_to_close_timeout=PERSIST_TURN_TIMEOUT,
                 retry_policy=AGENT_ACTIVITY_RETRY,
             )
+
 
     async def _persist_turn(
         self,
