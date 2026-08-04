@@ -447,7 +447,7 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
 
     # Import exact legacy artifacts before replacing their only topology
     # pointer. Receipts are idempotent, so a failed graph save is safe to retry.
-    imported = await import_legacy_context_receipts(
+    await import_legacy_context_receipts(
         database,
         normalization.state_imports,
     )
@@ -455,6 +455,9 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
         "workflow_id": storage_id,
         "name": name,
         "slug": slug,
+        # Omitting this nulled the description on every save, because
+        # ``save_workflow`` writes the column unconditionally.
+        "description": getattr(existing, "description", None),
         "data": normalized_data,
     }
     if _supports_context_archive_outbox(database):
@@ -467,7 +470,6 @@ async def handle_save_workflow(data: Dict[str, Any], websocket: WebSocket) -> Di
             database,
             aliases=normalization.aliases,
             parameters=normalization.node_parameters,
-            context_import_completed=(not normalization.state_imports or imported == len(normalization.state_imports)),
         )
         if _supports_context_archive_outbox(database):
             context_archives_completed, context_archives_pending = await _drain_context_archive_outbox(
@@ -577,7 +579,7 @@ async def handle_get_workflow(data: Dict[str, Any], websocket: WebSocket) -> Dic
 
         normalized_data = sanitize_workflow_graph(normalization.graph_data(workflow_data))
         if not context_errors:
-            imported = await import_legacy_context_receipts(
+            await import_legacy_context_receipts(
                 database,
                 normalization.state_imports,
             )
@@ -624,7 +626,6 @@ async def handle_get_workflow(data: Dict[str, Any], websocket: WebSocket) -> Dic
                     database,
                     aliases=normalization.aliases,
                     parameters=normalization.node_parameters,
-                    context_import_completed=(not normalization.state_imports or imported == len(normalization.state_imports)),
                 )
         return {
             "success": True,

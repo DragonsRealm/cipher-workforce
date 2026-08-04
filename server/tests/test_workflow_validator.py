@@ -444,8 +444,15 @@ def _fake_database(existing_names: list[str] | None = None):
         saved_params[node_id] = params
         return True
 
+    async def delete_node_parameters(node_id):
+        saved_params.pop(node_id, None)
+        return True
+
     db.save_workflow = AsyncMock(side_effect=save_workflow)
     db.save_node_parameters = AsyncMock(side_effect=save_node_parameters)
+    # Canonicalization rekeys parameter rows, so the double must expose the
+    # real Database's async delete. A bare MagicMock returns a non-awaitable.
+    db.delete_node_parameters = AsyncMock(side_effect=delete_node_parameters)
     db._saved_workflows = saved_workflows  # test-readable
     db._saved_params = saved_params
     return db

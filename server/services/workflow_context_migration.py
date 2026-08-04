@@ -14,24 +14,6 @@ from typing import Any, Iterable, Mapping
 from services.agent_context import AgentContextStore
 
 
-_LEGACY_RUNTIME_FIELDS = frozenset(
-    {
-        "memory_content",
-        "memory_jsonl",
-        "last_session_id",
-        "vertex_interaction_id",
-        "vertex_environment_id",
-        "session_id",
-        "window_size",
-        "long_term_enabled",
-        "retrieval_count",
-        "embedding_provider",
-        "embedding_model",
-        "embedding_endpoint",
-    }
-)
-
-
 async def load_node_parameters(
     database: Any,
     nodes: Iterable[Mapping[str, Any]],
@@ -138,9 +120,20 @@ async def persist_parameter_aliases(
     *,
     aliases: Mapping[str, str],
     parameters: Mapping[str, Mapping[str, Any]],
-    context_import_completed: bool,
 ) -> None:
-    """Rekey node configuration and retire imported legacy runtime fields."""
+    """Rekey node configuration onto canonical node ids.
+
+    This only moves rows; it never edits their contents. It previously also
+    stripped a set of "legacy runtime fields" from every node, which destroyed
+    real configuration: ``session_id`` is in that set and is a declared,
+    load-bearing parameter on ``chatTrigger`` / ``chatSend`` / ``chatHistory``,
+    so an ordinary read silently widened a chat trigger to match every session.
+
+    Retiring them is unnecessary as well as unsafe. ``SimpleMemoryParams``
+    declares ``extra="ignore"``, so a leftover ``memory_content`` on a migrated
+    node is already inert — it reaches neither runtime behaviour nor the
+    NodeSpec.
+    """
 
     reverse_aliases = {new: old for old, new in aliases.items()}
     save = getattr(database, "save_node_parameters", None)
@@ -148,17 +141,7 @@ async def persist_parameter_aliases(
     if not callable(save):
         return
     for node_id, raw_params in parameters.items():
-        params = dict(raw_params or {})
-        if context_import_completed and any(
-            key in params for key in _LEGACY_RUNTIME_FIELDS
-        ):
-            params = {
-                key: value
-                for key, value in params.items()
-                if key not in _LEGACY_RUNTIME_FIELDS
-            }
-            params.setdefault("reset_policy", "preserve")
-        await save(node_id, params)
+        await save(node_id, dict(raw_params or {}))
         old_id = reverse_aliases.get(node_id)
         if old_id and old_id != node_id and callable(remove):
             await remove(old_id)

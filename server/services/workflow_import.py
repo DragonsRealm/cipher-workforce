@@ -380,16 +380,17 @@ async def import_workflow(
     if not saved:
         return {"success": False, "error": "save_failed", "report": report}
 
-    # 8. Per-node configuration saves. Legacy transcript/provider fields have
-    # already been preserved as immutable Context artifacts and are retired
-    # from the Memory tool's configuration surface.
+    # 8. Per-node configuration saves. Legacy transcript/provider fields are
+    # preserved as immutable Context artifacts above; they are left in place
+    # here because ``SimpleMemoryParams`` ignores them, while stripping them
+    # would also have removed same-named fields that other node types really
+    # declare.
     from services.workflow_context_migration import persist_parameter_aliases
 
     await persist_parameter_aliases(
         database,
-        aliases={},
+        aliases=normalization.aliases,
         parameters=remapped_params,
-        context_import_completed=True,
     )
     saved_params = sum(bool(params) for params in remapped_params.values())
 

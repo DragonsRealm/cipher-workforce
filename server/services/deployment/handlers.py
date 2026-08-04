@@ -130,7 +130,7 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
         edges = list(safe_graph["edges"])
         normalized_parameters = normalization.node_parameters
         migration_warnings = normalization.warnings
-        imported = await import_legacy_context_receipts(
+        await import_legacy_context_receipts(
             container.database(),
             normalization.state_imports,
         )
@@ -138,9 +138,6 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
             container.database(),
             aliases=normalization.aliases,
             parameters=normalized_parameters,
-            context_import_completed=(
-                imported == len(normalization.state_imports)
-            ),
         )
         graph_version = normalization.graph_version
         graph_aliases = normalization.aliases
@@ -1671,7 +1668,7 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
             "aliases": normalization.aliases,
             "migration_warnings": normalization.warnings,
         }
-    imported = await import_legacy_context_receipts(
+    await import_legacy_context_receipts(
         service.database,
         normalization.state_imports,
     )
@@ -1679,7 +1676,6 @@ async def handle_start_workflow(data: Dict[str, Any], websocket: WebSocket) -> D
         service.database,
         aliases=normalization.aliases,
         parameters=normalization.node_parameters,
-        context_import_completed=(imported == len(normalization.state_imports)),
     )
     control, created = await service.begin_generation(
         workflow_id=workflow_id,

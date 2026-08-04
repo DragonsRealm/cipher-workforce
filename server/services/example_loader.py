@@ -147,9 +147,8 @@ async def import_examples_for_user(database) -> int:
             )
             await persist_parameter_aliases(
                 database,
-                aliases={},
+                aliases=normalization.aliases,
                 parameters=node_parameters,
-                context_import_completed=True,
             )
 
     return imported
