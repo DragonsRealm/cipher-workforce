@@ -30,10 +30,7 @@ Verified against pydantic-monty==0.0.18 (the pinned version):
 
 from __future__ import annotations
 
-import ipaddress
-import socket
 from typing import Any, Callable, Dict, Optional, Tuple
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,38 +58,10 @@ _UNSUPPORTED = "class, yield/generators, with, match, `import random|collections
 # ---------------------------------------------------------------------------
 
 
-def _is_public_url(url: str) -> Tuple[bool, str]:
-    """SSRF guard: allow only http/https to a publicly-routable host.
-
-    Resolves every A/AAAA record and rejects loopback / private / link-local /
-    reserved / multicast / unspecified addresses. (DNS is re-resolved by httpx,
-    so this is a best-effort guard, not TOCTOU-proof — acceptable for v1.)
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return False, f"only http/https allowed (got {parsed.scheme or 'no scheme'!r})"
-    host = parsed.hostname
-    if not host:
-        return False, "missing host"
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
-        return False, f"DNS resolution failed: {exc}"
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            continue
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            return False, f"blocked non-public address {ip}"
-    return True, ""
+# Promoted to services/net.py so the workspace fetcher shares one
+# implementation. Re-exported under the original private name because the
+# call site below and any monkeypatching in tests reference it.
+from services.net import is_public_url as _is_public_url  # noqa: E402
 
 
 def _make_http_get(timeout: float = 15.0) -> Callable[[str], str]:
