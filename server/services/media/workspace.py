@@ -30,6 +30,7 @@ logger = get_logger(__name__)
 
 AUDIO_SUBDIR = "audio"
 UPLOAD_SUBDIR = "uploads"
+MEDIA_SUBDIR = "media"
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -171,6 +172,41 @@ def read_media_bytes(
     return target.name, target.read_bytes()
 
 
+def _persist(
+    payload: bytes,
+    *,
+    ctx: Any,
+    stem: str,
+    ext: str,
+    subdir: str,
+    empty_message: str,
+) -> Tuple[str, str, Path, Optional[str]]:
+    """Atomically place bytes in the workspace.
+
+    Returns ``(rel_path, filename, absolute_target, workflow_id)``. Shared by
+    :func:`write_audio` and :func:`write_media` so both produce byte-identical
+    naming, containment and atomicity -- the filename shape
+    ``<stem>-<node8>-<rand6>.<ext>`` carries a random suffix precisely so
+    retries and repeated runs never collide or silently overwrite.
+    """
+    from nodes.filesystem._backend import atomic_write_bytes
+    from services.plugin import NodeUserError
+
+    if not payload:
+        raise NodeUserError(empty_message)
+
+    root = workspace_root(ctx)
+    node_id = str(getattr(ctx, "node_id", "") or "node")
+    name = f"{_slugify(stem)}-{node_id[:8]}-{uuid4().hex[:6]}.{ext.lstrip('.')}"
+    rel = f"{subdir}/{name}"
+
+    target = resolve_media(rel, ctx=ctx)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(target, payload, root_dir=root)
+
+    return rel, name, target, getattr(ctx, "workflow_id", None)
+
+
 def write_audio(
     payload: bytes,
     *,
@@ -189,21 +225,19 @@ def write_audio(
     Sarvam TTS node produced before this helper existed, so porting it is
     behaviour-preserving. The random suffix also means retries and repeated
     runs never collide or silently overwrite earlier audio.
+
+    Returns an ``AudioRef``, i.e. it *claims* the container was probed. Use
+    :func:`write_media` for anything whose duration you have not measured --
+    see the note there.
     """
-    from nodes.filesystem._backend import atomic_write_bytes
-    from services.plugin import NodeUserError
-
-    if not payload:
-        raise NodeUserError("Refusing to write an empty audio file.")
-
-    root = workspace_root(ctx)
-    node_id = str(getattr(ctx, "node_id", "") or "node")
-    name = f"{_slugify(stem)}-{node_id[:8]}-{uuid4().hex[:6]}.{ext.lstrip('.')}"
-    rel = f"{subdir}/{name}"
-
-    target = resolve_media(rel, ctx=ctx)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_bytes(target, payload, root_dir=root)
+    rel, name, target, workflow_id = _persist(
+        payload,
+        ctx=ctx,
+        stem=stem,
+        ext=ext,
+        subdir=subdir,
+        empty_message="Refusing to write an empty audio file.",
+    )
 
     probe = (
         inspect_audio(
@@ -215,7 +249,6 @@ def write_audio(
         if inspect
         else None
     )
-    workflow_id = getattr(ctx, "workflow_id", None)
 
     return AudioRef(
         path=rel,
@@ -227,6 +260,59 @@ def write_audio(
         duration_seconds=probe.duration_seconds if probe else None,
         sample_rate=(probe.sample_rate if probe else None) or sample_rate,
         channels=(probe.channels if probe else None),
+        sha256=hashlib.sha256(payload).hexdigest(),
+        url=workspace_file_url(workflow_id, rel),
+    )
+
+
+def write_media(
+    payload: bytes,
+    *,
+    ctx: Any,
+    stem: str,
+    ext: str,
+    kind: FileKind = "file",
+    mime_type: Optional[str] = None,
+    subdir: str = MEDIA_SUBDIR,
+) -> FileRef:
+    """Atomically write any file into the workspace and return a reference.
+
+    The kind-agnostic sibling of :func:`write_audio`: same naming, same
+    containment, same atomic write, but it makes no claim about the
+    container beyond what the caller declares.
+
+    ``kind`` narrows what the reference asserts, and the honest default is
+    ``"file"``. Do **not** pass ``"audio"`` here -- that value asserts the
+    duration/rate fields came from :func:`inspect_audio`, and a fabricated
+    duration silently mis-bills per-second providers downstream. Reach for
+    :func:`write_audio` when you want that claim, which measures rather than
+    guesses. ``image`` / ``video`` / ``document`` assert nothing beyond a
+    rendering hint, so they are safe to declare from a MIME type.
+    """
+    from services.plugin import NodeUserError
+
+    if kind == "audio":
+        raise NodeUserError(
+            "write_media cannot produce kind='audio': that claims the container "
+            "was probed. Use write_audio, which measures the duration."
+        )
+
+    rel, name, _target, workflow_id = _persist(
+        payload,
+        ctx=ctx,
+        stem=stem,
+        ext=ext,
+        subdir=subdir,
+        empty_message="Refusing to write an empty file.",
+    )
+
+    return FileRef(
+        kind=kind,
+        path=rel,
+        workflow_id=workflow_id,
+        filename=name,
+        mime_type=mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream",
+        size_bytes=len(payload),
         sha256=hashlib.sha256(payload).hexdigest(),
         url=workspace_file_url(workflow_id, rel),
     )
@@ -320,6 +406,7 @@ def coerce_file_param(
 
 __all__ = [
     "AUDIO_SUBDIR",
+    "MEDIA_SUBDIR",
     "UPLOAD_SUBDIR",
     "coerce_file_param",
     "read_media_bytes",
@@ -327,4 +414,5 @@ __all__ = [
     "workspace_file_url",
     "workspace_root",
     "write_audio",
+    "write_media",
 ]
