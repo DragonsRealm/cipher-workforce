@@ -56,6 +56,16 @@ async def handle_webhook(path: str, request: Request):
     source = WEBHOOK_SOURCES.get(path)
     if source is not None:
         try:
+            if request.method == "GET":
+                # Subscription handshakes (Meta's hub.challenge echo, and
+                # equivalents) need a provider-specific body that is not
+                # this router's fixed JSON. A source that declines returns
+                # None and falls through to the normal handle() path, so
+                # sources without an override are unaffected.
+                handshake = await source.handle_get(request)
+                if handshake is not None:
+                    logger.info("[Webhook] GET %s -> %s handshake", path, type(source).__name__)
+                    return handshake
             await source.handle(request)
         except HTTPException:
             raise

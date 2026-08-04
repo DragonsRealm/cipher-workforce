@@ -320,9 +320,54 @@ class TestWebhookSourceHandle:
             ev = _run(src.handle(req))
         assert ev.type == "fake.event"
         dispatch.assert_called_once()
-        called_type, called_event = dispatch.call_args[0]
-        assert called_type == "fake.hook"
-        assert called_event is ev
+        # The envelope is passed alone. The two-argument form means
+        # ``(event_type: str, data: Dict)``, so passing the event as the
+        # second argument made ``data`` the envelope itself -- see
+        # test_dispatch_with_live_waiter_does_not_crash below.
+        assert dispatch.call_args[0] == (ev,)
+
+    def test_dispatch_with_live_waiter_does_not_crash(self):
+        """Regression: the dispatcher must receive an unpackable envelope.
+
+        ``handle`` used to call ``dispatch(self.type, event)``. The
+        two-argument form is ``(event_type, data)``, so ``data`` became the
+        WorkflowEvent and every ``data.get(...)`` inside the dispatcher
+        raised AttributeError -- but only once a waiter was actually
+        registered, which is why no existing test caught it. This registers
+        a real waiter and dispatches for real.
+        """
+        import asyncio as _asyncio
+
+        from services import event_waiter
+
+        src = self._build_source(secret_value="whsec_test")
+        body = b'{"event":"payload","from_id":"alice"}'
+        req = self._signed_request(body, "whsec_test")
+
+        async def _scenario():
+            # Built inline rather than via event_waiter.register(), which
+            # requires a TRIGGER_REGISTRY entry this fake type has no
+            # business adding. The future must be created on the loop that
+            # runs handle(), so it cannot be set up outside the coroutine.
+            waiter = event_waiter.Waiter(
+                node_id="n1",
+                node_type="fakeTrigger",
+                event_type="fake.event",
+                filter_fn=lambda _data: True,
+                future=_asyncio.get_running_loop().create_future(),
+            )
+            event_waiter._waiters[waiter.id] = waiter
+            try:
+                event = await src.handle(req)
+                return event, waiter.future
+            finally:
+                event_waiter.cancel_for_node("n1")
+
+        ev, future = _run(_scenario())
+        assert future.done()
+        # The waiter resolves with the envelope's *data*, not the envelope.
+        assert future.result() == ev.data
+        assert future.result()["from_id"] == "alice"
 
     def test_tampered_signature_raises_400(self):
         from fastapi import HTTPException
@@ -388,6 +433,85 @@ class TestWebhookSourceHandle:
                 _run(src.handle(FakeReq()))
         assert exc.value.status_code == 503
         dispatch.assert_not_called()
+
+
+# ============================================================================
+# WebhookSource.handle_get — provider subscription handshakes
+# ============================================================================
+
+
+class TestWebhookSourceHandleGet:
+    """A source may answer a GET handshake with its own Response body.
+
+    Providers verify webhook ownership before delivering anything, and the
+    expected reply is provider-specific (Meta echoes ``hub.challenge`` as
+    text/plain). The router's fixed JSON body cannot express that, so the
+    source owns the response.
+    """
+
+    def test_default_declines(self):
+        """The base implementation returns None so existing sources are
+        untouched -- the router then falls through to handle()."""
+        from services.events import WebhookSource
+
+        class Bare(WebhookSource):
+            type = "bare.hook"
+            path = "bare"
+
+        class FakeReq:
+            method = "GET"
+            headers = {}
+            query_params = {}
+
+        assert _run(Bare().handle_get(FakeReq())) is None
+
+    def test_override_can_return_plain_text(self):
+        """A source that overrides it controls status, body and media type."""
+        from fastapi.responses import PlainTextResponse
+
+        from services.events import WebhookSource
+
+        class Echoing(WebhookSource):
+            type = "echo.hook"
+            path = "echo"
+
+            async def handle_get(self, request):
+                challenge = request.query_params.get("hub.challenge")
+                if challenge is None:
+                    return None
+                return PlainTextResponse(challenge)
+
+        class FakeReq:
+            method = "GET"
+            headers = {}
+            query_params = {"hub.challenge": "1158201444"}
+
+        resp = _run(Echoing().handle_get(FakeReq()))
+        assert resp.status_code == 200
+        # Meta requires the bare challenge value, not a JSON wrapper.
+        assert resp.body == b"1158201444"
+        assert resp.media_type == "text/plain"
+
+    def test_override_may_still_decline(self):
+        """Returning None from an override falls through to handle()."""
+        from fastapi.responses import PlainTextResponse
+
+        from services.events import WebhookSource
+
+        class Echoing(WebhookSource):
+            type = "echo.hook"
+            path = "echo"
+
+            async def handle_get(self, request):
+                challenge = request.query_params.get("hub.challenge")
+                return PlainTextResponse(challenge) if challenge else None
+
+        class FakeReq:
+            method = "GET"
+            headers = {}
+            query_params = {}
+
+        assert _run(Echoing().handle_get(FakeReq())) is None
 
 
 # ============================================================================
