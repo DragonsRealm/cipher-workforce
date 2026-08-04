@@ -380,25 +380,36 @@ async def _journal_llm_turn(
     operation_id = str(payload.get("journal_operation_id") or "")
     if not ref_data or not operation_id:
         return
-    store = _context_store()
-    ref = _context_ref(ref_data)
-    provider = str(payload.get("provider") or "")
-    ref = await _append_event(
-        store,
-        ref,
-        event_type="request.snapshot",
-        operation_id=f"{operation_id}:request",
-        provider=provider,
-        payload_ref=await store.put_blob({"messages": sent}),
-    )
-    await _append_event(
-        store,
-        ref,
-        event_type="message.assistant",
-        operation_id=f"{operation_id}:assistant",
-        provider=provider,
-        message_wire_v2=assistant_wire,
-    )
+    try:
+        store = _context_store()
+        ref = _context_ref(ref_data)
+        provider = str(payload.get("provider") or "")
+        ref = await _append_event(
+            store,
+            ref,
+            event_type="request.snapshot",
+            operation_id=f"{operation_id}:request",
+            provider=provider,
+            payload_ref=await store.put_blob({"messages": sent}),
+        )
+        await _append_event(
+            store,
+            ref,
+            event_type="message.assistant",
+            operation_id=f"{operation_id}:assistant",
+            provider=provider,
+            message_wire_v2=assistant_wire,
+        )
+    except Exception:
+        # Observation must never fail the run. The provider has already been
+        # called and billed by this point, so raising here would fail the turn
+        # — and, for a team lead, stall its next delegation — over a bookkeeping
+        # write. A thread fenced by Reset or an archived epoch is exactly the
+        # expected case: the agent keeps going, the journal just misses a turn.
+        activity.logger.warning(
+            "Context journal write failed; execution continues",
+            exc_info=True,
+        )
 
 
 @activity.defn(name="agent.execute_llm_step")
@@ -2130,11 +2141,7 @@ async def _append_event(
     return result.ref
 @activity.defn(name="agent.prepare_context")
 async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Resolve one Context thread and persist the exact runtime snapshot."""
-
-    from core.container import container
-    from services.llm.protocol import Message, message_to_wire
-    from services.temporal.agent_activities import prepare_agent_payload
+    """Resolve the Context thread this agent journals into. Read-only."""
 
     context = dict(payload.get("context") or payload)
     workflow_id = str(context.get("workflow_id") or "")
@@ -2154,67 +2161,15 @@ async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     context["generation"] = generation
     context["graphVersion"] = graph_version
 
-    # Reuse the canonical backend preparation path.  Its result contains no
-    # credential; provider keys are resolved afresh inside each LLM activity.
-    prepared = dict(await prepare_agent_payload(context))
-    prepared.pop("api_key", None)
-    # The first edge-walker slot is Context in V2, not legacy Markdown memory.
-    prepared["memory_node_id"] = ""
-    prepared["memory_content"] = ""
-    prepared["memory_window_size"] = 0
-    worker_pool_enabled = context.get(
-        "temporal_worker_pool_enabled",
-        True,
-    ) is not False
-    for tool in prepared.get("tools") or []:
-        tool["dispatch_task_queue"] = (
-            str(tool.get("task_queue") or "machina-default")
-            if worker_pool_enabled
-            else ""
-        )
-    _validate_unique_tool_names(
-        prepared.get("tools") or [],
-        phase="prepare",
-    )
-
-    database = container.database()
-    policy = await database.get_node_parameters(context_node_id) or {}
-    operation_id = str(
-        payload.get("operation_id")
-        or f"context-v2:{workflow_id}:{context.get('node_id')}:prepare"
-    )
-    runtime_snapshot = {
-        "protocol": "agent-context-v2",
-        "workflow_id": workflow_id,
-        "generation": generation,
-        "graph_version": graph_version,
-        "context_node_id": context_node_id,
-        "agent_node_id": str(context.get("node_id") or ""),
-        "prepared": _strip_credentials(prepared),
-        "context_policy": _strip_credentials(policy),
-        # Canvas-aware tools load this inside an activity.  It never enters
-        # Temporal history or ordinary workflow outputs.
-        "source_context": _strip_credentials(
-            {
-                "nodes": context.get("nodes") or [],
-                "edges": context.get("edges") or [],
-                "workspace_dir": context.get("workspace_dir") or "",
-                "session_id": context.get("session_id"),
-                "execution_id": context.get("execution_id"),
-                "root_execution_id": context.get("root_execution_id"),
-                "data_scope_id": context.get("data_scope_id"),
-                "generation": generation,
-                "user_id": context.get("user_id"),
-                "delegated_task_id": (
-                    _thread_inputs(context).get("delegated_task_id")
-                ),
-                "delegation_depth": context.get("delegation_depth", 0),
-                "team_id": context.get("team_id"),
-            }
-        ),
-        "operation_prefix": operation_id.rsplit(":prepare", 1)[0],
-    }
-
+    # This activity resolves a thread and nothing else.
+    #
+    # It used to call ``prepare_agent_payload`` a second time to build a
+    # runtime snapshot. That function is NOT a pure read — for a team lead it
+    # calls ``get_or_create_execution_team``, so attaching a Context node made
+    # the whole team-creation path run twice per turn and interfered with
+    # multi-agent delegation. Nothing consumed the snapshot either: the LLM
+    # step builds its request from ``messages``, and the workflow reads only
+    # ``context_ref`` from this result.
     store = _context_store()
     thread = await store.resolve_thread(
         workflow_id=workflow_id,
@@ -2222,34 +2177,15 @@ async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         generation=generation,
         **_thread_inputs(context),
     )
-    # The runtime configuration is machinery, not context: it carries the
-    # whole canvas graph, node positions, execution/team identifiers and
-    # routing flags. It stays addressable through ``runtime_config_ref``,
-    # which the LLM and append activities receive directly — it is NOT a
-    # journal event. Pointing ``request.snapshot`` at it put several hundred
-    # lines of scaffolding into the operator's view of the conversation, and
-    # broke reconstruction as well: that reader expects a snapshot payload to
-    # contain ``messages`` (services/agent_context/runtime.py), found a config
-    # blob instead, and silently skipped the boundary.
-    runtime_config_ref = await store.put_blob(runtime_snapshot)
-    # Nothing is journalled here. This activity runs BEFORE the request exists,
-    # so anything it wrote would be a reconstruction from configuration rather
-    # than a record of what was sent — which is how the journal came to hold a
+    # Nothing is journalled here either. This runs BEFORE the request exists,
+    # so anything written would be assembled from configuration rather than
+    # recorded from what was sent — which is how the journal came to hold a
     # fabricated request, the system prompt typed as a tool result, and the
     # user's prompt twice. ``agent.execute_llm_step`` journals each turn from
     # the exact message list it hands to ``ChatUnifier.chat``.
+    return {"context_ref": _ref_dict(thread)}
 
-    return {
-        "context_ref": _ref_dict(thread),
-        "runtime_config_ref": runtime_config_ref,
-        "runtime_config_hash": _hash_from_ref(runtime_config_ref),
-        "max_iterations": max(1, int(prepared.get("max_iterations") or 1)),
-        "tool_identities": [
-            _tool_identity(tool)
-            for tool in prepared.get("tools") or []
-            if not tool.get("llm_hidden")
-        ],
-    }
+
 def _pending_tool_identities(
     calls: Iterable[Mapping[str, Any]],
     configured_tools: Iterable[Mapping[str, Any]],

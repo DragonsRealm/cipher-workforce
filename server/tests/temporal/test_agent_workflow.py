@@ -137,6 +137,35 @@ class TestContextJournalIdentity:
         step = inspect.getsource(agent_activities.execute_llm_step)
         assert "if payload.get(\"context_ref\")" not in step
 
+    def test_journal_failure_cannot_fail_the_run(self):
+        """Observation must never break execution.
+
+        The journal write happens after the provider has been called and
+        billed, so raising there fails the turn over a bookkeeping write — and
+        for a team lead, stalls its next delegation. A thread fenced by Reset
+        or an archived epoch is an expected condition, not an error.
+        """
+        import ast
+        import inspect
+
+        from services.temporal import agent_activities
+
+        fn = ast.parse(
+            inspect.getsource(agent_activities._journal_llm_turn)
+        ).body[0]
+        handlers = [
+            handler
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Try)
+            for handler in node.handlers
+        ]
+        assert handlers, "_journal_llm_turn must not let a write failure escape"
+        assert any(
+            h.type is None
+            or (isinstance(h.type, ast.Name) and h.type.id == "Exception")
+            for h in handlers
+        )
+
     def test_journal_records_the_exact_request_never_a_reconstruction(self):
         """The journal must record what was sent, not rebuild it.
 

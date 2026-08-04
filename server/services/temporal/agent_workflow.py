@@ -822,12 +822,6 @@ class AgentWorkflow:
             await self._wait_until_resumed()
             workflow.logger.info(f"AgentWorkflow iteration {iteration} " f"(messages={len(messages)} tools={len(tools)})")
 
-            # Commit anything produced since the last turn — tool results
-            # above all. Tools run through this workflow's own per-type and
-            # delegation paths, which never touch the journal, so without
-            # this the next reconstruction replays an assistant turn whose
-            # tool calls have no answers.
-
             # CloudEvents-shaped agent_progress per LLM turn. Mirrors the
             # the in-process agent loop's per-turn broadcast (RFC §6.4).
             # FE consumes the typed envelope and updates the canvas
@@ -1078,9 +1072,6 @@ class AgentWorkflow:
                         retry_policy=AGENT_ACTIVITY_RETRY,
                     )
                 await self._persist_turn(payload, human_text=user_prompt, assistant_text=final_content)
-                # The delta journaller runs at the TOP of each iteration, so
-                # the answer that ends the loop would never reach the journal
-                # without a final flush here.
                 break
 
             if kind != "tool_calls":
