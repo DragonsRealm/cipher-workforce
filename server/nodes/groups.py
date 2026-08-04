@@ -49,6 +49,15 @@ register_group(key="microsoft", metadata={"label": "Microsoft Graph", "icon": "l
 register_group(key="scheduler", metadata={"label": "Schedulers", "icon": "📅", "color": "#ff79c6", "visibility": "dev"})
 register_group(key="proxy", metadata={"label": "Proxy", "icon": "🛡", "color": "#bd93f9", "visibility": "dev"})
 register_group(key="whatsapp", metadata={"label": "WhatsApp", "icon": "💬", "color": "#25D366", "visibility": "dev"})
+# Separate from "whatsapp" above deliberately. That group is the unofficial
+# personal-account bridge; this is Meta's sanctioned Business Platform. Same
+# product name, different auth model, different capabilities and different
+# failure modes -- merging them into one palette section makes it impossible
+# to tell which node you are dragging.
+register_group(
+    key="whatsapp_cloud",
+    metadata={"label": "WhatsApp Business", "icon": "💼", "color": "#128C7E", "visibility": "normal"},
+)
 register_group(key="email", metadata={"label": "Email", "icon": "✉️", "color": "#8be9fd", "visibility": "dev"})
 register_group(key="payments", metadata={"label": "Payments", "icon": "asset:stripe", "color": "#635BFF", "visibility": "dev"})
 register_group(key="deployment", metadata={"label": "Deployment", "icon": "lobehub:Vercel", "color": "#666666", "visibility": "dev"})

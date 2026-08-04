@@ -32,6 +32,8 @@
     "telegramSend",
     "telegramReceive",
 
+    "whatsappCloudSend",
+
     "airplaneModeControl",
     "appLauncher",
     "appList",
