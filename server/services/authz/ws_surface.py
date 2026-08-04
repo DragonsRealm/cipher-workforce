@@ -22,7 +22,7 @@ being a silent privilege grant.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 #: Everything the activity worker legitimately needs. Both execute
 #: handlers already carry their own ``/ws/internal`` identity branch.
@@ -51,4 +51,32 @@ def resolve_internal_handler(
     return resolver(msg_type)
 
 
-__all__ = ["INTERNAL_SOCKET_HANDLERS", "resolve_internal_handler"]
+def execution_principal(data: Mapping[str, Any], websocket: Any) -> str:
+    """Resolve the identity an execution runs as.
+
+    One implementation for every execute handler. They previously had three
+    slightly different copies: two honoured a payload-supplied ``user_id``
+    on the internal worker socket and one did not, so the same request
+    executed as a different principal depending on which handler received
+    it.
+
+    A payload-supplied ``user_id`` is trusted ONLY on ``/ws/internal``,
+    where the sender is a Temporal activity relaying identity that was
+    minted server-side at deploy time. On any authenticated socket the
+    handshake identity wins and the payload is ignored.
+    """
+    from constants import OWNER_PRINCIPAL_ID
+
+    scope = getattr(websocket, "scope", {}) or {}
+    if str(scope.get("path") or "") == "/ws/internal":
+        candidate = data.get("user_id")
+    else:
+        candidate = getattr(getattr(websocket, "state", None), "user_id", None)
+    return str(candidate or OWNER_PRINCIPAL_ID)
+
+
+__all__ = [
+    "INTERNAL_SOCKET_HANDLERS",
+    "execution_principal",
+    "resolve_internal_handler",
+]

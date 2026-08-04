@@ -125,6 +125,7 @@ class CronTriggerWorkflow:
         from services.temporal.trigger_listener_workflow import (
             event_workflow_search_attributes,
         )
+        from services.temporal.workflow import TEMPORAL_ROUTING_INPUT_KEY
 
         # A spawned run may execute — or stay cooperatively paused — for
         # months, and Temporal's timeout timer keeps ticking through a
@@ -152,6 +153,24 @@ class CronTriggerWorkflow:
                     "workflow_id": deployment_workflow_id,
                     "workflow_slug": workflow_slug,
                     "tenant_id": tenant_id,
+                    # Forward the deployer's identity and the frozen routing
+                    # snapshot. Omitting them made every cron firing run as
+                    # the anonymous owner AND fall back to the safe routing
+                    # default, silently bypassing per-queue rate limits.
+                    **{
+                        key: listener_data[key]
+                        for key in ("user_id", "graphVersion", "generation")
+                        if key in listener_data
+                    },
+                    **(
+                        {
+                            TEMPORAL_ROUTING_INPUT_KEY: listener_data[
+                                TEMPORAL_ROUTING_INPUT_KEY
+                            ]
+                        }
+                        if TEMPORAL_ROUTING_INPUT_KEY in listener_data
+                        else {}
+                    ),
                 }
             ],
             **child_options,

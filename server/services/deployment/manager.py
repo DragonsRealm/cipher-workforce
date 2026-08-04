@@ -778,6 +778,9 @@ class DeploymentManager:
         workflow_type_name = _POLLING_LISTENER_WORKFLOW_TYPE if is_polling else _PUSH_LISTENER_WORKFLOW_TYPE
         trigger_kind = "polling" if is_polling else self._trigger_kind_for(node_type)
 
+        from services.temporal.executor import (
+            capture_temporal_routing_input,
+        )
         from services.workflow_naming import node_label_slug
 
         trigger_label = node_label_slug(node)
@@ -785,9 +788,6 @@ class DeploymentManager:
         # workflow_id for tests / direct-call paths that bypass deploy.
         slug = state.workflow_slug or workflow_id
         listener_id = self._listener_workflow_id(slug, trigger_label)
-        from services.temporal.executor import (
-            capture_temporal_routing_input,
-        )
 
         # ``trigger_label`` flows into the per-firing run id
         # (``<slug>-<label>-<event_id>``) inside both child workflows so
@@ -972,6 +972,7 @@ class DeploymentManager:
         if state is None:
             raise RuntimeError(f"No deployment state for workflow {workflow_id}")
 
+        from services.temporal.executor import capture_temporal_routing_input
         from services.workflow_naming import node_label_slug
 
         trigger_label = node_label_slug(node)
@@ -991,6 +992,14 @@ class DeploymentManager:
             "nodes": state.nodes,
             "edges": state.edges,
             "session_id": state.session_id,
+            # Without this every cron-fired run executes as the anonymous
+            # owner, regardless of who deployed it. The sibling push/poll
+            # listener path has always carried it.
+            "user_id": state.user_id,
+            # Cron was the only one of four start sites not freezing the
+            # routing snapshot, so its runs fell back to the safe default
+            # (worker pool OFF) and silently bypassed per-queue rate limits.
+            **capture_temporal_routing_input(),
         }
 
         schedule_id = await create_cron_schedule(

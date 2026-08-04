@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-from uuid import uuid4
+from typing import Dict, Any
 
+from constants import OWNER_PRINCIPAL_ID
 from core.container import container
 from services.workflow import WorkflowService
 from services.status_broadcaster import get_status_broadcaster
@@ -12,103 +12,6 @@ from core.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/workflow", tags=["workflow"])
-
-
-class WorkflowExecutionRequest(BaseModel):
-    node_id: str
-    node_type: str
-    parameters: Dict[str, Any] = {}
-    nodes: List[Dict[str, Any]] = []
-    edges: List[Dict[str, Any]] = []
-    session_id: str = "default"
-    workflow_id: Optional[str] = None
-    execution_id: Optional[str] = None
-
-
-@router.post("/execute-node")
-async def execute_workflow_node(
-    request: WorkflowExecutionRequest, workflow_service: WorkflowService = Depends(lambda: container.workflow_service())
-):
-    """Execute a single node in a workflow with parameter resolution."""
-    logger.debug(f"[DEBUG ROUTER] Received execution request: node_id={request.node_id}, node_type={request.node_type}")
-    execution_id = request.execution_id or uuid4().hex
-
-    # Get broadcaster and send "executing" status
-    broadcaster = get_status_broadcaster()
-    await broadcaster.update_node_status(
-        node_id=request.node_id,
-        status="executing",
-        data={"node_type": request.node_type, "execution_id": execution_id},
-        workflow_id=request.workflow_id,
-    )
-
-    try:
-        result = await workflow_service.execute_node(
-            node_id=request.node_id,
-            node_type=request.node_type,
-            parameters=request.parameters,
-            nodes=request.nodes,
-            edges=request.edges,
-            session_id=request.session_id,
-            execution_id=execution_id,
-            workflow_id=request.workflow_id,
-        )
-        result.setdefault("execution_id", execution_id)
-
-        # Broadcast completion status based on result
-        if result.get("success"):
-            success_data = {
-                "node_type": request.node_type,
-                "execution_id": execution_id,
-                "execution_time": result.get("execution_time"),
-                "result": result.get("result"),
-            }
-            await broadcaster.update_node_status(
-                node_id=request.node_id,
-                status="success",
-                data=success_data,
-                workflow_id=request.workflow_id,
-            )
-            # Also broadcast the output
-            if result.get("result"):
-                raw_result = result.get("result")
-                correlated_output = (
-                    {**raw_result, "execution_id": execution_id}
-                    if isinstance(raw_result, dict)
-                    else {"result": raw_result, "execution_id": execution_id}
-                )
-                await broadcaster.update_node_output(
-                    node_id=request.node_id,
-                    output=correlated_output,
-                    workflow_id=request.workflow_id,
-                )
-        else:
-            await broadcaster.update_node_status(
-                node_id=request.node_id,
-                status="error",
-                data={
-                    "node_type": request.node_type,
-                    "execution_id": execution_id,
-                    "error": result.get("error"),
-                },
-                workflow_id=request.workflow_id,
-            )
-
-        return result
-
-    except Exception as e:
-        # Broadcast error status
-        await broadcaster.update_node_status(
-            node_id=request.node_id,
-            status="error",
-            data={
-                "node_type": request.node_type,
-                "execution_id": execution_id,
-                "error": str(e),
-            },
-            workflow_id=request.workflow_id,
-        )
-        raise
 
 
 @router.get("/node-output/{node_id}")
@@ -212,6 +115,10 @@ async def execute_node_for_temporal(
             session_id=context.get("session_id", "temporal"),
             execution_id=context.get("execution_id"),
             workflow_id=context.get("workflow_id"),
+            # The caller is a Temporal activity relaying an identity minted
+            # server-side at deploy time. Without this the node executes as
+            # the anonymous owner regardless of who deployed the workflow.
+            user_id=str(context.get("user_id") or OWNER_PRINCIPAL_ID),
             extras=invocation_extras or None,
         )
         logger.info(

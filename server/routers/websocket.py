@@ -463,15 +463,7 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
         )
         if key in data
     }
-    socket_path = str((getattr(websocket, "scope", {}) or {}).get("path") or "")
-    user_id = str(
-        (
-            data.get("user_id")
-            if socket_path == "/ws/internal"
-            else getattr(getattr(websocket, "state", None), "user_id", None)
-        )
-        or "owner"
-    )
+    user_id = execution_principal(data, websocket)
 
     await broadcaster.update_node_status(
         node_id,
@@ -962,10 +954,7 @@ async def handle_execute_workflow(data: Dict[str, Any], websocket: WebSocket) ->
             session_id=session_id,
             status_callback=status_callback,
             workflow_id=workflow_id,
-            user_id=str(
-                getattr(getattr(websocket, "state", None), "user_id", None)
-                or "owner"
-            ),
+            user_id=execution_principal(data, websocket),
         )
     finally:
         # Always release the active-run counter so the button never gets stuck
@@ -1007,15 +996,7 @@ async def handle_execute_ai_node(data: Dict[str, Any], websocket: WebSocket) -> 
     node_id, node_type = data["node_id"], data["node_type"]
     workflow_id = data.get("workflow_id")  # Per-workflow isolation for tool node glowing
     execution_id = str(data.get("execution_id") or uuid.uuid4().hex)
-    socket_path = str((getattr(websocket, "scope", {}) or {}).get("path") or "")
-    user_id = str(
-        (
-            data.get("user_id")
-            if socket_path == "/ws/internal"
-            else getattr(getattr(websocket, "state", None), "user_id", None)
-        )
-        or "owner"
-    )
+    user_id = execution_principal(data, websocket)
 
     await broadcaster.update_node_status(node_id, "executing", {"execution_id": execution_id}, workflow_id=workflow_id)
     await broadcaster.workflow_run_started(workflow_id)
@@ -1451,7 +1432,7 @@ async def handle_refresh_model_registry(data: Dict[str, Any], websocket: WebSock
 from services.ws_handler_registry import get_ws_handlers
 
 
-from services.authz import resolve_internal_handler  # noqa: E402
+from services.authz import execution_principal, resolve_internal_handler  # noqa: E402
 
 
 def _resolve_handler(msg_type: str):
