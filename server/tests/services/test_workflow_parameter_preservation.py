@@ -225,6 +225,54 @@ async def test_repeated_reads_are_stable(patched_handlers):
 
 
 @pytest.mark.asyncio
+async def test_failed_deploy_validation_does_not_rekey_parameters(recording_db, monkeypatch):
+    """A rejected deploy must leave node configuration untouched.
+
+    The rekey ran before the validation gate, so a deploy that failed
+    validation had already renamed parameter rows to canonical ids and deleted
+    the originals — while the stored graph kept its old ids. The next read
+    looked up ids that no longer existed and the configuration was gone.
+    """
+    import core.container
+    from services.deployment import handlers as deployment_handlers
+
+    workflow_service = MagicMock()
+    workflow_service.is_workflow_deployed = MagicMock(return_value=False)
+    container_stub = MagicMock()
+    container_stub.database.return_value = recording_db
+    container_stub.workflow_service.return_value = workflow_service
+    monkeypatch.setattr(core.container, "container", container_stub)
+
+    broadcaster_stub = types.ModuleType("services.status_broadcaster")
+    broadcaster_stub.get_status_broadcaster = lambda: MagicMock()
+    monkeypatch.setitem(sys.modules, "services.status_broadcaster", broadcaster_stub)
+
+    import services.workflow_validator as validator_module
+
+    monkeypatch.setattr(
+        validator_module,
+        "validate_workflow",
+        AsyncMock(return_value={"errors": [{"code": "BROKEN"}], "warnings": []}),
+    )
+
+    await recording_db.save_node_parameters("legacy-node", {"prompt": "keep me"})
+
+    result = await deployment_handlers.handle_deploy_workflow(
+        {
+            "workflow_id": "1",
+            "nodes": [{"id": "legacy-node", "type": "console", "position": {"x": 0, "y": 0}, "data": {}}],
+            "edges": [],
+        },
+        _caller(),
+    )
+
+    assert result["success"] is False
+    assert result["error"] == "validation_failed"
+    assert recording_db.deleted_parameter_ids == []
+    assert await recording_db.get_node_parameters("legacy-node") == {"prompt": "keep me"}
+
+
+@pytest.mark.asyncio
 async def test_save_preserves_description(patched_handlers):
     """Saving nulled the description because the kwarg was never passed."""
     handlers = patched_handlers.handlers

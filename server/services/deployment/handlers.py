@@ -103,61 +103,31 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
     from services.workflow_migrations import normalize_workflow_graph
     from services.workflow_sanitizer import sanitize_workflow_graph
 
-    generation = int(data.get("generation") or 0)
-    if "graphVersion" in data:
-        requested_graph_version = int(data.get("graphVersion") or 0)
-    elif "graph_version" in data:
-        requested_graph_version = int(data.get("graph_version") or 0)
-    else:
-        requested_graph_version = 0
-    context_v2 = generation > 0 and requested_graph_version >= 2
-
     parameters_by_id = data.get("parameters_by_id")
     if not isinstance(parameters_by_id, dict):
         parameters_by_id = await load_node_parameters(
             container.database(),
             nodes,
         )
-    if context_v2:
-        normalization = normalize_workflow_graph(
-            str(workflow_id or ""),
-            nodes,
-            edges,
-            parameters_by_id,
-        )
-        safe_graph = sanitize_workflow_graph(normalization.graph_data())
-        nodes = list(safe_graph["nodes"])
-        edges = list(safe_graph["edges"])
-        normalized_parameters = normalization.node_parameters
-        migration_warnings = normalization.warnings
-        await import_legacy_context_receipts(
-            container.database(),
-            normalization.state_imports,
-        )
-        await persist_parameter_aliases(
-            container.database(),
-            aliases=normalization.aliases,
-            parameters=normalized_parameters,
-        )
-        graph_version = normalization.graph_version
-        graph_aliases = normalization.aliases
-    else:
-        # Generation zero is reserved for migration artifacts, and existing
-        # controlled V1 generations must replay their immutable topology.
-        safe_graph = sanitize_workflow_graph(
-            {"graphVersion": 0, "nodes": nodes, "edges": edges}
-        )
-        nodes = list(safe_graph["nodes"])
-        edges = list(safe_graph["edges"])
-        normalized_parameters = {
-            str(node_id): dict(value or {})
-            for node_id, value in parameters_by_id.items()
-        }
-        migration_warnings = []
-        graph_version = 0
-        graph_aliases = {}
-    if migration_warnings:
-        logger.warning("[Deploy] %s", "; ".join(migration_warnings))
+
+    normalization = normalize_workflow_graph(
+        str(workflow_id or ""),
+        nodes,
+        edges,
+        parameters_by_id,
+    )
+    safe_graph = sanitize_workflow_graph(normalization.graph_data())
+    nodes = list(safe_graph["nodes"])
+    edges = list(safe_graph["edges"])
+    normalized_parameters = normalization.node_parameters
+    await import_legacy_context_receipts(
+        container.database(),
+        normalization.state_imports,
+    )
+    graph_version = normalization.graph_version
+    graph_aliases = normalization.aliases
+    if normalization.warnings:
+        logger.warning("[Deploy] %s", "; ".join(normalization.warnings))
     session_id = data.get("session_id", "default")
 
     logger.debug(f"[Deploy] Received {len(edges)} edges for workflow {workflow_id}")
@@ -189,7 +159,7 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
         nodes=nodes,
         edges=edges,
         parameters_by_id=normalized_parameters,
-        enforce_context=context_v2,
+        enforce_context=True,
     )
     if deploy_report["errors"]:
         return {
@@ -197,6 +167,16 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
             "error": "validation_failed",
             "report": deploy_report,
         }
+
+    # Rekey parameter rows onto canonical ids only after the graph is admitted.
+    # Running this before the gate orphaned configuration on a failed deploy:
+    # the rows were renamed and the originals deleted, while the stored graph
+    # kept its old ids, so the next read looked up ids that no longer existed.
+    await persist_parameter_aliases(
+        container.database(),
+        aliases=graph_aliases,
+        parameters=normalized_parameters,
+    )
 
     if workflow_service.is_workflow_deployed(workflow_id):
         status = workflow_service.get_deployment_status(workflow_id)
@@ -361,7 +341,7 @@ async def handle_deploy_workflow(data: Dict[str, Any], websocket: WebSocket) -> 
             "edges": edges,
         },
         "aliases": graph_aliases,
-        "migration_warnings": migration_warnings,
+        "migration_warnings": normalization.warnings,
     }
 
 
