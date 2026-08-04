@@ -54,7 +54,7 @@ register_group(key="whatsapp", metadata={"label": "WhatsApp", "icon": "💬", "c
 # failure modes -- merging them into one palette section makes it impossible
 # to tell which node you are dragging.
 register_group(
-    key="whatsapp_cloud",
+    key="whatsapp_business",
     metadata={"label": "WhatsApp Business", "icon": "💼", "color": "#128C7E", "visibility": "normal"},
 )
 register_group(key="email", metadata={"label": "Email", "icon": "✉️", "color": "#8be9fd", "visibility": "dev"})

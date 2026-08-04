@@ -1,4 +1,4 @@
-"""whatsappCloudSend — send a message via Meta's WhatsApp Cloud API."""
+"""whatsappBusinessSend — send a message via Meta's WhatsApp Cloud API."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.plugin import ActionNode, NodeContext, NodeUserError, Operation, TaskQueue
 
 from ._base import graph_post, normalize_recipient, resolve_phone_number_id
-from ._credentials import WhatsAppCloudCredential
+from ._credentials import WhatsAppBusinessCredential
 
 # Meta's documented ceiling for a text body. Longer bodies are rejected
 # outright rather than truncated: silently dropping the tail of an outbound
@@ -17,7 +17,7 @@ from ._credentials import WhatsAppCloudCredential
 _MAX_TEXT_BODY = 4096
 
 
-class WhatsAppCloudSendParams(BaseModel):
+class WhatsAppBusinessSendParams(BaseModel):
     """Operator configuration, persisted on the node."""
 
     to: str = Field(
@@ -60,7 +60,7 @@ class WhatsAppCloudSendParams(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class WhatsAppCloudSendOutput(BaseModel):
+class WhatsAppBusinessSendOutput(BaseModel):
     message_id: Optional[str] = None
     to: Optional[str] = None
     wa_id: Optional[str] = None
@@ -72,14 +72,14 @@ class WhatsAppCloudSendOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class WhatsAppCloudSendNode(ActionNode):
-    type = "whatsappCloudSend"
-    display_name = "WhatsApp Send (Business API)"
+class WhatsAppBusinessSendNode(ActionNode):
+    type = "whatsappBusinessSend"
+    display_name = "WhatsApp Business Send"
     subtitle = "Cloud API"
-    group = ("whatsapp_cloud", "tool")
+    group = ("whatsapp_business", "tool")
     description = "Send a WhatsApp message through Meta's official Cloud API"
     component_kind = "square"
-    tool_name = "whatsapp_cloud_send"
+    tool_name = "whatsapp_business_send"
     tool_description = (
         "Send a WhatsApp text message to a phone number using the official "
         "WhatsApp Business Cloud API. Only works if the recipient messaged the "
@@ -90,7 +90,7 @@ class WhatsAppCloudSendNode(ActionNode):
         {"name": "input-main", "kind": "input", "position": "left", "label": "Input", "role": "main"},
         {"name": "output-main", "kind": "output", "position": "right", "label": "Output", "role": "main"},
     )
-    credentials = (WhatsAppCloudCredential,)
+    credentials = (WhatsAppBusinessCredential,)
     annotations = {"destructive": False, "readonly": False, "open_world": True}
     task_queue = TaskQueue.MESSAGING
     usable_as_tool = True
@@ -100,15 +100,15 @@ class WhatsAppCloudSendNode(ActionNode):
     # silently inert (BaseNode.execute_as_tool short-circuits before reading
     # them), so declaring them would advertise a protection that does not
     # exist. Fields the model must not control are kept out of Params instead.
-    Params = WhatsAppCloudSendParams
-    Output = WhatsAppCloudSendOutput
+    Params = WhatsAppBusinessSendParams
+    Output = WhatsAppBusinessSendOutput
 
-    @Operation("send_text", cost={"service": "whatsapp_cloud", "action": "send_text", "count": 1})
+    @Operation("send_text", cost={"service": "whatsapp_business", "action": "send_text", "count": 1})
     async def send_text(
         self,
         ctx: NodeContext,
-        params: WhatsAppCloudSendParams,
-    ) -> WhatsAppCloudSendOutput:
+        params: WhatsAppBusinessSendParams,
+    ) -> WhatsAppBusinessSendOutput:
         recipient = normalize_recipient(params.to)
         body = params.text or ""
         if not body.strip():
@@ -145,7 +145,7 @@ class WhatsAppCloudSendNode(ActionNode):
         contacts: List[Dict[str, Any]] = result.get("contacts") or []
         first = messages[0] if messages else {}
 
-        return WhatsAppCloudSendOutput(
+        return WhatsAppBusinessSendOutput(
             message_id=first.get("id"),
             message_status=first.get("message_status"),
             to=recipient,
@@ -155,7 +155,7 @@ class WhatsAppCloudSendNode(ActionNode):
 
 
 __all__ = [
-    "WhatsAppCloudSendNode",
-    "WhatsAppCloudSendOutput",
-    "WhatsAppCloudSendParams",
+    "WhatsAppBusinessSendNode",
+    "WhatsAppBusinessSendOutput",
+    "WhatsAppBusinessSendParams",
 ]

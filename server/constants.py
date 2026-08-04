@@ -354,6 +354,8 @@ EVENT_TRIGGER_TYPES: FrozenSet[str] = frozenset(
     [
         "webhookTrigger",
         "whatsappReceive",
+        "whatsappBusinessReceive",
+        "whatsappBusinessStatus",
         "twitterReceive",
         "workflowTrigger",
         "chatTrigger",
@@ -394,6 +396,12 @@ WORKFLOW_TRIGGER_TYPES: FrozenSet[str] = frozenset(
         # Event-driven triggers
         "webhookTrigger",
         "whatsappReceive",
+        # Omitting a trigger here is a silent failure, not an error:
+        # find_trigger_nodes filters on this set, so deploy simply ignores
+        # the node -- no listener, no warning. It is why stripeReceive is
+        # canvas-only today.
+        "whatsappBusinessReceive",
+        "whatsappBusinessStatus",
         "workflowTrigger",
         "chatTrigger",
         "taskTrigger",
