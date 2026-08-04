@@ -28,7 +28,7 @@ GRAPH_BASE_URL = "https://graph.facebook.com"
 # v23.0), so do not infer the current version from any single sample page.
 GRAPH_API_VERSION = "v25.0"
 
-CREDENTIAL_ID = "whatsapp_cloud"
+CREDENTIAL_ID = "whatsapp_business"
 
 
 # --------------------------------------------------------------------------
@@ -222,12 +222,11 @@ async def resolve_phone_number_id(ctx: NodeContext) -> str:
     """
     from services.plugin.deps import get_auth_service
 
-    stored = await get_auth_service().get_api_key("whatsapp_cloud_phone_number_id")
+    stored = await get_auth_service().get_api_key("whatsapp_business_phone_number_id")
     if not stored:
         raise NodeUserError(
             "No WhatsApp business phone number is configured. Add the Phone "
-            "Number ID to the WhatsApp Business (Meta) credential, or set it "
-            "on this node."
+            "Number ID to the WhatsApp Business credential."
         )
     return str(stored).strip()
 

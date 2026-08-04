@@ -4,7 +4,7 @@ Distinct from the ``whatsapp`` credential in ``nodes/whatsapp/``, which pairs
 a *personal* account over an unofficial Go bridge. Same product name, wholly
 different auth model, so they are separate ids and separate catalogue entries.
 
-The brand icon must live beside this file as ``whatsapp_cloud.svg`` --
+The brand icon must live beside this file as ``whatsapp_business.svg`` --
 ``Credential.get_icon_path`` resolves ``<cls.id>.svg`` co-located with the
 class, and nothing else is consulted.
 """
@@ -16,7 +16,7 @@ import httpx
 from services.plugin.credential import ApiKeyCredential, ProbeResult
 
 
-class WhatsAppCloudCredential(ApiKeyCredential):
+class WhatsAppBusinessCredential(ApiKeyCredential):
     """Graph API bearer token plus the fields the webhook and API need.
 
     ``apiKey`` is deliberately **not** required at the catalogue level. The
@@ -26,21 +26,21 @@ class WhatsAppCloudCredential(ApiKeyCredential):
     token.
     """
 
-    id = "whatsapp_cloud"
-    display_name = "WhatsApp Business (Meta)"
+    id = "whatsapp_business"
+    display_name = "WhatsApp Business"
     category = "Social"
     key_name = "Authorization"
     key_location = "bearer"
     extra_fields = (
         # HMAC key for X-Hub-Signature-256. This is the Meta *App Secret*,
         # not a per-webhook secret -- Meta issues no per-endpoint secret.
-        "whatsapp_cloud_app_secret",
+        "whatsapp_business_app_secret",
         # Echoed back during the GET subscription handshake.
-        "whatsapp_cloud_verify_token",
+        "whatsapp_business_verify_token",
         # Needed to list phone numbers and message templates.
-        "whatsapp_cloud_waba_id",
+        "whatsapp_business_waba_id",
         # The business phone number messages are sent FROM.
-        "whatsapp_cloud_phone_number_id",
+        "whatsapp_business_phone_number_id",
     )
     docs_url = "https://developers.facebook.com/documentation/business-messaging/whatsapp/get-started"
 
@@ -56,7 +56,7 @@ class WhatsAppCloudCredential(ApiKeyCredential):
         from services.plugin.deps import get_auth_service
 
         auth = get_auth_service()
-        waba_id = await auth.get_api_key("whatsapp_cloud_waba_id")
+        waba_id = await auth.get_api_key("whatsapp_business_waba_id")
         if not waba_id:
             return ProbeResult(
                 valid=False,
@@ -115,4 +115,4 @@ class WhatsAppCloudCredential(ApiKeyCredential):
         )
 
 
-__all__ = ["WhatsAppCloudCredential"]
+__all__ = ["WhatsAppBusinessCredential"]
