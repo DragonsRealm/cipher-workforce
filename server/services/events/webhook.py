@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from typing import ClassVar, Dict, Optional, Type
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 
 from core.logging import get_logger
 
@@ -72,6 +72,21 @@ class WebhookSource(PushEventSource):
             data=payload,
         )
 
+    async def handle_get(self, request: Request) -> Optional[Response]:
+        """Answer a provider's subscription handshake.
+
+        Several providers verify webhook ownership with a ``GET`` before
+        they will deliver anything: Meta echoes ``hub.challenge`` as
+        ``text/plain``, and others use their own challenge shapes. Those
+        responses are not the router's fixed JSON body, so the source has
+        to own them.
+
+        Return ``None`` (the default) to decline, in which case the router
+        falls through to the normal :meth:`handle` path — so every source
+        that does not override this behaves exactly as before.
+        """
+        return None
+
     async def handle(self, request: Request) -> WorkflowEvent:
         """Called by the webhook router. Verifies signature, parses the
         body, shapes the event, dispatches into ``event_waiter``, and
@@ -107,5 +122,11 @@ class WebhookSource(PushEventSource):
 
         from services import event_waiter
 
-        event_waiter.dispatch(self.type, event)
+        # Pass the envelope alone. The two-argument form is
+        # ``(event_type: str, data: Dict)``, so handing a WorkflowEvent as
+        # the second argument made ``data`` the envelope itself and every
+        # ``data.get(...)`` in the dispatcher raised AttributeError as soon
+        # as a waiter was active. ``_unpack_event`` already unwraps a
+        # WorkflowEvent into ``(type, data)`` on its own.
+        event_waiter.dispatch(event)
         return event

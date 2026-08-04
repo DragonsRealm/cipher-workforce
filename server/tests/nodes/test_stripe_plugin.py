@@ -96,9 +96,13 @@ class TestStripeWebhookShape:
             ev = _run(src.handle(req))
         assert ev.type == "stripe.charge.succeeded"
         dispatch.assert_called_once()
-        ev_type, dispatched = dispatch.call_args[0]
-        assert ev_type == "stripe.webhook"
+        # Dispatched as a lone envelope: the two-argument form means
+        # ``(event_type, data)``, so passing the event second made ``data``
+        # the envelope and the dispatcher's ``data.get(...)`` calls raised
+        # AttributeError once a waiter was active.
+        (dispatched,) = dispatch.call_args[0]
         assert dispatched.id == "evt_2"
+        assert dispatched.type == "stripe.charge.succeeded"
 
     def test_handle_rejects_tampered_signature(self):
         from fastapi import HTTPException
