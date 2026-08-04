@@ -1,530 +1,382 @@
 {
-  "id": "7dc7798e291a4750a113fa303437b670",
+  "id": "1",
   "name": "AI Assistant",
   "slug": "AI_Assistant_1",
   "nodes": [
     {
-      "id": "chatTrigger-17842180572670-160ec5",
-      "type": "chatTrigger",
+      "id": "1:chatTrigger:1",
       "position": {
         "x": 940,
         "y": 480
       },
+      "type": "chatTrigger",
       "data": {
         "label": "Chat Trigger"
       },
       "width": 69,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 940,
-        "y": 480
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "console-17842180572671-160ec5",
-      "type": "console",
+      "id": "1:console:1",
       "position": {
         "x": 1720,
         "y": 520
       },
+      "type": "console",
       "data": {
         "label": "Console"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1720,
-        "y": 520
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "simpleMemory-17842180572672-160ec5",
-      "type": "simpleMemory",
+      "id": "1:simpleMemory:1",
       "position": {
-        "x": 1120,
+        "x": 1340,
         "y": 740
       },
+      "type": "simpleMemory",
       "data": {
         "label": "Simple Memory"
       },
       "width": 87,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1120,
-        "y": 740
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "writeTodos-17842180572673-160ec5",
-      "type": "writeTodos",
+      "id": "1:writeTodos:1",
       "position": {
         "x": 1440,
         "y": 740
       },
+      "type": "writeTodos",
       "data": {
         "label": "Write Todos"
       },
       "width": 66,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1440,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "duckduckgoSearch-17842180572674-160ec5",
-      "type": "duckduckgoSearch",
+      "id": "1:duckduckgoSearch:1",
       "position": {
         "x": 1520,
         "y": 740
       },
+      "type": "duckduckgoSearch",
       "data": {
         "label": "DuckDuckGo Search"
       },
       "width": 116,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1520,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "browser-17842180572675-160ec5",
-      "type": "browser",
+      "id": "1:browser:1",
       "position": {
         "x": 1660,
         "y": 740
       },
+      "type": "browser",
       "data": {
         "label": "Browser"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1660,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fileRead-17842180572676-160ec5",
-      "type": "fileRead",
+      "id": "1:fileRead:1",
       "position": {
         "x": 1960,
         "y": 740
       },
+      "type": "fileRead",
       "data": {
         "label": "File Read"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1960,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fileModify-17842180572677-160ec5",
-      "type": "fileModify",
+      "id": "1:fileModify:1",
       "position": {
         "x": 2060,
         "y": 740
       },
+      "type": "fileModify",
       "data": {
         "label": "File Modify"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2060,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "shell-17842180572678-160ec5",
-      "type": "shell",
+      "id": "1:shell:1",
       "position": {
         "x": 1860,
         "y": 740
       },
+      "type": "shell",
       "data": {
         "label": "Shell"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1860,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fsSearch-17842180572679-160ec5",
-      "type": "fsSearch",
+      "id": "1:fsSearch:1",
       "position": {
         "x": 1760,
         "y": 740
       },
+      "type": "fsSearch",
       "data": {
         "label": "FS Search"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1760,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "processManager-178421805726710-160ec5",
-      "type": "processManager",
+      "id": "1:processManager:1",
       "position": {
         "x": 2140,
         "y": 740
       },
+      "type": "processManager",
       "data": {
         "label": "Process Manager"
       },
       "width": 98,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2140,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "pythonExecutor-178421805726711-160ec5",
-      "type": "pythonExecutor",
+      "id": "1:pythonExecutor:1",
       "position": {
         "x": 2260,
         "y": 740
       },
+      "type": "pythonExecutor",
       "data": {
         "label": "Python Executor"
       },
       "width": 93,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2260,
-        "y": 740
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "aiAgent-178421805726712-160ec5",
-      "type": "aiAgent",
+      "id": "1:aiAgent:1",
       "position": {
         "x": 1220,
         "y": 400
       },
+      "type": "aiAgent",
       "data": {
         "label": "AI Agent"
       },
       "width": 300,
-      "height": 200,
-      "selected": false,
-      "dragging": false,
-      "positionAbsolute": {
-        "x": 1220,
-        "y": 400
-      }
+      "height": 200
     },
     {
-      "id": "telegramReceive-178421805726713-160ec5",
-      "type": "telegramReceive",
+      "id": "1:telegramReceive:1",
       "position": {
-        "x": 940,
+        "x": 920,
         "y": 340
       },
+      "type": "telegramReceive",
       "data": {
         "label": "Telegram Receive"
       },
       "width": 99,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 940,
-        "y": 340
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "telegramSend-178421805726714-160ec5",
-      "type": "telegramSend",
+      "id": "1:telegramSend:1",
       "position": {
         "x": 1700,
         "y": 380
       },
+      "type": "telegramSend",
       "data": {
         "label": "Telegram Send"
       },
       "width": 84,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1700,
-        "y": 380
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "masterSkill-178421805726715-160ec5",
-      "type": "masterSkill",
+      "id": "1:masterSkill:1",
       "position": {
         "x": 1240,
         "y": 740
       },
+      "type": "masterSkill",
       "data": {
         "label": "Master Skill"
       },
       "width": 67,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1240,
+      "height": 86
+    },
+    {
+      "id": "1:context:1",
+      "position": {
+        "x": 1140,
         "y": 740
       },
-      "dragging": true
+      "type": "context",
+      "data": {
+        "agentNodeId": "1:aiAgent:1",
+        "label": "Context",
+        "systemManaged": true
+      },
+      "width": 64,
+      "height": 86
     }
   ],
   "edges": [
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "chatTrigger-17842180572670-160ec5",
+      "id": "e-chatTrigger-17858586021790-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:chatTrigger:1",
       "sourceHandle": "output-main",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-main",
-      "id": "e-chatTrigger-17842180572670-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "simpleMemory-17842180572672-160ec5",
+      "id": "e-aiAgent-178585860217912-caa309-console-17858586021791-caa309-1785858602179-caa309",
+      "source": "1:aiAgent:1",
+      "sourceHandle": "output-main",
+      "target": "1:console:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-telegramReceive-178585860217913-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:telegramReceive:1",
+      "sourceHandle": "output-main",
+      "target": "1:aiAgent:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-aiAgent-178585860217912-caa309-telegramSend-178585860217914-caa309-1785858602179-caa309",
+      "source": "1:aiAgent:1",
+      "sourceHandle": "output-main",
+      "target": "1:telegramSend:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-masterSkill-178585860217915-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:masterSkill:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
-      "targetHandle": "input-memory",
-      "id": "e-simpleMemory-17842180572672-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
-    },
-    {
-      "type": "smoothstep",
-      "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "aiAgent-178421805726712-160ec5",
-      "sourceHandle": "output-main",
-      "target": "console-17842180572671-160ec5",
-      "targetHandle": "input-main",
-      "id": "e-aiAgent-178421805726712-160ec5-console-17842180572671-160ec5-1784218057267-160ec5",
-      "selected": false
-    },
-    {
-      "type": "smoothstep",
-      "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "telegramReceive-178421805726713-160ec5",
-      "sourceHandle": "output-main",
-      "target": "aiAgent-178421805726712-160ec5",
-      "targetHandle": "input-main",
-      "id": "e-telegramReceive-178421805726713-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
-    },
-    {
-      "type": "smoothstep",
-      "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "aiAgent-178421805726712-160ec5",
-      "sourceHandle": "output-main",
-      "target": "telegramSend-178421805726714-160ec5",
-      "targetHandle": "input-main",
-      "id": "e-aiAgent-178421805726712-160ec5-telegramSend-178421805726714-160ec5-1784218057267-160ec5",
-      "selected": false
-    },
-    {
-      "type": "smoothstep",
-      "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "masterSkill-178421805726715-160ec5",
-      "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-skill",
-      "id": "e-masterSkill-178421805726715-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "writeTodos-17842180572673-160ec5",
+      "id": "e-writeTodos-17858586021793-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:writeTodos:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-writeTodos-17842180572673-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fsSearch-17842180572679-160ec5",
+      "id": "e-fsSearch-17858586021799-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:fsSearch:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-fsSearch-17842180572679-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "shell-17842180572678-160ec5",
+      "id": "e-shell-17858586021798-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:shell:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-shell-17842180572678-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fileRead-17842180572676-160ec5",
+      "id": "e-fileRead-17858586021796-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:fileRead:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-fileRead-17842180572676-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fileModify-17842180572677-160ec5",
+      "id": "e-fileModify-17858586021797-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:fileModify:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-fileModify-17842180572677-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "pythonExecutor-178421805726711-160ec5",
+      "id": "e-pythonExecutor-178585860217911-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:pythonExecutor:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-pythonExecutor-178421805726711-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "processManager-178421805726710-160ec5",
+      "id": "e-processManager-178585860217910-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:processManager:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-processManager-178421805726710-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "duckduckgoSearch-17842180572674-160ec5",
+      "id": "e-duckduckgoSearch-17858586021794-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:duckduckgoSearch:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "e-duckduckgoSearch-17842180572674-160ec5-aiAgent-178421805726712-160ec5-1784218057267-160ec5",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "browser-17842180572675-160ec5",
+      "id": "e-browser-17858586021795-caa309-aiAgent-178585860217912-caa309-1785858602179-caa309",
+      "source": "1:browser:1",
       "sourceHandle": "output-tool",
-      "target": "aiAgent-178421805726712-160ec5",
+      "target": "1:aiAgent:1",
       "targetHandle": "input-tools",
-      "id": "reactflow__edge-browser-17842180572675-160ec5output-tool-aiAgent-178421805726712-160ec5input-tools",
-      "selected": false
+      "type": "smoothstep"
+    },
+    {
+      "id": "memory-tool-simpleMemory-17858586021792-caa309-aiAgent-178585860217912-caa309",
+      "source": "1:simpleMemory:1",
+      "sourceHandle": "output-tool",
+      "target": "1:aiAgent:1",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "context-__context__-1-aiAgent-178585860217912-caa309-aiAgent-178585860217912-caa309",
+      "source": "1:context:1",
+      "sourceHandle": "output-context",
+      "target": "1:aiAgent:1",
+      "targetHandle": "input-context",
+      "data": {
+        "systemManaged": true
+      }
     }
   ],
-  "createdAt": "2026-07-16T10:37:37.272Z",
-  "lastModified": "2026-07-24T10:56:32.000Z",
+  "createdAt": "2026-08-04T10:20:02.187Z",
+  "lastModified": "2026-08-04T15:51:29.442Z",
   "version": "0.0.95",
   "nodeParameters": {
-    "console-17842180572671-160ec5": {
+    "1:console:1": {
       "label": "Console",
       "log_mode": "field",
       "field_path": "{{aiagent.response}}",
@@ -532,19 +384,17 @@
       "format": "json",
       "fieldPath": ""
     },
-    "simpleMemory-17842180572672-160ec5": {
+    "1:simpleMemory:1": {
       "session_id": "",
       "window_size": 100,
-      "memory_content": "# Conversation History\n\n*No messages yet.*\n",
       "long_term_enabled": false,
       "retrieval_count": 3,
-      "last_session_id": null,
       "sessionId": "",
       "windowSize": 100,
       "longTermEnabled": false,
       "retrievalCount": 3
     },
-    "browser-17842180572675-160ec5": {
+    "1:browser:1": {
       "toolName": "browser",
       "toolDescription": "Control a web browser. Use snapshot to see the page (returns accessibility tree with @eN refs). Then click/type/fill with those refs. Workflow: navigate -> snapshot -> click/fill -> snapshot.",
       "operation": "navigate",
@@ -573,13 +423,13 @@
       "timeout": 30,
       "label": "Browser"
     },
-    "fileRead-17842180572676-160ec5": {
+    "1:fileRead:1": {
       "file_path": "",
       "offset": 0,
       "limit": 100,
       "label": "File Read"
     },
-    "fileModify-17842180572677-160ec5": {
+    "1:fileModify:1": {
       "operation": "write",
       "file_path": "",
       "content": "",
@@ -588,19 +438,19 @@
       "replace_all": false,
       "label": "File Modify"
     },
-    "shell-17842180572678-160ec5": {
+    "1:shell:1": {
       "command": "",
       "timeout": 30,
       "label": "Shell"
     },
-    "fsSearch-17842180572679-160ec5": {
+    "1:fsSearch:1": {
       "mode": "ls",
       "path": ".",
       "pattern": "",
       "file_filter": "",
       "label": "FS Search"
     },
-    "processManager-178421805726710-160ec5": {
+    "1:processManager:1": {
       "toolName": "process_manager",
       "toolDescription": "Start, stop, and manage long-running processes. Use for dev servers, watchers, build tools. Output streams to Terminal.",
       "operation": "start",
@@ -610,19 +460,19 @@
       "text": "",
       "label": "Process Manager"
     },
-    "pythonExecutor-178421805726711-160ec5": {
+    "1:pythonExecutor:1": {
       "code": "# Python Executor - Transform and process data\n#\n# Available:\n#   input_data - dict with connected node outputs\n#   math, json - imported modules\n#   print() - for debugging\n#\n# Set the \"output\" variable with your result\n\n# Example: Get data from connected node\ndata = input_data.get(\"start\", {}) or input_data\n\n# Process data\nresult = {\n    \"message\": \"from Python!\",\n    \"input_received\": data,\n    \"processed\": True\n}\n\n# Set output (required)\noutput = result",
       "timeout": 30,
       "label": "Python Executor"
     },
-    "aiAgent-178421805726712-160ec5": {
+    "1:aiAgent:1": {
       "prompt": "{{chattrigger.message}} {{telegramreceive.text}}",
       "provider": "gemini",
       "model": "gemini-3.5-flash",
       "system_message": "You are a helpful assistant",
       "label": "AI Agent"
     },
-    "telegramReceive-178421805726713-160ec5": {
+    "1:telegramReceive:1": {
       "content_type_filter": "text",
       "sender_filter": "self",
       "chat_id": "",
@@ -631,7 +481,7 @@
       "ignore_bots": true,
       "label": "Telegram Receive"
     },
-    "telegramSend-178421805726714-160ec5": {
+    "1:telegramSend:1": {
       "recipient_type": "self",
       "chat_id": "",
       "message_type": "text",
@@ -648,7 +498,7 @@
       "reply_to_message_id": 0,
       "label": "Telegram Send"
     },
-    "masterSkill-178421805726715-160ec5": {
+    "1:masterSkill:1": {
       "skills_config": {
         "assistant-personality": {
           "enabled": true,
@@ -843,6 +693,10 @@
       {
         "type": "masterSkill",
         "version": 1
+      },
+      {
+        "type": "context",
+        "version": 2
       }
     ]
   }
