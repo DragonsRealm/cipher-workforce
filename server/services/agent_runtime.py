@@ -186,10 +186,13 @@ def _validated_tool_args(
 
     try:
         value = spec.args_schema.model_validate(call.args or {})
-        # Preserve the security boundary used by ToolNode.execute_as_tool:
-        # only fields the model actually supplied may participate in the
-        # invocation/config merge. Pydantic defaults are schema metadata, not
-        # model-authored arguments.
+        # Only fields the model actually supplied participate in
+        # ToolNode.execute_as_tool's ``{**node_params, **tool_args}`` merge.
+        # Materializing Pydantic defaults would let schema metadata
+        # silently override operator node configuration: a node the user
+        # set to method=POST would be reset to the schema's GET default
+        # merely because the model omitted the field. Defaults are schema
+        # metadata, not model-authored arguments.
         return value.model_dump(mode="json", exclude_unset=True), None
     except ValidationError as exc:
         return None, str(exc)

@@ -48,7 +48,6 @@ AI_AGENT_TYPES: FrozenSet[str] = frozenset(
         "ai_employee",
         "rlm_agent",
         "claude_code_agent",
-        "codex_agent",
         "vertex_managed_agent",
     ]
 )
@@ -462,3 +461,25 @@ def detect_ai_provider(node_type: str, parameters: dict = None) -> str:
     if "ollama" in nt:
         return "ollama"
     return "openai"
+
+
+# ---------------------------------------------------------------------------
+# Identity namespaces — TWO constants, same value, NEVER aliased.
+#
+# ``user_id`` on an execution context and ``customer_id`` on a stored
+# credential happen to share the literal "owner", but they are different
+# namespaces. Credentials are stored per-installation; tenancy scopes
+# workflows and their Context/Memory. Aliasing them means a future change
+# to who owns a workflow silently re-points every OAuth token lookup, so a
+# real login would break every OAuth-backed node.
+#
+# Enforced by tests/test_identity_namespaces.py.
+# ---------------------------------------------------------------------------
+
+#: The single-owner tenancy principal. Used when auth is disabled, and as
+#: the degenerate namespace in single-owner installs.
+OWNER_PRINCIPAL_ID: str = "owner"
+
+#: Default ``customer_id`` for stored credentials. Deliberately NOT an
+#: alias of OWNER_PRINCIPAL_ID — see the note above.
+DEFAULT_CREDENTIAL_CUSTOMER_ID: str = "owner"

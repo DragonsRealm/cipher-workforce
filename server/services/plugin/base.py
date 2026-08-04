@@ -1120,7 +1120,15 @@ def _make_connection_factory(
     node_cls: Type[BaseNode],
     context: Dict[str, Any],
 ) -> Callable[[str], Connection]:
-    user_id = context.get("user_id", "owner")
+    from constants import DEFAULT_CREDENTIAL_CUSTOMER_ID
+
+    # Credentials are scoped by ``credential_customer_id``, NOT by the
+    # tenancy principal. Reading ``user_id`` here is what made a real
+    # authenticated subject break every OAuth-backed node: tokens are
+    # stored under the installation's customer id, not the logged-in user's.
+    user_id = context.get(
+        "credential_customer_id", DEFAULT_CREDENTIAL_CUSTOMER_ID
+    )
     session_id = context.get("session_id", "default")
     node_id = context.get("node_id")
     # Precompute credential lookup once.

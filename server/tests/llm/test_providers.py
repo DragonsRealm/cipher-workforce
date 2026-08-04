@@ -499,3 +499,49 @@ class TestOpenRouterProvider:
 
         call_kwargs = provider._client.chat.completions.create.call_args[1]
         assert call_kwargs["model"] == "meta-llama/llama-3-8b"
+
+
+class TestEmptyAssistantTurnFiltering:
+    """An empty assistant turn must be dropped; a compaction checkpoint
+    living in provider_state with no rendered text must survive.
+
+    Keying on the bare presence of provider_state gets this wrong in the
+    dangerous direction: Anthropic attaches it to every assistant message,
+    so an empty turn is retained and re-sent as
+    ``{"role": "assistant", "content": []}``, which the API rejects with a
+    400 on every subsequent run until memory is cleared.
+    """
+
+    def test_empty_turn_with_provider_state_is_dropped(self):
+        from services.llm.messages import filter_empty_messages
+        from services.llm.protocol import Message
+
+        empty = Message(
+            role="assistant",
+            content="",
+            provider_state={"provider": "anthropic", "payload": {"content": []}},
+        )
+        assert filter_empty_messages([empty]) == []
+
+    def test_compaction_checkpoint_survives(self):
+        from services.llm.messages import filter_empty_messages
+        from services.llm.protocol import Message
+
+        checkpoint = Message(
+            role="assistant",
+            content="",
+            provider_state={
+                "provider": "anthropic",
+                "payload": {
+                    "content": [{"type": "compaction", "content": "durable"}]
+                },
+            },
+        )
+        assert filter_empty_messages([checkpoint]) == [checkpoint]
+
+    def test_ordinary_turns_are_unaffected(self):
+        from services.llm.messages import filter_empty_messages
+        from services.llm.protocol import Message
+
+        spoke = Message(role="assistant", content="hello")
+        assert filter_empty_messages([spoke]) == [spoke]

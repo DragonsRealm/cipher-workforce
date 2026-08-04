@@ -601,10 +601,16 @@ class AICliService:
         for tool_info in connected_tools:
             tool, execution = await ai_service._build_tool_from_node(tool_info)
             if tool is None or execution is None:
-                raise ValueError(
-                    "Could not build connected tool "
-                    f"{tool_info.get('node_type')!r}"
+                # Skip-and-log, matching the pre-existing contract. Raising
+                # here fails the whole batch over one unbuildable node — and
+                # this path serves every CLI agent, not only Context-bound
+                # ones, so a single bad tool took down runs that never used
+                # it. A surface that ends up entirely empty is caught below.
+                logger.warning(
+                    "[cli_agent] skipping unbuildable connected tool %r",
+                    tool_info.get("node_type"),
                 )
+                continue
             entry = {
                 **tool_info,
                 "_agent_tool_name": tool.name,

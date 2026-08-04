@@ -1451,6 +1451,9 @@ async def handle_refresh_model_registry(data: Dict[str, Any], websocket: WebSock
 from services.ws_handler_registry import get_ws_handlers
 
 
+from services.authz import resolve_internal_handler  # noqa: E402
+
+
 def _resolve_handler(msg_type: str):
     """Resolve a WS message_type to its handler.
 
@@ -1785,7 +1788,9 @@ async def websocket_internal_endpoint(websocket: WebSocket):
             msg_type = data.get("type", "")
             request_id = data.get("request_id")
 
-            handler = _resolve_handler(msg_type)
+            # Deny-by-default: this socket is unauthenticated, so it may
+            # reach only the handlers the activity worker actually needs.
+            handler = resolve_internal_handler(msg_type, _resolve_handler)
 
             if handler:
                 task = asyncio.create_task(_execute_handler(handler, data, websocket, msg_type, request_id))

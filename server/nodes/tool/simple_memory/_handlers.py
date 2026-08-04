@@ -43,9 +43,23 @@ def _authenticated_owner(websocket: WebSocket) -> str:
     return "owner"
 
 
+def _require_external_socket(websocket: WebSocket) -> None:
+    """The internal unauthenticated worker socket may not touch Memory.
+
+    Defence in depth behind the allowlist in ``services.authz.ws_surface``:
+    the Context handlers have carried this guard since they were written,
+    and its absence here is exactly why these six handlers were reachable
+    without credentials.
+    """
+    scope = getattr(websocket, "scope", {}) or {}
+    if scope.get("path") == "/ws/internal":
+        raise NodeUserError("Memory access requires an authenticated client")
+
+
 async def _resolve_store_and_scope(
     data: Dict[str, Any], websocket: WebSocket
 ) -> tuple[MemoryToolStore, MemoryScope]:
+    _require_external_socket(websocket)
     workflow_id = str(data.get("workflow_id") or "").strip()
     node_id = str(
         data.get("memory_node_id") or data.get("node_id") or ""
