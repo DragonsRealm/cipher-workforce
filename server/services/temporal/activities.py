@@ -528,6 +528,51 @@ async def broadcast_trigger_status_activity(payload: Dict[str, Any]) -> None:
         activity.logger.warning(f"broadcast_trigger_status_activity failed for " f"node={payload.get('node_id')!r}: {exc}")
 
 
+@activity.defn
+async def evaluate_trigger_filter_activity(payload: Dict[str, Any]) -> bool:
+    """Apply a trigger node's own filter to one event.
+
+    Payload shape:
+        {
+            "node_type": str,          # e.g. "webhookTrigger"
+            "filter_params": dict,     # the node's saved parameters
+            "event_data": dict,        # the CloudEvents ``data`` member
+        }
+
+    Why this is an activity and not inline workflow code: filter builders
+    live in plugin folders (``nodes/whatsapp/_filters.py`` and friends) and
+    reach imports that are not workflow-sandbox safe. Activities run outside
+    the sandbox, and the boolean is recorded in history so replay stays
+    deterministic.
+
+    **The predicate takes the CloudEvents ``data`` member, not the envelope.**
+    ``event_waiter.dispatch`` unpacks to ``(event_type, data)`` and hands
+    filters the inner payload, so a webhook filter reads ``data["path"]``.
+    Passing the envelope would make every filter silently reject.
+
+    Fails OPEN. An unknown node type, a malformed payload or a raising
+    builder all return True, which preserves the pre-fix behaviour of
+    spawning the run: over-firing is visible and recoverable, whereas a
+    silently dropped trigger event looks like the product is broken.
+    """
+    node_type = payload.get("node_type") or ""
+    data = payload.get("event_data")
+    if not isinstance(data, dict):
+        return True
+
+    try:
+        from services import event_waiter
+
+        predicate = event_waiter.build_filter(node_type, payload.get("filter_params") or {})
+        return bool(predicate(data))
+    except Exception as exc:  # noqa: BLE001 — fail open, see docstring
+        activity.logger.warning(
+            f"evaluate_trigger_filter_activity failed for node_type={node_type!r}; "
+            f"admitting the event rather than dropping it: {exc}"
+        )
+        return True
+
+
 @activity.defn(name="workflow_control.pause_on_failure")
 async def pause_workflow_on_failure_activity(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Circuit breaker: pause a controlled deployment after a failed run.

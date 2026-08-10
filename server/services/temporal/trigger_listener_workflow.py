@@ -74,6 +74,24 @@ _HISTORY_SOFT_CAP = 10_000
 # many still-queued events across a rollover (oldest dropped, logged).
 _MAX_CARRIED_EVENTS = 256
 
+# Applying the node's own filter before spawning changes the recorded
+# command sequence, so it is patch-gated: histories written before this
+# landed replay with the old "spawn on every event" behaviour. Marker
+# naming follows the one existing precedent, CONDITIONAL_EDGES_PATCH.
+NODE_FILTER_PATCH = "machina-trigger-listener-node-filter"
+
+_FILTER_ACTIVITY_NAME = "evaluate_trigger_filter_activity"
+_FILTER_ACTIVITY_TIMEOUT = timedelta(seconds=10)
+# Bounded, unlike Temporal's unlimited default: the spawn loop is
+# serialized, so a wedged filter activity would stall every later event on
+# this listener. Exhausting the attempts raises, and the caller admits the
+# event rather than dropping it.
+_FILTER_ACTIVITY_RETRY = RetryPolicy(
+    initial_interval=timedelta(seconds=1),
+    maximum_interval=timedelta(seconds=10),
+    maximum_attempts=3,
+)
+
 
 def _history_pressure(soft_cap: int) -> bool:
     """True when the server suggests continue-as-new or the current
@@ -133,6 +151,57 @@ class TriggerListenerWorkflow:
     async def _wait_until_resumed(self) -> None:
         if self._control_paused:
             await workflow.wait_condition(lambda: not self._control_paused)
+
+    async def _event_passes_node_filter(
+        self, event: Dict[str, Any], listener_data: Dict[str, Any]
+    ) -> bool:
+        """True when the trigger node's configured filter admits this event.
+
+        Before this existed, ``filter_params`` was carried in
+        ``listener_data`` and never read, so the ``EventType`` Search
+        Attribute was the only narrowing on the deployed path. Every event
+        of the right type spawned a run: a ``webhookTrigger`` bound to
+        ``/a`` fired on a POST to ``/b`` (all webhooks share one CloudEvents
+        type and are unscoped), a ``taskTrigger`` watching one agent fired
+        on every task, and a ``whatsappReceive`` scoped to one group fired
+        on every message. The canvas-Run path applied these filters, so the
+        two paths disagreed about what the same node does.
+
+        ``listener_data["filter_params"]`` is the only available source, not
+        a shortcut: the graph snapshot carries no parameters at all
+        (``node.data`` holds just the label, and
+        ``load_persisted_workflow_graph_activity`` returns nodes/edges
+        only), so the hot graph re-read below cannot supply them. Editing a
+        deployed trigger's filter therefore takes effect on re-deploy, which
+        matches the trigger node itself: it is pre-executed with the event
+        as its output and never re-reads its parameters at run time.
+
+        An empty ``filter_params`` short-circuits without an activity: an
+        unconfigured trigger admits everything, and this is read from
+        immutable ``listener_data``, so the branch is replay-stable.
+        """
+        filter_params = listener_data.get("filter_params") or {}
+        if not filter_params:
+            return True
+
+        data = event.get("data")
+        if not isinstance(data, dict):
+            # Not the envelope shape the filters expect. Admit rather than
+            # guess -- see the fail-open contract on the activity.
+            return True
+
+        return bool(
+            await workflow.execute_activity(
+                _FILTER_ACTIVITY_NAME,
+                {
+                    "node_type": listener_data.get("node_type") or "",
+                    "filter_params": filter_params,
+                    "event_data": data,
+                },
+                start_to_close_timeout=_FILTER_ACTIVITY_TIMEOUT,
+                retry_policy=_FILTER_ACTIVITY_RETRY,
+            )
+        )
 
     @workflow.signal
     async def on_event(self, event_payload: Dict[str, Any]) -> None:
@@ -252,6 +321,23 @@ class TriggerListenerWorkflow:
           - After spawn returns → trigger node ``"waiting"`` (child runs
             independently per ``parent_close_policy=ABANDON``).
         """
+        # The trigger node's own filter gates the spawn, and it is enforced
+        # here rather than in the caller because this method is the single
+        # choke point: WorkflowControlWorkflow._spawn_push_run constructs a
+        # TriggerListenerWorkflow purely to call it. Gating in either run
+        # loop would leave the other path unfiltered.
+        #
+        # Patch-gated: skipping a spawn changes the recorded command
+        # sequence, so pre-patch histories must keep replaying the old
+        # "spawn on every event" behaviour.
+        if workflow.patched(NODE_FILTER_PATCH):
+            if not await self._event_passes_node_filter(event, listener_data):
+                workflow.logger.debug(
+                    f"Trigger filter rejected event.id={event.get('id')} for "
+                    f"node={listener_data.get('trigger_node_id')}; no run spawned"
+                )
+                return
+
         trigger_node_id = listener_data["trigger_node_id"]
         nodes = listener_data["nodes"]
         edges = listener_data["edges"]

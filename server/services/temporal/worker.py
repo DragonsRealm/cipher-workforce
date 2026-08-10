@@ -222,6 +222,7 @@ class TemporalWorkerManager:
         from services.temporal.agent_activities import collect_agent_activities
         from services.temporal.activities import (
             broadcast_trigger_status_activity,
+            evaluate_trigger_filter_activity,
             load_persisted_workflow_graph_activity,
             pause_workflow_on_failure_activity,
             store_node_output_activity,
@@ -269,6 +270,7 @@ class TemporalWorkerManager:
             activities=[
                 self._activities.execute_node_activity,
                 broadcast_trigger_status_activity,
+                evaluate_trigger_filter_activity,
                 load_persisted_workflow_graph_activity,
                 pause_workflow_on_failure_activity,
                 store_node_output_activity,
@@ -722,6 +724,7 @@ async def run_standalone_worker(
 
     from services.temporal.activities import (
         broadcast_trigger_status_activity,
+        evaluate_trigger_filter_activity,
         load_persisted_workflow_graph_activity,
         pause_workflow_on_failure_activity,
         store_node_output_activity,
@@ -748,6 +751,7 @@ async def run_standalone_worker(
             activities=[
                 activities.execute_node_activity,
                 broadcast_trigger_status_activity,
+                evaluate_trigger_filter_activity,
                 load_persisted_workflow_graph_activity,
                 pause_workflow_on_failure_activity,
                 store_node_output_activity,
@@ -799,6 +803,7 @@ async def create_worker(
     activities = NodeExecutionActivities(session)
     from services.temporal.activities import (
         broadcast_trigger_status_activity,
+        evaluate_trigger_filter_activity,
         load_persisted_workflow_graph_activity,
         pause_workflow_on_failure_activity,
         store_node_output_activity,
@@ -824,6 +829,7 @@ async def create_worker(
         activities=[
             activities.execute_node_activity,
             broadcast_trigger_status_activity,
+            evaluate_trigger_filter_activity,
             load_persisted_workflow_graph_activity,
             pause_workflow_on_failure_activity,
             store_node_output_activity,

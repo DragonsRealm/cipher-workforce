@@ -78,6 +78,10 @@ async def test_listener_child_runs_carry_no_lifetime_caps(monkeypatch):
 
     temporal_workflow = trigger_module.workflow
     monkeypatch.setattr(temporal_workflow, "logger", MagicMock())
+    # ``workflow.patched`` needs a real workflow event loop; the spawn path
+    # consults it for the node-filter gate. This listener_data carries no
+    # filter_params, so the gate short-circuits and admits.
+    monkeypatch.setattr(temporal_workflow, "patched", lambda _pid: True)
     # The spawn path refreshes the graph for uncontrolled deployments;
     # ``found: False`` keeps the listener's own nodes/edges in play.
     monkeypatch.setattr(
