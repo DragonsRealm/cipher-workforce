@@ -7,18 +7,28 @@ Two icon sources co-exist by design (per RFC §6.5):
    :func:`get_plugin_icon_path`. Preferred for new plugins; served
    by ``GET /api/schemas/nodes/{type}/icon`` (see ``routers/schemas.py``).
 
-2. **``visuals.json``** for emoji entries and library-icon
-   (``lobehub:<brand>``) entries that don't map to a file. Resolved
-   via :func:`get_icon` / :func:`get_color`.
+2. **Per-plugin ``meta.json``** for library references that need no
+   artwork at all — ``{"icons": {"<node_type>": "lucide:Send"}}``.
+   Resolved via :func:`get_plugin_icon_ref`. Keeps a plugin's visual
+   surface inside its own folder, the same way ``color`` already lives
+   there, while reusing an icon set the frontend already bundles.
 
-``BaseNode._metadata_dict`` checks the per-folder path first and
-falls back to ``visuals.json``. The frontend resolver dispatches by
-the wire-format prefix (URL paths route to ``<img>``; ``asset:``,
-``lobehub:``, emoji each have their own branch).
+3. **``visuals.json``** for emoji and library entries belonging to
+   plugins that predate per-folder ``meta.json``. Resolved via
+   :func:`get_icon` / :func:`get_color`.
 
-Adding a new node:
-- Drop ``icon.svg`` into the plugin folder, OR
-- Add an entry to ``visuals.json`` (emoji or ``lobehub:<brand>``).
+``BaseNode._metadata_dict`` tries the co-located SVG, then the plugin's
+own ``meta.json``, then ``visuals.json``. The frontend resolver
+dispatches by the wire-format prefix (URL paths route to ``<img>``;
+``lucide:``, ``lobehub:``, ``asset:`` and emoji each have their own
+branch).
+
+Adding a new node, in order of preference:
+- Declare ``icons`` / ``icon`` in the plugin's ``meta.json`` pointing at
+  a library glyph (nothing to draw, nothing to maintain), OR
+- Drop ``icon.svg`` into the plugin folder when the node needs artwork
+  a library does not have — typically a brand mark, OR
+- Add an entry to ``visuals.json`` (legacy central registry).
 
 Node files do NOT declare ``icon`` or ``color`` themselves.
 """
@@ -79,6 +89,44 @@ def get_color(node_type: str) -> str:
     if not entry:
         return ""
     return str(entry.get("color", ""))
+
+
+def get_plugin_icon_ref(node_type: str) -> str:
+    """Return a library/emoji icon reference from the plugin's ``meta.json``.
+
+    The file-based chain (:func:`get_plugin_icon_path`) only answers with an
+    SVG on disk. This is its no-file counterpart, so a plugin can point at
+    an icon that already exists in a library instead of vendoring artwork:
+
+        {"color": "#128C7E",
+         "icons": {"whatsappBusinessSend": "lucide:Send"}}
+
+    Two levels, mirroring the ``icon_<node_type>.svg`` / ``icon.svg`` pair:
+
+    1. ``icons[<node_type>]`` — per-node-type, for folders that serve
+       several node types from one plugin directory.
+    2. ``icon`` — one reference for every node type in the folder.
+
+    Values use the same wire format the frontend's resolver understands
+    (``lucide:<Name>``, ``lobehub:<brand>``, emoji). ``lucide`` names are
+    matched case-insensitively against the package's own exports, so they
+    are the export identifier (``CheckCheck``), not the kebab-case file
+    name (``check-check``), which would not resolve.
+
+    Returns ``""`` when nothing is declared, so callers can fall through to
+    :func:`get_icon`. Note a folder that also ships ``icon.svg`` never
+    reaches here: the file wins. A plugin choosing library references
+    should not vendor an SVG as well.
+    """
+    meta = get_plugin_meta(node_type)
+    if not isinstance(meta, dict):
+        return ""
+    per_type = meta.get("icons")
+    if isinstance(per_type, dict):
+        value = per_type.get(node_type)
+        if value:
+            return str(value)
+    return str(meta.get("icon") or "")
 
 
 def get_plugin_meta(node_type: str, key: Optional[str] = None) -> Optional[dict | str]:

@@ -10,8 +10,23 @@
  *   - asset:* / data: / http: / emoji passthrough still behaves
  */
 
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, it, expect } from 'vitest';
 import { resolveLibraryIcon, resolveIcon } from './index';
+
+/** Every `meta.json` under server/nodes, found without a glob dependency. */
+const pluginMetaFiles = (dir: string): string[] => {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === '__pycache__' || entry === 'node_modules') continue;
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) found.push(...pluginMetaFiles(path));
+    else if (entry === 'meta.json') found.push(path);
+  }
+  return found;
+};
 
 describe('resolveLibraryIcon', () => {
   it('resolves a lucide icon to a forwardRef React component', () => {
@@ -36,6 +51,39 @@ describe('resolveLibraryIcon', () => {
   it('still resolves lobehub brand icons (regression)', () => {
     const Icon = resolveLibraryIcon('lobehub:Claude');
     expect(Icon).not.toBeNull();
+  });
+
+  /**
+   * Cross-language contract. The backend lets a plugin point at a library
+   * glyph from its own meta.json instead of vendoring an SVG, and nothing
+   * on the Python side can tell whether the name actually exists here.
+   *
+   * The specific trap: lucide's lookup index is keyed on lowercased
+   * *export* names, so `lucide:CheckCheck` resolves and the kebab-case
+   * file name `lucide:check-check` does not. That failure is silent -- the
+   * node renders no icon rather than erroring -- so it is asserted here.
+   */
+  it('resolves every library icon declared in a plugin meta.json', () => {
+    const nodesDir = join(__dirname, '..', '..', '..', '..', 'server', 'nodes');
+    const declared: Array<[string, string]> = [];
+
+    for (const file of pluginMetaFiles(nodesDir)) {
+      const meta = JSON.parse(readFileSync(file, 'utf-8')) as {
+        icon?: string;
+        icons?: Record<string, string>;
+      };
+      const refs = [meta.icon, ...Object.values(meta.icons ?? {})];
+      for (const ref of refs) {
+        if (ref && ref.includes(':')) declared.push([file, ref]);
+      }
+    }
+
+    // Guards the guard: if the discovery ever breaks, the loop below would
+    // vacuously pass.
+    expect(declared.length).toBeGreaterThan(0);
+
+    const unresolved = declared.filter(([, ref]) => resolveLibraryIcon(ref) === null);
+    expect(unresolved).toEqual([]);
   });
 
   it('returns null for unknown library prefixes', () => {

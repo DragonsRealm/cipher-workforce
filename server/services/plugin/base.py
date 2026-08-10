@@ -286,13 +286,18 @@ class BaseNode:
             get_icon,
             get_color,
             get_plugin_icon_path,
+            get_plugin_icon_ref,
             get_plugin_meta,
         )
 
+        # Co-located SVG, then the plugin's own meta.json (library
+        # reference), then the central visuals.json. Same shape as the
+        # color lookup below: plugin folder first, central registry as the
+        # legacy fallback.
         if get_plugin_icon_path(cls.type) is not None:
             icon = f"/api/schemas/nodes/{cls.type}/icon"
         else:
-            icon = get_icon(cls.type)
+            icon = get_plugin_icon_ref(cls.type) or get_icon(cls.type)
         color = get_plugin_meta(cls.type, "color") or get_color(cls.type)
         meta: Dict[str, Any] = {
             "displayName": cls.display_name or cls.type,

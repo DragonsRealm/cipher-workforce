@@ -1160,6 +1160,55 @@ class TestWave10GContractInvariants:
             assert code_field, f"{t}: `code` field missing from input schema"
             assert code_field.get("editor") == "code", f"{t}.code: expected `editor: 'code'`, got {code_field.get('editor')!r}"
 
+    def test_plugin_meta_icon_refs_are_wellformed(self):
+        """A plugin may point at a library glyph from its own ``meta.json``
+        instead of vendoring an SVG. Two ways that goes silently wrong:
+
+        * A key in ``icons`` that is not a real node type never matches, so
+          the node keeps whatever fallback it had and the author sees no
+          error.
+        * A library prefix the frontend does not register resolves to null,
+          rendering nothing.
+
+        Whether a *name* exists inside the library is checked on the
+        frontend, in ``client/src/assets/icons/index.test.ts`` -- Python
+        cannot see lucide's exports.
+        """
+        import json
+        from pathlib import Path
+
+        from models.node_metadata import NODE_METADATA
+
+        # Kept in step with ICON_LIBRARIES in client/src/assets/icons/index.ts.
+        known_libraries = {"lucide", "lobehub", "asset"}
+        nodes_dir = Path(__file__).resolve().parents[1] / "nodes"
+
+        problems: list[str] = []
+        for meta_path in nodes_dir.rglob("meta.json"):
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                problems.append(f"{meta_path}: unreadable ({exc})")
+                continue
+            if not isinstance(data, dict):
+                continue
+
+            refs = list((data.get("icons") or {}).items())
+            for node_type, _ref in refs:
+                if node_type not in NODE_METADATA:
+                    problems.append(
+                        f"{meta_path}: icons key {node_type!r} is not a registered node type"
+                    )
+
+            for ref in [data.get("icon"), *[r for _, r in refs]]:
+                if not ref or ":" not in str(ref):
+                    continue  # emoji or absent — nothing to validate
+                library = str(ref).split(":", 1)[0]
+                if library not in known_libraries:
+                    problems.append(f"{meta_path}: unknown icon library {library!r} in {ref!r}")
+
+        assert not problems, "malformed plugin meta.json icon refs:\n  " + "\n  ".join(problems)
+
     def test_every_asset_icon_has_matching_svg(self):
         """Wave 10.B: every ``asset:<key>`` string emitted by a plugin
         must resolve to a real SVG file under

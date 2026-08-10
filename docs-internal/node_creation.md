@@ -225,13 +225,14 @@ walker does on startup), these registrations happen automatically:
 | Credentials | `CREDENTIAL_REGISTRY` | `Credential.__init_subclass__` when `_credentials.py` is imported |
 | Trigger registry + filter builders | `event_waiter.TRIGGER_REGISTRY`, `FILTER_BUILDERS` | back-fill from `TriggerNode` subclasses on first lookup |
 | Temporal activity wrapper | `cls.as_activity()` | first call; pooled into the worker queue declared by `task_queue` |
-| Palette icon | `<plugin_folder>/icon.svg` (or `icon_<nodeType>.svg` for multi-node folders); served via `GET /api/schemas/nodes/<type>/icon`. `visuals.json` is the fallback for emoji or `lobehub:<brand>` icons. |
+| Palette icon | `<plugin_folder>/meta.json` → `"icons": {"<nodeType>": "lucide:Send"}` (preferred — no artwork to vendor), or `icon.svg` / `icon_<nodeType>.svg` served via `GET /api/schemas/nodes/<type>/icon` when a brand mark is needed. Resolution: SVG file → plugin `meta.json` ref → `visuals.json`. |
 | Palette color | `<plugin_folder>/meta.json` (`{"color": "#xxx"}`); `visuals.json` is the fallback for legacy entries (post-F2 it has zero color fields). |
 
 What you **do** still write:
 
-- Drop `icon.svg` (or `icon_<nodeType>.svg` for multi-node folders) and `meta.json` (`{"color": "#xxx"}`) inside the plugin folder. The class-attribute icon/color override was removed in F1 — declaring `icon` or `color` as class attrs has no effect.
-- An entry in `server/nodes/visuals.json` ONLY if you want an emoji or `lobehub:<brand>` icon (no folder SVG). Post-F1/F7 visuals.json carries zero `asset:<key>` values.
+- A `meta.json` inside the plugin folder carrying `{"color": "#xxx"}` and, preferably, the icon as a library reference: `"icons": {"<nodeType>": "lucide:Send"}` per node type, or `"icon"` for one glyph across the folder. Use the library's **export** name (`lucide:CheckCheck`), not its kebab-case file name — the lookup is against package exports, and a miss renders nothing rather than erroring. Locked by `client/src/assets/icons/index.test.ts`.
+- `icon.svg` (or `icon_<nodeType>.svg` for multi-node folders) only when the node needs artwork no library has — typically a brand mark. A file beats a `meta.json` ref, so shipping both makes the ref dead. The class-attribute icon/color override was removed in F1 — declaring `icon` or `color` as class attrs has no effect.
+- An entry in `server/nodes/visuals.json` is the legacy central fallback, for plugins with neither of the above. Post-F1/F7 it carries zero `asset:<key>` values.
 - A **lowercase alias entry in `visuals.json` keyed by the LLM `tool_name`** whenever you set `tool_name` to something other than `<snake_case_of_node_type>` AND ship a paired skill. The skill icon resolver maps the SKILL.md `allowed-tools` token (= the tool name) through snake→camel into `visuals.json`; a custom tool name misses the node-type key and the Master Skill row renders a blank icon. The alias carries the same icon plus the plugin's `meta.json` color — precedent: `"github": {"icon": "lobehub:Github", "color": "#8250df"}`, `"vercel": {"icon": "lobehub:Vercel", "color": "#666666"}`. Locked by `server/tests/test_skill_icon_resolution.py`.
 - An entry in `server/nodes/groups.py` if you introduce a new palette group.
 
