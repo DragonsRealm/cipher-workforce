@@ -401,7 +401,7 @@ The OpenCompany frontend was coupled to Ant Design (40 files, 187-line theme fil
 - **antd usage:** 40 files. Top imports: `Space` (20), `Button` (16), `Flex` (13), `Tag` (11), `Spin` (10), `Alert` (10), `Typography` (9), `InputNumber` (7), `Collapse` (7), `Input` (6), `Card` (6), `Form` (5), `Statistic` (4), `Select` (4), `Switch` (3).
 - **ConfigProvider:** only in [client/src/App.tsx](../client/src/App.tsx); theme in `client/src/config/antdTheme.ts` (deleted in Phase 7) mirrors [client/src/styles/theme.ts](../client/src/styles/theme.ts).
 - **Already installed:** Tailwind 4.1.13, `@radix-ui/react-dialog`, `@radix-ui/react-collapsible`, `react-hook-form`, `babel-plugin-react-compiler@19.1.0-rc.3` (scoped to `components/credentials/`), `@uiw/react-json-view`, `class-variance-authority`, `clsx`, `tailwind-merge`, `@radix-ui/react-slot`, `sonner`.
-- **styled-components:** exactly 1 file — [client/src/components/shared/JSONTreeRenderer.tsx](../client/src/components/shared/JSONTreeRenderer.tsx).
+- **styled-components:** exactly 1 file — `client/src/components/shared/JSONTreeRenderer.tsx` (audit-time fact; that file was migrated off styled-components and later deleted as unreferenced in Wave 15, so this is no longer a live path).
 - **Hand-written code to be deleted in corrected Phase 0:** `client/src/design-system/primitives/*` (8 files) and `client/src/design-system/lib/toast.ts` (introduced by commits `2209dba` and `7ac69fe` — the previous mistake).
 - **Imperative antd APIs:** 21 call sites already moved from `message.*`/`notification.*` to a `toast` adapter — they get **re-pointed at `sonner` directly**.
 - **antd Form:** 7 files, mostly under `components/credentials/panels/` + `sections/`.

@@ -19,10 +19,15 @@ from temporalio import workflow
 from ._retry_policies import DEFAULT_ACTIVITY_RETRY, QUICK_ACTIVITY_RETRY
 from services.workflow_naming import node_label_slug
 
-# Imported straight from the module, never the package: ``services.execution``
-# re-exports through an ``__init__`` that also pulls in the executor, cache,
-# recovery sweeper and DLQ. ``conditions`` itself is pure (``re`` + comparisons,
-# no IO, no clock, no randomness), so it is safe to evaluate inside a workflow.
+# ``conditions`` is pure -- ``re`` + comparisons, no IO, no clock, no
+# randomness -- so it is safe to evaluate inside a workflow.
+#
+# Importing the submodule still executes ``services/execution/__init__.py``
+# first (Python always initialises the parent package), which drags in the
+# executor, cache, recovery sweeper and DLQ. That is tolerated, not avoided:
+# nothing in that subtree imports back into ``services.temporal``, so there is
+# no cycle, and none of it pulls redis or sqlalchemy at import time. The
+# pass-through keeps the sandbox from re-importing the chain per workflow.
 with workflow.unsafe.imports_passed_through():
     from services.execution.conditions import evaluate_condition
 

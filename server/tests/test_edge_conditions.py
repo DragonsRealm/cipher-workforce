@@ -62,14 +62,67 @@ class TestNonNumericEqualityUnchanged:
         assert evaluate_condition(_cond("eq", None), {"result": {"status_code": 200}}) is False
 
 
-class TestBooleanCarveOut:
-    """``float(True)`` is ``1.0``, so the new numeric coercion would have made
-    a truthy flag satisfy ``eq "1"``. The guard blocks that path only.
+class TestTextToTextIsNeverCoerced:
+    """The coercion bridges text to a number, never text to text.
 
-    It deliberately does NOT touch ``True == 1``: that is plain Python
-    equality, it short-circuits before the guard, and it matched under the
-    old strict ``==`` too. Tightening it here would be a behaviour change
-    smuggled in under a bug fix.
+    A first cut coerced both sides whenever neither was bool/None. That looked
+    harmless and was not: ``float()`` rounds past 2**53, so two *distinct*
+    18-digit identifiers compared equal and silently took each other's branch.
+    WhatsApp group JIDs, snowflake ids and nanosecond timestamps all live in
+    that range, and `eq` on an id is one of the most natural conditions to
+    write -- so the failure would have been both common and invisible.
+    """
+
+    @pytest.mark.parametrize(
+        "left,right",
+        [
+            ("120363012345678901", "120363012345678902"),  # WhatsApp group JIDs
+            ("1234567890123456789", "1234567890123456788"),  # snowflake ids
+            ("1700000000000000001", "1700000000000000002"),  # ns timestamps
+        ],
+    )
+    def test_distinct_long_numeric_strings_are_not_equal(self, left, right):
+        output = {"result": {"chat_id": left}}
+        assert evaluate_condition(_cond("eq", right, "result.chat_id"), output) is False
+
+    def test_identical_long_numeric_string_still_matches(self):
+        jid = "120363012345678901"
+        output = {"result": {"chat_id": jid}}
+        assert evaluate_condition(_cond("eq", jid, "result.chat_id"), output) is True
+
+    def test_precision_holds_when_one_side_is_a_real_int(self):
+        """Exactness comes from Decimal, not from refusing to compare."""
+        output = {"result": {"chat_id": 120363012345678901}}
+        assert evaluate_condition(_cond("eq", "120363012345678902", "result.chat_id"), output) is False
+        assert evaluate_condition(_cond("eq", "120363012345678901", "result.chat_id"), output) is True
+
+    def test_unrelated_strings_compare_as_strings(self):
+        output = {"result": {"status": "success"}}
+        assert evaluate_condition(_cond("eq", "failure", "result.status"), output) is False
+
+
+class TestNoOverflowOnHugeIntegers:
+    """``float(10**400)`` raises OverflowError, which is not ValueError or
+    TypeError -- it escaped the helper, so ``neq`` answered False for a pair
+    that was plainly unequal. Decimal takes arbitrary-precision ints."""
+
+    def test_huge_int_does_not_raise_and_compares_correctly(self):
+        output = {"result": {"n": 10**400}}
+        assert evaluate_condition(_cond("neq", "1", "result.n"), output) is True
+        assert evaluate_condition(_cond("eq", "1", "result.n"), output) is False
+
+    def test_huge_int_equal_to_its_own_text(self):
+        output = {"result": {"n": 10**400}}
+        assert evaluate_condition(_cond("eq", str(10**400), "result.n"), output) is True
+
+
+class TestBooleanCarveOut:
+    """No boolean special case exists: ``Decimal("True")`` is invalid, so a
+    truthy flag cannot reach a number through the bridge.
+
+    ``True == 1`` deliberately still matches -- that is plain Python equality,
+    it short-circuits first, and it matched under the old strict ``==`` too.
+    Tightening it would be a behaviour change smuggled in under a bug fix.
     """
 
     @pytest.mark.parametrize("target", ["1", "true", "True"])

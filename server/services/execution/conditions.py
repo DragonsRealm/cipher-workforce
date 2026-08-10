@@ -24,6 +24,7 @@ Supported operators:
 """
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List
 
 from core.logging import get_logger
@@ -236,7 +237,7 @@ def _evaluate_operator(operator: str, actual: Any, target: Any) -> bool:
 
 
 def _loose_eq(actual: Any, target: Any) -> bool:
-    """Equality that tolerates the editor storing every target as a string.
+    """Equality that bridges the editor's string target to a numeric output.
 
     The edge-condition editor types ``eq``/``neq`` targets as ``any`` and stores
     the raw input, so a numeric comparison arrives as ``"200"`` while the node
@@ -244,21 +245,37 @@ def _loose_eq(actual: Any, target: Any) -> bool:
     indistinguishable from a mis-typed field name. The ordering operators
     already coerce via :func:`_safe_compare`; this brings equality in line.
 
-    Booleans are deliberately excluded from numeric coercion -- ``float(True)``
-    is ``1.0``, so without the guard ``eq 1`` would match a ``True`` output.
+    **The coercion is deliberately narrow: exactly one side must be a string
+    and the other a real number.** Coercing string-vs-string looks harmless and
+    is not -- ``float()`` rounds past 2**53, so two *distinct* 18-digit
+    identifiers (WhatsApp group JIDs, snowflake ids, ns timestamps) would
+    compare equal and silently take each other's branch. Two strings are
+    compared as strings, which is what the user wrote.
+
+    :class:`~decimal.Decimal` rather than ``float`` for the same reason: it is
+    exact, and it swallows arbitrarily large ints instead of raising
+    ``OverflowError`` (which is outside the caught tuple, so it would escape and
+    make ``neq`` answer False for a pair that is plainly unequal).
+
+    Booleans, ``None`` and every other type need no special case: they either
+    satisfy plain ``==`` or fail the text/number guard, and ``Decimal("True")``
+    is simply invalid. Note that ``eq 1`` still matches a ``True`` output --
+    ``1 == True`` in Python, short-circuiting on the first line. That predates
+    loose equality; tightening it here would be an unrelated behaviour change.
     """
     if actual == target:
         return True
 
-    if actual is None or target is None:
-        return False
-
-    if isinstance(actual, bool) or isinstance(target, bool):
+    numeric = (int, float, Decimal)
+    bridges_text_to_number = (isinstance(actual, str) and isinstance(target, numeric)) or (
+        isinstance(target, str) and isinstance(actual, numeric)
+    )
+    if not bridges_text_to_number:
         return False
 
     try:
-        return float(actual) == float(target)
-    except (ValueError, TypeError):
+        return Decimal(str(actual)) == Decimal(str(target))
+    except (InvalidOperation, ValueError, TypeError):
         return False
 
 
