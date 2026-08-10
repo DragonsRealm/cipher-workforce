@@ -1000,10 +1000,18 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
   // Merge database params with current form params (current takes precedence)
   const resolvedParameters = { ...nodeParameters, ...allParameters };
 
-  // Helper functions to get values from both interface types
-  const getMin = () => (parameter as any).min || (parameter as any).typeOptions?.minValue || 0;
-  const getMax = () => (parameter as any).max || (parameter as any).typeOptions?.maxValue || 100;
-  const getStep = () => (parameter as any).step || (parameter as any).typeOptions?.numberStepSize || 1;
+  // Bounds the backend actually declared, or undefined. `??` not `||` so a
+  // declared 0 survives.
+  const getDeclaredMin = () => (parameter as any).min ?? (parameter as any).typeOptions?.minValue;
+  const getDeclaredMax = () => (parameter as any).max ?? (parameter as any).typeOptions?.maxValue;
+  const getStep = () => (parameter as any).step ?? (parameter as any).typeOptions?.numberStepSize ?? 1;
+
+  // Sliders need a finite track to render at all, so they fall back to 0..100.
+  // A plain number input must NOT: the backend only emits minValue/maxValue
+  // when a Pydantic field declares ge/le, so defaulting here silently caps
+  // every unbounded field (token limits, timeouts) at 100.
+  const getMin = () => getDeclaredMin() ?? 0;
+  const getMax = () => getDeclaredMax() ?? 100;
 
   // Load dynamic options based on loadOptionsMethod
   useEffect(() => {
@@ -1551,8 +1559,8 @@ const ParameterRenderer: React.FC<ParameterRendererProps> = ({
             type="number"
             value={currentValue !== undefined ? currentValue : (parameter.default || 0)}
             onChange={(e) => onChange(Number(e.target.value))}
-            min={getMin()}
-            max={getMax()}
+            min={getDeclaredMin()}
+            max={getDeclaredMax()}
             step={getStep()}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}

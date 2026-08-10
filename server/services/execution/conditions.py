@@ -126,10 +126,10 @@ def _evaluate_operator(operator: str, actual: Any, target: Any) -> bool:
     """
     # Equality operators
     if operator == "eq":
-        return actual == target
+        return _loose_eq(actual, target)
 
     elif operator == "neq":
-        return actual != target
+        return not _loose_eq(actual, target)
 
     # Comparison operators (numeric)
     elif operator == "gt":
@@ -232,6 +232,33 @@ def _evaluate_operator(operator: str, actual: Any, target: Any) -> bool:
 
     else:
         logger.warning("Unknown operator", operator=operator)
+        return False
+
+
+def _loose_eq(actual: Any, target: Any) -> bool:
+    """Equality that tolerates the editor storing every target as a string.
+
+    The edge-condition editor types ``eq``/``neq`` targets as ``any`` and stores
+    the raw input, so a numeric comparison arrives as ``"200"`` while the node
+    output holds ``200``. Strict ``==`` makes that permanently false, which is
+    indistinguishable from a mis-typed field name. The ordering operators
+    already coerce via :func:`_safe_compare`; this brings equality in line.
+
+    Booleans are deliberately excluded from numeric coercion -- ``float(True)``
+    is ``1.0``, so without the guard ``eq 1`` would match a ``True`` output.
+    """
+    if actual == target:
+        return True
+
+    if actual is None or target is None:
+        return False
+
+    if isinstance(actual, bool) or isinstance(target, bool):
+        return False
+
+    try:
+        return float(actual) == float(target)
+    except (ValueError, TypeError):
         return False
 
 

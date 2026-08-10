@@ -19,6 +19,19 @@ from temporalio import workflow
 from ._retry_policies import DEFAULT_ACTIVITY_RETRY, QUICK_ACTIVITY_RETRY
 from services.workflow_naming import node_label_slug
 
+# Imported straight from the module, never the package: ``services.execution``
+# re-exports through an ``__init__`` that also pulls in the executor, cache,
+# recovery sweeper and DLQ. ``conditions`` itself is pure (``re`` + comparisons,
+# no IO, no clock, no randomness), so it is safe to evaluate inside a workflow.
+with workflow.unsafe.imports_passed_through():
+    from services.execution.conditions import evaluate_condition
+
+# Conditional edges were not evaluated on this path at all before this patch --
+# a condition set in the editor rendered a label and did nothing once execution
+# routed through Temporal. Gating the skip keeps replay deterministic for
+# histories recorded while every node was scheduled unconditionally.
+CONDITIONAL_EDGES_PATCH = "machina-conditional-edges-v1"
+
 # Config handles - nodes connecting via these are config nodes (not executed)
 # AI Agent handles: input-context, input-tools, input-model, input-task, input-teammates
 # Zeenie handles: input-skill, input-tools
@@ -370,6 +383,8 @@ class MachinaWorkflow:
 
         # 2. Build dependency maps
         deps, node_map = self._build_dependency_maps(exec_nodes, exec_edges)
+        conditional_edges = self._build_conditional_edge_map(exec_edges, node_map)
+        use_conditional_edges = workflow.patched(CONDITIONAL_EDGES_PATCH)
 
         # 3. Initialize state
         outputs: Dict[str, Any] = {}  # node_id -> result
@@ -465,6 +480,19 @@ class MachinaWorkflow:
                     execution_trace.append(node_id)
                     auto_completed_this_pass += 1
                     continue
+
+                # Every dependency is done, so any incoming condition is now
+                # decidable. Mirrors WorkflowExecutor._find_ready_nodes: OR-any
+                # across the conditional edges, and a skip still counts as
+                # "completed" for dependency purposes, so skipping is NOT
+                # transitive -- an unconditional downstream node still runs.
+                if use_conditional_edges and node_id in conditional_edges:
+                    if not self._conditions_met(node_id, conditional_edges[node_id], outputs):
+                        workflow.logger.info(f"Skipping {node_id}: no incoming edge condition matched")
+                        completed.add(node_id)
+                        execution_trace.append(node_id)
+                        auto_completed_this_pass += 1
+                        continue
 
                 # Build immutable context for this node
                 context = {
@@ -879,6 +907,47 @@ class MachinaWorkflow:
                 deps[tgt].add(src)
 
         return deps, node_map
+
+    def _build_conditional_edge_map(
+        self,
+        edges: List[Dict],
+        node_map: Dict[str, Dict],
+    ) -> Dict[str, List[Dict]]:
+        """Group incoming edges that carry a condition, keyed by target node.
+
+        Only targets that appear here are gated; a node with no conditional
+        incoming edge keeps the unconditional "all deps done" rule.
+        """
+        conditional: Dict[str, List[Dict]] = {}
+        for edge in edges:
+            target = edge.get("target")
+            if target not in node_map:
+                continue
+            if not (edge.get("data") or {}).get("condition"):
+                continue
+            conditional.setdefault(target, []).append(edge)
+        return conditional
+
+    def _conditions_met(
+        self,
+        target_node_id: str,
+        edges: List[Dict],
+        outputs: Dict[str, Any],
+    ) -> bool:
+        """Return whether any conditional incoming edge admits this node.
+
+        OR-any, matching ``WorkflowExecutor._evaluate_incoming_conditions``.
+        A source that produced no output evaluates against ``{}`` rather than
+        raising, so a skipped upstream cannot wedge the graph.
+        """
+        for edge in edges:
+            condition = (edge.get("data") or {}).get("condition")
+            if not condition:
+                continue
+            source_output = outputs.get(edge.get("source")) or {}
+            if evaluate_condition(condition, source_output):
+                return True
+        return False
 
     def _find_ready_nodes(
         self,

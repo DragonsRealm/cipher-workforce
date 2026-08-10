@@ -166,6 +166,12 @@ async def handle_get_validated_ai_providers(
         providers.append(
             {
                 "provider": provider,
+                # Serialized so the client never needs its own id -> label table.
+                # This list is built from PROVIDER_CONFIGS, so it can legitimately
+                # contain a provider (xai) that has no chat-model node and no
+                # credential-catalogue entry; without a name from here the UI fell
+                # back to rendering the raw id.
+                "display_name": provider_config.get("display_name") or provider,
                 "models": stored_models or [],
                 "popular_models": popular_models,
                 "default_model": default_model,

@@ -317,7 +317,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
                       className="text-xs"
                       style={{ color: meta?.color }}
                     >
-                      {meta?.label || vp.provider}
+                      {vp.display_name || meta?.label || vp.provider}
                     </SelectLabel>
                     {models.map((m) => (
                       <SelectItem key={`${vp.provider}::${m}`} value={`${vp.provider}::${m}`}>

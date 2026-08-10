@@ -80,6 +80,10 @@ export interface APIUsageSummary {
 
 export interface ValidatedProvider {
   provider: string;
+  /** Backend-served label. Present for every provider the backend can return,
+   *  including ones with no chat-model node (xai), so the UI never needs a
+   *  local id -> label map that can fall behind `llm_defaults.json`. */
+  display_name: string;
   models: string[];
   popular_models: string[];
   default_model: string | null;
