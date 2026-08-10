@@ -1,10 +1,21 @@
 """Inbound triggers for the WhatsApp Cloud API.
 
-Two nodes rather than one with a mode switch. Per-node filters are not
-applied on the deployed push path -- only the CloudEvents type is -- so a
-``trigger_on: messages | statuses`` parameter would work when you press Run
-and silently fire on everything once deployed. Separate node types get
-separate type strings, which is the discriminator that actually works.
+Two nodes rather than one with a mode switch, for two reasons that
+outlived the original one.
+
+The original reason was that per-node filters were not applied on the
+deployed push path, so a ``trigger_on: messages | statuses`` parameter
+would work on Run and silently fire on everything once deployed. That is
+no longer true -- the node's filter now gates the spawn (see
+``machina-trigger-listener-node-filter``) -- but the split still stands:
+
+  * The CloudEvents type is the routing key. A canary trigger registers
+    exactly one type (``canary_registry`` is a str-to-str map and the
+    listener carries a single ``EventType`` keyword Search Attribute), so
+    one merged node could only subscribe to one of the two.
+  * The payloads are genuinely different shapes. An inbound message and a
+    delivery receipt share almost no fields, so merging would mean a union
+    output schema and weaker ``{{trigger.field}}`` resolution downstream.
 """
 
 from __future__ import annotations
@@ -96,19 +107,19 @@ class WhatsAppBusinessStatusOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class WhatsAppBusinessReceiveNode(WebhookTriggerNode):
-    type = "whatsappBusinessReceive"
-    display_name = "WhatsApp Business Receive"
-    subtitle = "Inbound message"
+class _WhatsAppBusinessTrigger(WebhookTriggerNode, abstract=True):
+    """Everything both inbound triggers share.
+
+    ``abstract=True`` keeps ``__init_subclass__`` from registering this as
+    a node; only the two concrete subclasses below appear on the canvas.
+    """
+
     group = ("whatsapp_business", "trigger")
-    description = "Trigger when a WhatsApp user messages your business number"
     component_kind = "trigger"
     handles = _OUTPUT_HANDLE
     credentials = (WhatsAppBusinessCredential,)
     webhook_source = WhatsAppBusinessWebhookSource
-    event_type_prefix = "com.opencompany.whatsapp_business.message."
     Params = BaseTriggerParams
-    Output = WhatsAppBusinessReceiveOutput
 
     async def _check_precondition(self) -> Optional[str]:
         """Fail fast on the canvas instead of waiting out the 24h timeout."""
@@ -126,23 +137,38 @@ class WhatsAppBusinessReceiveNode(WebhookTriggerNode):
             )
         return None
 
+    def shape_output(self, event: WorkflowEvent) -> Dict:
+        """Emit the flat payload, which is what the deployed path emits.
 
-class WhatsAppBusinessStatusNode(WebhookTriggerNode):
+        ``TriggerListenerWorkflow`` hands downstream nodes ``event.data``,
+        while the base default dumps the whole CloudEvents envelope. Without
+        this override ``{{trigger.text}}`` resolves once deployed and breaks
+        when you press Run, and the Run output does not match the declared
+        ``Output`` model.
+
+        The shaping itself already happened in the webhook source, so this
+        only unwraps -- deliberately, so the two paths cannot drift into
+        producing different fields.
+        """
+        return event.data if isinstance(event.data, dict) else {}
+
+
+class WhatsAppBusinessReceiveNode(_WhatsAppBusinessTrigger):
+    type = "whatsappBusinessReceive"
+    display_name = "WhatsApp Business Receive"
+    subtitle = "Inbound message"
+    description = "Trigger when a WhatsApp user messages your business number"
+    event_type_prefix = "com.opencompany.whatsapp_business.message."
+    Output = WhatsAppBusinessReceiveOutput
+
+
+class WhatsAppBusinessStatusNode(_WhatsAppBusinessTrigger):
     type = "whatsappBusinessStatus"
     display_name = "WhatsApp Business Status"
     subtitle = "Delivery status"
-    group = ("whatsapp_business", "trigger")
     description = "Trigger on sent / delivered / read / failed callbacks for messages you sent"
-    component_kind = "trigger"
-    handles = _OUTPUT_HANDLE
-    credentials = (WhatsAppBusinessCredential,)
-    webhook_source = WhatsAppBusinessWebhookSource
     event_type_prefix = "com.opencompany.whatsapp_business.status."
-    Params = BaseTriggerParams
     Output = WhatsAppBusinessStatusOutput
-
-    async def _check_precondition(self) -> Optional[str]:
-        return await WhatsAppBusinessReceiveNode._check_precondition(self)  # type: ignore[arg-type]
 
 
 __all__ = [

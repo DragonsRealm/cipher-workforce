@@ -379,6 +379,81 @@ class TestAbsorbedTemplateAndInteractive:
         assert "context" not in captured["body"]
 
 
+class TestRunAndDeployAgreeOnOutputShape:
+    """The deployed path hands downstream nodes ``event.data`` flat, while
+    the base ``shape_output`` dumps the whole CloudEvents envelope. Without
+    an override, ``{{trigger.text}}`` resolves when deployed and breaks on
+    Run, and the Run output does not match the declared Output model."""
+
+    def _event(self):
+        from services.events import WorkflowEvent
+
+        return WorkflowEvent(
+            source="opencompany://test",
+            type="com.opencompany.whatsapp_business.message.received",
+            data={"message_id": "wamid.1", "text": "hi"},
+        )
+
+    @pytest.mark.parametrize(
+        "node_cls_name",
+        ["WhatsAppBusinessReceiveNode", "WhatsAppBusinessStatusNode"],
+    )
+    def test_shape_output_is_the_flat_payload(self, node_cls_name):
+        import nodes.whatsapp_business.whatsapp_business_receive as mod
+
+        node = getattr(mod, node_cls_name)()
+        shaped = node.shape_output(self._event())
+        assert shaped == {"message_id": "wamid.1", "text": "hi"}
+        # The envelope members must not leak into the trigger output.
+        for envelope_only in ("specversion", "id", "source", "type", "data"):
+            assert envelope_only not in shaped
+
+    def test_both_triggers_share_one_implementation(self):
+        """They inherit it, so the two paths cannot drift apart."""
+        import nodes.whatsapp_business.whatsapp_business_receive as mod
+
+        assert (
+            mod.WhatsAppBusinessReceiveNode.shape_output
+            is mod.WhatsAppBusinessStatusNode.shape_output
+        )
+
+    def test_the_shared_base_is_not_itself_a_node(self):
+        from models.node_metadata import NODE_METADATA
+
+        assert "_WhatsAppBusinessTrigger" not in NODE_METADATA
+
+
+class TestIconsComeFromTheLibraryNotVendoredArtwork:
+    def test_each_node_type_gets_a_distinct_icon(self):
+        """All four rendered the same glyph before: only Send shipped a
+        per-node SVG, so the rest fell back to the folder's shared one."""
+        from services.node_spec import get_node_spec
+
+        icons = {}
+        for node_type in (
+            "whatsappBusinessSend",
+            "whatsappBusinessMedia",
+            "whatsappBusinessReceive",
+            "whatsappBusinessStatus",
+        ):
+            spec = get_node_spec(node_type)
+            data = spec if isinstance(spec, dict) else spec.model_dump(mode="json")
+            icons[node_type] = data["icon"]
+
+        assert all(icon.startswith("lucide:") for icon in icons.values())
+        assert len(set(icons.values())) == len(icons)
+
+    def test_no_vendored_node_svgs_remain(self):
+        """The credential icon stays -- it resolves through a different
+        chain (Credential.get_icon_path) and is a brand mark lucide has no
+        equivalent for."""
+        import pathlib
+
+        folder = pathlib.Path(__file__).resolve().parents[2] / "nodes" / "whatsapp_business"
+        svgs = {p.name for p in folder.glob("*.svg")}
+        assert svgs == {"whatsapp_business.svg"}
+
+
 class TestFileWidgetVisibility:
     def test_media_picker_is_gated_on_operation_as_well_as_source(self):
         """media_source defaults to "file", so keying on it alone rendered the
@@ -467,23 +542,7 @@ class TestModelCannotChooseTheSendingNumber:
 
 class TestSendText:
     def _send(self, params, *, number="PN1"):
-        node = WhatsAppBusinessSendNode()
-        captured = {}
-
-        async def _fake_post(ctx, path, body=None, **kwargs):
-            captured["path"] = path
-            captured["body"] = body
-            return {"messages": [{"id": "wamid.X"}], "contacts": [{"wa_id": "1"}]}
-
-        with (
-            patch("nodes.whatsapp_business.whatsapp_business_send.graph_post", new=_fake_post),
-            patch(
-                "services.plugin.deps.get_auth_service",
-                return_value=SimpleNamespace(get_api_key=AsyncMock(return_value=number)),
-            ),
-        ):
-            _run(node.execute("wac-1", {"operation": "send_text", **params}, _ctx()))
-        return captured
+        return _capture({"operation": "send_text", **params}, number=number)
 
     def test_builds_the_documented_text_envelope(self):
         captured = self._send({"to": "+1 (415) 555-1234", "text": "hello", "format_markdown": False})
@@ -514,28 +573,14 @@ class TestSendText:
     def test_oversize_body_is_refused_not_truncated(self):
         """Silently dropping the tail of a business message is worse than
         failing."""
-        node = WhatsAppBusinessSendNode()
-        with patch(
-            "services.plugin.deps.get_auth_service",
-            return_value=SimpleNamespace(get_api_key=AsyncMock(return_value="PN1")),
-        ):
-            envelope = _run(
-                node.execute(
-                    "wac-1",
-                    {"operation": "send_text", "to": "+14155551234", "text": "a" * 5000, "format_markdown": False},
-                    _ctx(),
-                )
-            )
+        envelope = self._send(
+            {"to": "+14155551234", "text": "a" * 5000, "format_markdown": False}
+        )["envelope"]
         assert envelope["success"] is False
         assert "4096" in envelope["error"]
 
     def test_empty_body_is_refused(self):
-        node = WhatsAppBusinessSendNode()
-        with patch(
-            "services.plugin.deps.get_auth_service",
-            return_value=SimpleNamespace(get_api_key=AsyncMock(return_value="PN1")),
-        ):
-            envelope = _run(node.execute("wac-1", {"operation": "send_text", "to": "+14155551234", "text": "   "}, _ctx()))
+        envelope = self._send({"to": "+14155551234", "text": "   "})["envelope"]
         assert envelope["success"] is False
 
 

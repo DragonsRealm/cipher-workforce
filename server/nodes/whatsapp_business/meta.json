@@ -1,1 +1,9 @@
-{"color": "#128C7E"}
+{
+  "color": "#128C7E",
+  "icons": {
+    "whatsappBusinessSend": "lucide:Send",
+    "whatsappBusinessMedia": "lucide:Paperclip",
+    "whatsappBusinessReceive": "lucide:Inbox",
+    "whatsappBusinessStatus": "lucide:CheckCheck"
+  }
+}
