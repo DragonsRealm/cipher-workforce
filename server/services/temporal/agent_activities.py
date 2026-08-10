@@ -1930,6 +1930,7 @@ def collect_agent_activities() -> List[Any]:
         # plain coroutine invoked by each plugin's own activity wrapper in
         # services/plugin/base.py, not a Temporal activity of its own.
         prepare_context,
+        reconstruct_context_messages,
         append_context,
         compact_context,
     ]
@@ -2184,6 +2185,56 @@ async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     # user's prompt twice. ``agent.execute_llm_step`` journals each turn from
     # the exact message list it hands to ``ChatUnifier.chat``.
     return {"context_ref": _ref_dict(thread)}
+
+
+@activity.defn(name="agent.reconstruct_context_messages")
+async def reconstruct_context_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Replay a Context thread's active transcript. Read-only.
+
+    Used only by ``AgentWorkflow`` after ``continue_as_new``. A rollover
+    carries references, not the conversation, so without this the resumed run
+    rebuilds ``messages`` from system + memory + prompt alone and the agent
+    silently forgets everything it had said — but only when a Context node is
+    attached, since the rollover itself is gated on ``context_ref``.
+
+    Returns ``{"messages": [...], "restored": bool, "reason": str}``. A thread
+    that cannot be replayed reports ``restored: False`` rather than raising, so
+    the workflow falls back to the freshly built list instead of failing a run
+    over a rehydration miss.
+    """
+
+    ref_data = payload.get("context_ref") or {}
+    if not ref_data:
+        return {"messages": [], "restored": False, "reason": "no_context_ref"}
+
+    from services.agent_context import (
+        OpaqueCheckpointError,
+        reconstruct_message_wire_v2,
+    )
+
+    store = _context_store()
+    try:
+        _ref, wires = await reconstruct_message_wire_v2(
+            store, _context_ref(ref_data)
+        )
+    except OpaqueCheckpointError:
+        # A provider-native checkpoint holds opaque continuation state, not a
+        # message list. The provider itself carries that context, so the
+        # rebuilt prompt is the correct fallback.
+        return {"messages": [], "restored": False, "reason": "opaque_checkpoint"}
+    except Exception as exc:  # noqa: BLE001 -- never fail a run over replay
+        activity.logger.warning(
+            "Context transcript replay failed; resuming from the rebuilt "
+            f"prompt instead: {exc!r}"
+        )
+        return {"messages": [], "restored": False, "reason": "replay_failed"}
+
+    messages = [dict(wire) for wire in wires]
+    return {
+        "messages": messages,
+        "restored": bool(messages),
+        "reason": "ok" if messages else "empty_thread",
+    }
 
 
 def _pending_tool_identities(

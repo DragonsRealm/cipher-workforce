@@ -429,8 +429,9 @@ Durable event listeners retain their deployment graph as a fallback, but each fi
 
 **Canvas-aware tools** opt into receiving the parent workflow's `nodes`/`edges` by declaring `needs_canvas: ClassVar[bool] = True` on their `BaseNode` subclass. The F4.B tool dispatch reads this via `services.node_registry.get_node_class(node_type).needs_canvas` and forwards `context.get("nodes")` / `context.get("edges")` into `tool_payload`; default plugins keep the empty-canvas optimisation. Today only `agentBuilder` opts in (it walks edges to resolve its calling agent and mutates the canvas). Operations inside agentBuilder reload via `database.get_workflow(workflow_id)` so in-run duplicate detection sees mutations from earlier calls in the same workflow run — see [agent_builder section in CLAUDE.md](../CLAUDE.md).
 
-`collect_agent_activities()` registers **16 agent activities**. Seven are the
-core loop activities:
+`collect_agent_activities()` registers the agent activities — read the live set
+from that function rather than trusting a count here, which drifts on every
+addition. Seven are the core loop activities:
 
 | Activity | Purpose |
 |---|---|
@@ -455,6 +456,24 @@ The other nine support skills and durable delegation:
 | `agent.register_task_execution` | Persists the runner and child Temporal identities for trace inspection. |
 | `agent.finish_delegation` | Idempotently records a delegated child's terminal result and usage. |
 | `agent.finalize_team` | Finalizes a team after its required tasks reach accepted or terminal states. |
+
+The Context journal surface adds `agent.prepare_context` (resolves the thread;
+journals nothing, because it runs before the request exists),
+`agent.reconstruct_context_messages`, `agent.append_context` and
+`agent.compact_context`.
+
+**`agent.reconstruct_context_messages` is the only place the journal is read
+back on the execution path.** `AgentWorkflow` rolls over under history pressure
+*only when `context_ref` is set*, and a rollover carries references rather than
+the conversation — so without a replay step, attaching a Context node is what
+makes a long run silently forget everything it had said. The resumed run calls
+this activity before its first LLM step and seeds `messages` from the result. It
+degrades rather than raising: an opaque provider checkpoint or an unreadable
+thread returns `restored: False` with a reason and the run continues from the
+rebuilt system + memory + prompt, since a rehydration miss must not turn an
+unreadable thread into a dead agent. This does **not** weaken the rule that the
+request is always built from `messages` — nothing reconstructs mid-loop, only at
+the rollover boundary.
 
 The F4.B compaction threshold is prepared from the model context length and
 the ratio configuration. It currently does not read

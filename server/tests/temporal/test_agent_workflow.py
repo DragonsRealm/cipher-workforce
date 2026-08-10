@@ -18,6 +18,18 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+# Bounded reference shape carried across a continue_as_new rollover.
+_CONTEXT_REF = {
+    "workflow_id": "workflow-1",
+    "context_node_id": "workflow-1:context:1",
+    "generation": 2,
+    "thread_id": "session:abc",
+    "epoch": 1,
+    "revision": 7,
+}
+
 
 class TestAgentWorkflowDefinition:
     """``AgentWorkflow`` must be a valid Temporal workflow definition
@@ -115,6 +127,144 @@ class TestContextJournalIdentity:
             assert f"{{journal_operation_id}}" in source
             assert f"{{execution_id}}:iter" not in source
             assert f'f"{{execution_id}}{suffix}"' not in source
+
+    def test_journal_operation_ids_are_scoped_per_agent_node(self):
+        """Two agents on one Context node resolve to the same thread.
+
+        With a firing-scoped id alone they minted identical operation ids,
+        collided on (thread, operation_id) and had their turns discarded as
+        replays -- so one of the two agents was simply absent from the journal.
+        """
+        import inspect
+
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        source = inspect.getsource(AgentWorkflow.run)
+        assert 'f"{journal_operation_id}:{agent_node_id}"' in source, (
+            "journal operation ids must include the agent node id, or "
+            "sibling agents sharing a Context node overwrite each other"
+        )
+
+    def test_resumed_run_replays_the_transcript_from_the_journal(self):
+        """continue_as_new carries references, not the conversation.
+
+        The rollover is gated on ``context_ref``, so without a replay step
+        attaching a Context node is what makes a long run forget everything it
+        had said -- the same class of bug as the original ``context_ref``
+        regression, one boundary later.
+        """
+        import inspect
+
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        source = inspect.getsource(AgentWorkflow.run)
+        assert "agent.reconstruct_context_messages" in source, (
+            "a resumed AgentWorkflow must replay its transcript from the "
+            "journal before continuing"
+        )
+        replay_at = source.index("agent.reconstruct_context_messages")
+        loop_at = source.index("agent.execute_llm_step")
+        assert replay_at < loop_at, (
+            "the transcript must be restored before the first LLM step of "
+            "the resumed run"
+        )
+
+    def test_workflow_never_claims_the_activity_rebuilds_the_request(self):
+        """Guards the comment, not the code.
+
+        Two comments used to state that the LLM activity reconstructs from the
+        store rather than from ``messages``. That was false, and it is exactly
+        the sentence a future reader would implement to reintroduce the
+        original bug.
+        """
+        import inspect
+
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        source = inspect.getsource(AgentWorkflow.run)
+        for claim in (
+            "reconstructs\n",
+            "source of truth for the transcript",
+            "rather than from `messages`",
+        ):
+            assert claim not in source, (
+                f"stale claim {claim!r} in AgentWorkflow.run -- the activity "
+                f"always builds its request from `messages`"
+            )
+
+    @pytest.mark.asyncio
+    async def test_replay_returns_the_journalled_transcript(self, monkeypatch):
+        import services.agent_context as agent_context
+        from services.temporal import agent_activities
+
+        wires = [
+            {"version": 2, "role": "system", "content": "you are helpful"},
+            {"version": 2, "role": "user", "content": "hello"},
+        ]
+
+        async def _replay(_store, ref):
+            return ref, wires
+
+        monkeypatch.setattr(agent_activities, "_context_store", lambda: object())
+        monkeypatch.setattr(agent_context, "reconstruct_message_wire_v2", _replay)
+
+        result = await agent_activities.reconstruct_context_messages(
+            {"context_ref": _CONTEXT_REF}
+        )
+
+        assert result["restored"] is True
+        assert result["messages"] == wires
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "failure, reason",
+        [
+            ("opaque", "opaque_checkpoint"),
+            ("boom", "replay_failed"),
+        ],
+    )
+    async def test_replay_degrades_instead_of_failing_the_run(
+        self, monkeypatch, failure, reason
+    ):
+        """A rehydration miss must never kill a resumed run.
+
+        The rebuilt system + memory + prompt is a worse starting point than
+        the journal, but it is a working one; raising here would turn an
+        unreadable thread into a dead agent.
+        """
+        import services.agent_context as agent_context
+        from services.agent_context import OpaqueCheckpointError
+        from services.temporal import agent_activities
+
+        async def _replay(_store, _ref):
+            raise (
+                OpaqueCheckpointError("provider-native checkpoint")
+                if failure == "opaque"
+                else RuntimeError("blob missing")
+            )
+
+        monkeypatch.setattr(agent_activities, "_context_store", lambda: object())
+        monkeypatch.setattr(agent_context, "reconstruct_message_wire_v2", _replay)
+
+        result = await agent_activities.reconstruct_context_messages(
+            {"context_ref": _CONTEXT_REF}
+        )
+
+        assert result["restored"] is False
+        assert result["reason"] == reason
+        assert result["messages"] == []
+
+    @pytest.mark.asyncio
+    async def test_replay_without_a_context_ref_is_a_no_op(self):
+        from services.temporal import agent_activities
+
+        result = await agent_activities.reconstruct_context_messages({})
+
+        assert result == {
+            "messages": [],
+            "restored": False,
+            "reason": "no_context_ref",
+        }
 
     def test_llm_step_has_a_single_implementation(self):
         """A Context node observes execution; it must not steer it.
@@ -382,6 +532,7 @@ class TestAgentActivities:
             "agent.prepare_context",
             "agent.prepare_payload",
             "agent.queue_delegation",
+            "agent.reconstruct_context_messages",
             "agent.refresh_tools",
             "agent.register_task_execution",
             "agent.release_subagent_permit",

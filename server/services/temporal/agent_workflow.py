@@ -720,11 +720,14 @@ class AgentWorkflow:
         # Native executions use the SDK-neutral v2 wire codec. Legacy
         # histories keep the legacy canonical {type, data} shape exactly.
         # ---- Context journal -------------------------------------------
-        # A Context node on the agent's input makes the backend journal the
-        # source of truth for the transcript: the LLM activity reconstructs
-        # from the store rather than from `messages`, so a run resumes the
-        # prior conversation instead of starting empty. The workflow holds
-        # only references.
+        # A Context node makes the backend journal every turn the agent sends.
+        # It never steers the request: the LLM activity always builds from
+        # ``messages``, and ``context_ref`` only says where to record. The
+        # workflow itself holds references, never transcript content.
+        #
+        # The one place the journal is read back is the continue-as-new
+        # rollover below, which carries references rather than the
+        # conversation.
         context_ref: Optional[Dict[str, Any]] = None
         runtime_config_ref = ""
         if payload.get("context_descriptor"):
@@ -746,8 +749,8 @@ class AgentWorkflow:
                 prepared_context.get("runtime_config_ref") or ""
             )
         if resume:
-            # A resumed run reconstructs its transcript from the journal, so
-            # only references and counters cross the rollover boundary.
+            # Only references and counters cross the rollover boundary; the
+            # transcript is replayed from the journal further down.
             context_ref = resume.get("context_ref") or context_ref
             runtime_config_ref = (
                 str(resume.get("runtime_config_ref") or "") or runtime_config_ref
@@ -786,6 +789,35 @@ class AgentWorkflow:
             else:
                 messages.append(
                     {"type": "human", "data": {"content": user_prompt}}
+                )
+
+        # ---- Resume: replay the transcript from the journal --------------
+        # continue_as_new carries references, not the conversation, so the
+        # list built above is just system + memory + prompt. Without this the
+        # agent forgets everything it had said mid-run — and only when a
+        # Context node is attached, since the rollover is gated on
+        # ``context_ref``. The journal is authoritative here because it holds
+        # the exact message list each turn was sent with.
+        if resume and context_ref:
+            await self._wait_until_resumed()
+            replayed = await workflow.execute_activity(
+                "agent.reconstruct_context_messages",
+                args=[{"context_ref": context_ref}],
+                activity_id="reconstruct-context-messages",
+                start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,
+                retry_policy=AGENT_ACTIVITY_RETRY,
+            )
+            restored = replayed.get("messages") or []
+            if restored:
+                messages = [dict(message) for message in restored]
+            else:
+                # An opaque provider checkpoint or an unreadable thread. The
+                # rebuilt prompt is the honest fallback; log which, so a
+                # forgetful agent is diagnosable rather than mysterious.
+                workflow.logger.warning(
+                    "AgentWorkflow resumed without a replayed transcript "
+                    f"({replayed.get('reason') or 'unknown'}); continuing from "
+                    "the rebuilt prompt"
                 )
 
         # Map LLM tool name -> {node_type, version, task_queue, node_id,
@@ -864,8 +896,15 @@ class AgentWorkflow:
                     **(
                         {
                             "context_ref": context_ref,
+                            # Scoped by agent node as well as firing: two
+                            # agents wired to one Context node resolve to the
+                            # same thread, so a firing-only id made them mint
+                            # identical operation ids, collide on
+                            # (thread, operation_id), and have their turns
+                            # discarded by the store's idempotency guard.
                             "journal_operation_id": (
-                                f"{journal_operation_id}:iter:{iteration}"
+                                f"{journal_operation_id}:{agent_node_id}"
+                                f":iter:{iteration}"
                             ),
                         }
                         if context_ref
