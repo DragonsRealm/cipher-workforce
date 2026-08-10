@@ -204,12 +204,16 @@ __all__ = [
 
 # Context panel commands are plugin-owned side channels.  The node class above
 # stays passive; all durable logic lives in AgentContextStore.
+from services.agent_context.listeners import (  # noqa: E402
+    register_context_commit_listener,
+)
 from services.plugin.edge_walker import (  # noqa: E402
     register_agent_context_builder,
 )
 from services.ws_handler_registry import register_ws_handlers  # noqa: E402
 
 from ._descriptor import build_agent_context_descriptor  # noqa: E402
+from ._events import on_context_commit  # noqa: E402
 from ._handlers import WS_HANDLERS  # noqa: E402
 
 register_ws_handlers(WS_HANDLERS)
@@ -217,3 +221,7 @@ register_ws_handlers(WS_HANDLERS)
 # node's parameters or thread-selection rules; it calls whatever is
 # registered here.
 register_agent_context_builder(build_agent_context_descriptor)
+# The store announces durable commits; this plugin decides they are worth a
+# `context.updated` broadcast.  Registering here keeps the store free of any
+# knowledge that a UI exists.
+register_context_commit_listener(on_context_commit)

@@ -225,6 +225,63 @@ live in `nodes/<plugin>/_events.py`. Cross-cutting factories
 See RFC §6.4 for the classification rule + the canonical
 `telegram/_events.py` example.
 
+### UI-only lifecycle events broadcast directly, never through `emit`
+
+`dispatch.emit` exists to reach **Temporal consumers**: it runs a Visibility
+`ListWorkflowExecutions` query to find running listeners, then broadcasts
+in-process as a side effect. That query is only worth paying for when some node
+type registered the event via `register_canary_trigger_type`.
+
+The Context lifecycle events (`context.updated` / `context.compacted` /
+`context.epoch.started`, in `nodes/context/_events.py`) have no canary consumer,
+so the query is guaranteed to match nothing — once per journal append. They call
+`get_status_broadcaster().broadcast({...})` directly instead, which is the same
+pattern `nodes/telegram/_events.py` uses for status. The CloudEvents envelope,
+`source`, `type`, `subject` and `data` are identical either way, so the wire
+contract the frontend sees does not change.
+
+Rule of thumb: **if no `register_canary_trigger_type` call names your event
+type, broadcast it directly.** Reach for `emit` only when a Temporal workflow
+has to receive it. `tests/nodes/test_context_events.py` locks this for Context
+by parsing the module's imports (AST, not grep, so the docstring can explain
+the reasoning without tripping the assertion).
+
+### Context events are emitted at the persistence boundary
+
+`AgentContextStore` is the one place every Context writer passes through — the
+in-process agent loop, the Temporal LLM activity, and the CLI-agent bridge all
+reach durable state through it. So the "thread advanced" notification is emitted
+there rather than at each call site, via a fanout registry in
+`services/agent_context/listeners.py`:
+
+```python
+register_context_commit_listener(async_fn)   # nodes/context/__init__.py
+await notify_context_commit(ref, provider=..., active_token_count=..., sequence=...)
+```
+
+Same shape as the plugin registries in `plugin_system.md`, and for the same
+reason: the store must never import `nodes/`. A new writer gets live updates for
+free, and no caller carries broadcast code.
+
+Three properties are load-bearing and have tests in
+`tests/services/agent_context/test_commit_listeners.py`:
+
+- **After commit, after reload.** The notification carries the post-commit
+  revision and can never be observed ahead of the state it describes.
+- **Replays emit nothing.** `append_transition` returns early on a reused
+  `operation_id` without committing; broadcasting there would wake every open
+  panel for something that did not happen.
+- **A listener can never fail a commit.** `notify_context_commit` swallows and
+  logs. These commits run inside the Temporal LLM activity's post-send window,
+  which is heartbeat-silent under a 60 s `heartbeat_timeout` on a
+  `maximum_attempts=1` retry policy — a throwing or slow listener there would
+  fail a run over a UI notification.
+
+Epoch rotation is deliberately **not** routed through the store listener:
+`start_epoch`'s callers already emit `context.epoch.started` with a `reason`
+(`clear` / `fork` / `workflow_reset`) the store cannot know, so emitting from
+the store would both duplicate the broadcast and lose the reason.
+
 ## Verification
 
 Each Phase-A milestone has a verification command:

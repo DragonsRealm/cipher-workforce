@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import JsonView from '@uiw/react-json-view';
 import {
   Archive,
   ChevronLeft,
@@ -12,6 +13,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -178,25 +185,17 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
     onError: () => toast.error('Failed to export Context'),
   });
 
-  // ``null`` means the server could not compute pressure — it has no context
-  // window for this thread. Rendering that as 0% would claim an empty context
-  // window, which reads as healthy; the bar is hidden instead.
-  const pressurePercent = useMemo<number | null>(() => {
-    if (typeof snapshot.pressure_ratio === 'number') {
-      return Math.max(0, Math.min(100, snapshot.pressure_ratio * 100));
-    }
-    if (snapshot.active_token_count && snapshot.context_window) {
-      return Math.max(
-        0,
-        Math.min(100, (snapshot.active_token_count / snapshot.context_window) * 100),
-      );
-    }
-    return null;
-  }, [
-    snapshot.active_token_count,
-    snapshot.context_window,
-    snapshot.pressure_ratio,
-  ]);
+  // The server owns the pressure rule (it divides by the context window it
+  // resolved, and sends null when it has none). This only scales the ratio for
+  // <Progress>; re-deriving it from active_token_count / context_window here
+  // would be a second copy of that rule, free to drift.
+  const pressurePercent = useMemo<number | null>(
+    () =>
+      typeof snapshot.pressure_ratio === 'number'
+        ? Math.max(0, Math.min(100, snapshot.pressure_ratio * 100))
+        : null,
+    [snapshot.pressure_ratio],
+  );
 
   if (!workflowId) {
     return (
@@ -355,49 +354,64 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
               No committed Context events yet.
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {snapshot.events!.map((event) => (
-                <details
-                  key={`${event.sequence}:${event.operation_id || event.event_type}`}
-                  className="rounded-md border border-border bg-card p-3"
-                >
-                  <summary className="cursor-pointer text-sm">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      #{event.sequence}
-                    </span>{' '}
-                    <span className="font-medium">{event.event_type}</span>
-                    {event.provider && (
-                      <Badge variant="outline" className="ml-2">
-                        {event.provider}
-                      </Badge>
-                    )}
-                  </summary>
-                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">
-                    {JSON.stringify(
-                      event.message_wire_v2 ??
-                        event.payload ?? {
-                          payload_ref: event.payload_ref,
-                          payload_hash: event.payload_hash,
-                          operation_id: event.operation_id,
-                        },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </details>
-              ))}
-            </div>
+            // Radix Accordion rather than <details>: it ships the
+            // aria-expanded / keyboard semantics, and `type="multiple"`
+            // keeps rows independently expandable.
+            <Accordion type="multiple" className="flex flex-col gap-2">
+              {snapshot.events!.map((event) => {
+                const key = `${event.sequence}:${event.operation_id || event.event_type}`;
+                return (
+                  <AccordionItem
+                    key={key}
+                    value={key}
+                    className="rounded-md border border-border bg-card p-3"
+                  >
+                    <AccordionTrigger className="gap-2 py-0 text-sm no-underline hover:no-underline">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        #{event.sequence}
+                      </span>
+                      <span className="font-medium">{event.event_type}</span>
+                      {event.provider && (
+                        <Badge variant="outline">{event.provider}</Badge>
+                      )}
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-3 pb-0">
+                      <JsonView
+                        value={
+                          (event.message_wire_v2 ??
+                            event.payload ?? {
+                              payload_ref: event.payload_ref,
+                              payload_hash: event.payload_hash,
+                              operation_id: event.operation_id,
+                            }) as object
+                        }
+                        collapsed={2}
+                        displayDataTypes={false}
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
           )}
         </TabsContent>
         <TabsContent value="active" className="mt-2">
           {contextQuery.isLoading ? (
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           ) : (
-            <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-4 text-xs">
-              {snapshot.active_replay
-                ? JSON.stringify(snapshot.active_replay, null, 2)
-                : 'No active replay is available.'}
-            </pre>
+            snapshot.active_replay ? (
+              <div className="rounded-md border border-border bg-card p-3">
+                <JsonView
+                  value={snapshot.active_replay as object}
+                  collapsed={3}
+                  displayDataTypes={false}
+                />
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                No active replay is available.
+              </div>
+            )
           )}
         </TabsContent>
       </Tabs>

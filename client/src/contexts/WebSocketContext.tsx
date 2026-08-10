@@ -1063,6 +1063,21 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           break;
         }
 
+        case 'context.updated':
+        case 'context.compacted':
+        case 'context.epoch.started': {
+          // CloudEvents-typed Context journal lifecycle from
+          // server/nodes/context/_events.py, emitted by the store after every
+          // durable commit. The payload is identity + revision only, so the
+          // panel refetches through the authorized `get_agent_context` handler
+          // rather than reading transcript content off a broadcast that
+          // reaches every connected client. Prefix invalidation: only a
+          // mounted ContextPanel has an active observer, so this is a no-op
+          // for everyone else.
+          void queryClient.invalidateQueries({ queryKey: ['agentContext'] });
+          break;
+        }
+
         case 'todos_updated': {
           // CloudEvents-typed todo-list change from
           // server/nodes/tool/write_todos/_events.py, emitted via the

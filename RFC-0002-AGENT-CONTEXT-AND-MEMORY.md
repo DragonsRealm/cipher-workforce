@@ -321,6 +321,15 @@ context.epoch.started
 memory.changed
 ```
 
+`context.updated` is emitted from `AgentContextStore`'s commit boundary through
+`services/agent_context/listeners.py`, so every writer is covered without
+call-site code; `context.epoch.started` stays with `start_epoch`'s callers,
+which own the `reason`. All three broadcast directly through the status
+broadcaster rather than the Temporal event dispatcher — they have no workflow
+consumers, so a Visibility query per journal append would buy nothing.
+Notifications fire only after a durable commit, never on an idempotent replay,
+and can never fail the commit that triggered them.
+
 Authorized, paginated backend handlers fetch journal or Memory content on
 demand. Provider bindings, signatures, recalled secrets, raw journal payloads,
 and Memory contents are excluded from workflow exports, logs, CloudEvents,

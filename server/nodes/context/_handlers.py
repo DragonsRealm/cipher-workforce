@@ -342,7 +342,7 @@ async def handle_get_agent_context(
         workflow_id=str(data["workflow_id"]),
         context_node_id=str(data["context_node_id"]),
         generation=generation,
-        include_archived=False,
+        include_archived=bool(data.get("include_archived")),
     )
     requested_thread = str(data.get("thread_id") or "")
     thread = next(

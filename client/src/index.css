@@ -358,6 +358,41 @@ html {
 .console-json-output .token.punctuation { color: var(--code-punctuation); }
 .console-json-output .token.operator { color: var(--code-operator); }
 
+/* ----------------------------------------------------------------------------
+ * @uiw/react-json-view — palette mapped onto the theme's --code-* tokens.
+ *
+ * The library reads every colour as `var(--w-rjv-*, <fallback>)` (see its
+ * esm/index.js), so its documented theming API is plain CSS custom properties.
+ * Declaring them here rather than passing one of its bundled theme objects
+ * through the `style` prop means: every <JsonView> in the app is themed with no
+ * per-call-site code, and all 12 themes repaint on `data-theme` change through
+ * the normal cascade instead of a React re-render.
+ * -------------------------------------------------------------------------- */
+
+:root {
+  --w-rjv-background-color: var(--code-bg);
+  --w-rjv-color: var(--code-text);
+  --w-rjv-key-string: var(--code-tag);
+  --w-rjv-line-color: var(--code-border);
+  --w-rjv-arrow-color: var(--code-gutter-fg);
+  --w-rjv-info-color: var(--code-comment);
+  --w-rjv-ellipsis-color: var(--code-comment);
+  --w-rjv-brackets-color: var(--code-punctuation);
+  --w-rjv-curlybraces-color: var(--code-punctuation);
+  --w-rjv-colon-color: var(--code-punctuation);
+  --w-rjv-quotes-color: var(--code-string);
+  --w-rjv-quotes-string-color: var(--code-string);
+  --w-rjv-type-string-color: var(--code-string);
+  --w-rjv-type-int-color: var(--code-number);
+  --w-rjv-type-float-color: var(--code-number);
+  --w-rjv-type-bigint-color: var(--code-number);
+  --w-rjv-type-boolean-color: var(--code-boolean);
+  --w-rjv-type-null-color: var(--code-number);
+  --w-rjv-type-nan-color: var(--code-number);
+  --w-rjv-type-undefined-color: var(--code-comment);
+  --w-rjv-type-date-color: var(--code-string);
+}
+
 .chat-markdown p { margin: 0 0 8px 0; }
 .chat-markdown p:last-child { margin-bottom: 0; }
 .chat-markdown h1,

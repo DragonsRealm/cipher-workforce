@@ -33,6 +33,7 @@ from models.agent_context import (
     ContextThreadKind,
 )
 from models.database import RuntimeMutation
+from services.agent_context.listeners import notify_context_commit
 from services.llm.protocol import (
     MESSAGE_WIRE_VERSION,
     message_from_wire,
@@ -507,6 +508,16 @@ class AgentContextStore:
                     await session.rollback()
                     continue
                 updated = await self._load_ref(ref)
+                # After commit and after the reload, so the notification can
+                # never be observed ahead of the state it announces. The
+                # idempotent-replay path above returns before reaching here:
+                # a replay is not a state change.
+                await notify_context_commit(
+                    updated,
+                    provider=provider or thread.provider,
+                    active_token_count=int(thread.active_token_count or 0),
+                    sequence=sequence,
+                )
                 return AgentContextAppendResult(
                     ref=updated,
                     event=_to_event(event),
@@ -582,7 +593,13 @@ class AgentContextStore:
                 except IntegrityError:
                     await session.rollback()
                     continue
-                return await self._load_ref(ref)
+                updated = await self._load_ref(ref)
+                await notify_context_commit(
+                    updated,
+                    provider=thread.provider,
+                    active_token_count=active_token_count,
+                )
+                return updated
         raise RevisionConflictError("context_pressure_update_conflict")
 
     async def prepare_compaction(

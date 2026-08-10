@@ -51,34 +51,6 @@ const TAG_VARIANT: Record<string, 'secondary' | 'info' | 'success'> = {
   agent_type: 'success',
 };
 
-/** @uiw/react-json-view palette driven entirely by the active theme's
- * --code-* tokens — no isDarkMode branch, so all 12 themes paint Raw JSON in
- * their own syntax colors. The CSS vars re-resolve on theme switch (the
- * data-theme attribute changes the --code-* values; no React re-render). */
-const CODE_JSON_THEME = {
-  '--w-rjv-background-color': 'var(--code-bg)',
-  '--w-rjv-color': 'var(--code-text)',
-  '--w-rjv-key-string': 'var(--code-tag)',
-  '--w-rjv-line-color': 'var(--code-border)',
-  '--w-rjv-arrow-color': 'var(--code-gutter-fg)',
-  '--w-rjv-info-color': 'var(--code-comment)',
-  '--w-rjv-ellipsis-color': 'var(--code-comment)',
-  '--w-rjv-brackets-color': 'var(--code-punctuation)',
-  '--w-rjv-curlybraces-color': 'var(--code-punctuation)',
-  '--w-rjv-colon-color': 'var(--code-punctuation)',
-  '--w-rjv-quotes-color': 'var(--code-string)',
-  '--w-rjv-quotes-string-color': 'var(--code-string)',
-  '--w-rjv-type-string-color': 'var(--code-string)',
-  '--w-rjv-type-int-color': 'var(--code-number)',
-  '--w-rjv-type-float-color': 'var(--code-number)',
-  '--w-rjv-type-bigint-color': 'var(--code-number)',
-  '--w-rjv-type-boolean-color': 'var(--code-boolean)',
-  '--w-rjv-type-null-color': 'var(--code-number)',
-  '--w-rjv-type-nan-color': 'var(--code-number)',
-  '--w-rjv-type-undefined-color': 'var(--code-comment)',
-  '--w-rjv-type-date-color': 'var(--code-string)',
-} as React.CSSProperties;
-
 interface Props {
   results: ExecutionResult[];
   onClear?: () => void;
@@ -193,20 +165,10 @@ export default function OutputPanel({ results, onClear, selectedNode }: Props) {
               {typeof response !== 'string' ? (
                 // Object/array response — themed JSON viewer (same --code-*
                 // palette as Raw JSON), not stringified-into-markdown.
-                <JsonView
-                  value={response}
-                  collapsed={2}
-                  displayDataTypes={false}
-                  style={CODE_JSON_THEME}
-                />
+                <JsonView value={response} collapsed={2} displayDataTypes={false} />
               ) : stdoutJson ? (
                 // Terminal node whose stdout is itself JSON — tree view.
-                <JsonView
-                  value={stdoutJson}
-                  collapsed={2}
-                  displayDataTypes={false}
-                  style={CODE_JSON_THEME}
-                />
+                <JsonView value={stdoutJson} collapsed={2} displayDataTypes={false} />
               ) : isTerminal ? (
                 // CLI text (uiHints.outputMode === 'terminal'): preformatted,
                 // never markdown — `#` would become headings and indentation
@@ -254,12 +216,7 @@ export default function OutputPanel({ results, onClear, selectedNode }: Props) {
               </button>
             }
           >
-            <JsonView
-              value={raw}
-              collapsed={2}
-              displayDataTypes={false}
-              style={CODE_JSON_THEME}
-            />
+            <JsonView value={raw} collapsed={2} displayDataTypes={false} />
           </Section>
         </div>
       </div>
