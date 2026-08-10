@@ -1,33 +1,12 @@
 import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { buildApiUrl } from '../../config/api';
+import type { AudioRef } from '../../types/workspaceFiles';
 
-/**
- * An AudioRef as the backend serializes it (`services/media/refs.py`).
- * Deliberately has no bytes/base64 field — audio travels as a reference,
- * never as data. See `services/media/limits.py` for the measured reason.
- */
-export interface AudioRef {
-  kind: 'audio';
-  path: string;
-  workflow_id?: string | null;
-  filename: string;
-  mime_type?: string;
-  format?: string;
-  size_bytes?: number;
-  duration_seconds?: number | null;
-  sample_rate?: number | null;
-  channels?: number | null;
-  sha256?: string | null;
-  url?: string | null;
-}
-
-/** Structural check — cheaper and more honest than trusting a uiHint alone. */
-export const isAudioRef = (value: unknown): value is AudioRef =>
-  !!value &&
-  typeof value === 'object' &&
-  (value as AudioRef).kind === 'audio' &&
-  typeof (value as AudioRef).path === 'string';
+// `AudioRef` / `isAudioRef` live in types/workspaceFiles.ts alongside the
+// `WorkspaceFileRef` they narrow. Keeping the value export here made this
+// file export both a component and a non-component, which breaks Fast
+// Refresh (react-refresh/only-export-components).
 
 const formatDuration = (seconds?: number | null): string | null => {
   if (seconds == null || !Number.isFinite(seconds)) return null;

@@ -23,7 +23,8 @@ import { ExecutionResult } from '@/services/executionService';
 import { useNodeSpec } from '@/lib/nodeSpec';
 import { copyToClipboard, tryParseJson } from '@/utils/formatters';
 import { cn } from '@/lib/utils';
-import AudioPreview, { AudioRef, isAudioRef } from './AudioPreview';
+import AudioPreview from './AudioPreview';
+import { type AudioRef, isAudioRef } from '@/types/workspaceFiles';
 
 /** Extract output data from ExecutionResult. */
 const getData = (r: ExecutionResult) =>
