@@ -82,15 +82,6 @@ NODE_FILTER_PATCH = "machina-trigger-listener-node-filter"
 
 _FILTER_ACTIVITY_NAME = "evaluate_trigger_filter_activity"
 _FILTER_ACTIVITY_TIMEOUT = timedelta(seconds=10)
-# Bounded, unlike Temporal's unlimited default: the spawn loop is
-# serialized, so a wedged filter activity would stall every later event on
-# this listener. Exhausting the attempts raises, and the caller admits the
-# event rather than dropping it.
-_FILTER_ACTIVITY_RETRY = RetryPolicy(
-    initial_interval=timedelta(seconds=1),
-    maximum_interval=timedelta(seconds=10),
-    maximum_attempts=3,
-)
 
 
 def _history_pressure(soft_cap: int) -> bool:
@@ -190,6 +181,14 @@ class TriggerListenerWorkflow:
             # guess -- see the fail-open contract on the activity.
             return True
 
+        # Shared constant, never an inline RetryPolicy -- same contract as
+        # the status broadcast below. The filter is a cheap local call, so
+        # the fail-fast policy fits: the spawn loop is serialized and a
+        # wedged filter would stall every later event on this listener.
+        # If the attempts are exhausted the activity raises, the caller
+        # logs it and moves on, exactly as for any other spawn failure.
+        from services.temporal._retry_policies import QUICK_ACTIVITY_RETRY
+
         return bool(
             await workflow.execute_activity(
                 _FILTER_ACTIVITY_NAME,
@@ -199,7 +198,7 @@ class TriggerListenerWorkflow:
                     "event_data": data,
                 },
                 start_to_close_timeout=_FILTER_ACTIVITY_TIMEOUT,
-                retry_policy=_FILTER_ACTIVITY_RETRY,
+                retry_policy=QUICK_ACTIVITY_RETRY,
             )
         )
 
