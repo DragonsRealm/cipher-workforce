@@ -97,7 +97,7 @@ class TestModelCannotChooseTheSendingNumber:
             result = _run(
                 node.execute_as_tool(
                     {"to": "+14155551234", "text": "hi", "phone_number_id": "ATTACKER_NUMBER"},
-                    {},
+                    {"operation": "send_text"},
                     _ctx(),
                 )
             )
@@ -114,7 +114,7 @@ class TestModelCannotChooseTheSendingNumber:
             return_value=SimpleNamespace(get_api_key=AsyncMock(return_value=None)),
         ):
             envelope = _run(
-                node.execute("wac-1", {"to": "+14155551234", "text": "hi"}, _ctx())
+                node.execute("wac-1", {"operation": "send_text", "to": "+14155551234", "text": "hi"}, _ctx())
             )
 
         assert envelope["success"] is False
@@ -139,7 +139,7 @@ class TestSendText:
                 return_value=SimpleNamespace(get_api_key=AsyncMock(return_value=number)),
             ),
         ):
-            _run(node.execute("wac-1", params, _ctx()))
+            _run(node.execute("wac-1", {"operation": "send_text", **params}, _ctx()))
         return captured
 
     def test_builds_the_documented_text_envelope(self):
@@ -179,7 +179,7 @@ class TestSendText:
             envelope = _run(
                 node.execute(
                     "wac-1",
-                    {"to": "+14155551234", "text": "a" * 5000, "format_markdown": False},
+                    {"operation": "send_text", "to": "+14155551234", "text": "a" * 5000, "format_markdown": False},
                     _ctx(),
                 )
             )
@@ -192,7 +192,7 @@ class TestSendText:
             "services.plugin.deps.get_auth_service",
             return_value=SimpleNamespace(get_api_key=AsyncMock(return_value="PN1")),
         ):
-            envelope = _run(node.execute("wac-1", {"to": "+14155551234", "text": "   "}, _ctx()))
+            envelope = _run(node.execute("wac-1", {"operation": "send_text", "to": "+14155551234", "text": "   "}, _ctx()))
         assert envelope["success"] is False
 
 
