@@ -45,6 +45,349 @@ def _ctx(**raw):
     )
 
 
+def _capture(params, *, number="PN1", result=None):
+    """Run one operation and return the outgoing Graph request."""
+    node = WhatsAppBusinessSendNode()
+    captured = {}
+
+    async def _fake_post(ctx, path, body=None, **kwargs):
+        captured["path"] = path
+        captured["body"] = body
+        captured["kwargs"] = kwargs
+        return result or {"messages": [{"id": "wamid.X"}], "contacts": [{"wa_id": "1"}]}
+
+    async def _fake_get(ctx, path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return result or {"data": []}
+
+    with (
+        patch("nodes.whatsapp_business.whatsapp_business_send.graph_post", new=_fake_post),
+        patch("nodes.whatsapp_business.whatsapp_business_send.graph_get", new=_fake_get),
+        patch(
+            "services.plugin.deps.get_auth_service",
+            return_value=SimpleNamespace(get_api_key=AsyncMock(return_value=number)),
+        ),
+    ):
+        captured["envelope"] = _run(node.execute("wac-1", params, _ctx()))
+    return captured
+
+
+class TestOneNodeCoversTheMessagesEndpoint:
+    """Meta models message type as a field on one endpoint, not as endpoints.
+
+    The node mirrors that: every send operation posts
+    ``{phone_number_id}/messages`` and differs only in ``type``. If someone
+    splits these back into separate nodes, or routes one at a different URL,
+    these fail.
+    """
+
+    SEND_OPS = [
+        "send_text",
+        "send_media",
+        "send_template",
+        "send_buttons",
+        "send_list",
+        "send_cta_url",
+        "send_reaction",
+        "send_location",
+        "send_contacts",
+    ]
+
+    def test_every_message_type_is_an_operation_on_this_node(self):
+        declared = WhatsAppBusinessSendParams.model_fields["operation"].annotation
+        import typing
+
+        values = set(typing.get_args(declared))
+        assert values == set(self.SEND_OPS) | {"list_templates"}
+
+    def test_the_absorbed_node_types_are_gone(self):
+        """whatsappBusinessTemplate / ...Interactive were merged into send.
+
+        They are unreleased, so they are deleted rather than aliased. A
+        re-import would mean the split crept back.
+        """
+        import importlib
+
+        for name in ("whatsapp_business_template", "whatsapp_business_interactive"):
+            with pytest.raises(ModuleNotFoundError):
+                importlib.import_module(f"nodes.whatsapp_business.{name}")
+
+    def test_absorbed_types_are_not_registered(self):
+        import nodes  # noqa: F401  -- triggers discovery
+        from models.node_metadata import NODE_METADATA
+
+        assert "whatsappBusinessTemplate" not in NODE_METADATA
+        assert "whatsappBusinessInteractive" not in NODE_METADATA
+        assert "whatsappBusinessSend" in NODE_METADATA
+
+
+class TestNewMessageTypes:
+    def test_reaction_addresses_its_target_and_never_quotes(self):
+        """A reaction points at its target through reaction.message_id.
+
+        Adding a `context` block as well is a different thing (a quoted
+        reply), so reply_to_message_id must be ignored here.
+        """
+        captured = _capture(
+            {
+                "operation": "send_reaction",
+                "to": "+14155551234",
+                "reaction_message_id": "wamid.TARGET",
+                "emoji": "\N{THUMBS UP SIGN}",
+                "reply_to_message_id": "wamid.SOMETHINGELSE",
+            }
+        )
+        assert captured["body"]["type"] == "reaction"
+        assert captured["body"]["reaction"] == {
+            "message_id": "wamid.TARGET",
+            "emoji": "\N{THUMBS UP SIGN}",
+        }
+        assert "context" not in captured["body"]
+
+    def test_empty_emoji_is_allowed_because_it_removes_a_reaction(self):
+        """Meta documents "" as the removal signal, so it is not an error."""
+        captured = _capture(
+            {
+                "operation": "send_reaction",
+                "to": "+14155551234",
+                "reaction_message_id": "wamid.TARGET",
+                "emoji": "",
+            }
+        )
+        assert captured["body"]["reaction"]["emoji"] == ""
+
+    def test_reaction_without_a_target_is_refused(self):
+        captured = _capture(
+            {"operation": "send_reaction", "to": "+14155551234", "emoji": "x"}
+        )
+        assert captured["envelope"]["success"] is False
+        assert captured["envelope"]["error_type"] == "NodeUserError"
+
+    def test_location_sends_coordinates(self):
+        captured = _capture(
+            {
+                "operation": "send_location",
+                "to": "+14155551234",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+            }
+        )
+        assert captured["body"]["type"] == "location"
+        assert captured["body"]["location"] == {"latitude": 12.9716, "longitude": 77.5946}
+
+    def test_location_address_is_nested_under_a_name(self):
+        """Meta only renders an address alongside a name; alone it is dropped."""
+        captured = _capture(
+            {
+                "operation": "send_location",
+                "to": "+14155551234",
+                "latitude": 1.0,
+                "longitude": 2.0,
+                "location_address": "221B Baker Street",
+            }
+        )
+        assert "address" not in captured["body"]["location"]
+
+        captured = _capture(
+            {
+                "operation": "send_location",
+                "to": "+14155551234",
+                "latitude": 1.0,
+                "longitude": 2.0,
+                "location_name": "Home",
+                "location_address": "221B Baker Street",
+            }
+        )
+        assert captured["body"]["location"]["address"] == "221B Baker Street"
+
+    @pytest.mark.parametrize(
+        "lat,lon",
+        [(91.0, 0.0), (-91.0, 0.0), (0.0, 181.0), (0.0, -181.0)],
+    )
+    def test_out_of_range_coordinates_fail_locally(self, lat, lon):
+        captured = _capture(
+            {"operation": "send_location", "to": "+14155551234", "latitude": lat, "longitude": lon}
+        )
+        assert captured["envelope"]["success"] is False
+
+    def test_missing_coordinate_is_refused(self):
+        captured = _capture(
+            {"operation": "send_location", "to": "+14155551234", "latitude": 1.0}
+        )
+        assert captured["envelope"]["success"] is False
+
+    def test_contacts_sends_the_list_verbatim(self):
+        card = {
+            "name": {"formatted_name": "Ada Lovelace", "first_name": "Ada"},
+            "phones": [{"phone": "+14155551234", "type": "CELL"}],
+        }
+        captured = _capture(
+            {"operation": "send_contacts", "to": "+14155551234", "contacts": [card]}
+        )
+        assert captured["body"]["type"] == "contacts"
+        assert captured["body"]["contacts"] == [card]
+
+    def test_contact_without_formatted_name_is_refused(self):
+        """Meta rejects the card outright; failing locally names the field."""
+        captured = _capture(
+            {
+                "operation": "send_contacts",
+                "to": "+14155551234",
+                "contacts": [{"phones": [{"phone": "+1"}]}],
+            }
+        )
+        assert captured["envelope"]["success"] is False
+        assert "formatted_name" in captured["envelope"]["error"]
+
+    def test_contacts_accepts_a_stringified_list(self):
+        """LLM tool arguments routinely arrive as JSON strings."""
+        captured = _capture(
+            {
+                "operation": "send_contacts",
+                "to": "+14155551234",
+                "contacts": '[{"name": {"formatted_name": "Ada"}}]',
+            }
+        )
+        assert captured["body"]["contacts"] == [{"name": {"formatted_name": "Ada"}}]
+
+
+class TestAbsorbedTemplateAndInteractive:
+    """The merged operations keep the payloads their old nodes produced."""
+
+    def test_template_envelope_survives_the_merge(self):
+        captured = _capture(
+            {
+                "operation": "send_template",
+                "to": "+14155551234",
+                "template_name": "order_update",
+                "language_code": "en_US",
+                "body_parameters": ["A", "B"],
+            }
+        )
+        assert captured["body"]["type"] == "template"
+        assert captured["body"]["template"]["name"] == "order_update"
+        assert captured["body"]["template"]["language"] == {"code": "en_US"}
+        assert captured["body"]["template"]["components"] == [
+            {"type": "body", "parameters": [{"type": "text", "text": "A"}, {"type": "text", "text": "B"}]}
+        ]
+
+    def test_named_parameters_win_over_positional(self):
+        """A named template rejects positional values with 132000."""
+        captured = _capture(
+            {
+                "operation": "send_template",
+                "to": "+14155551234",
+                "template_name": "t",
+                "body_parameters": ["positional"],
+                "named_parameters": {"customer": "Ada"},
+            }
+        )
+        params = captured["body"]["template"]["components"][0]["parameters"]
+        assert params == [{"type": "text", "parameter_name": "customer", "text": "Ada"}]
+
+    def test_list_templates_hits_the_waba_endpoint_not_messages(self):
+        """The one WABA-scoped call in the node. A phone-scoped path 404s."""
+        captured = _capture(
+            {"operation": "list_templates"},
+            number="WABA123",
+            result={"data": [{"name": "t", "status": "APPROVED"}]},
+        )
+        assert captured["path"] == "WABA123/message_templates"
+
+    def test_buttons_envelope_survives_the_merge(self):
+        captured = _capture(
+            {
+                "operation": "send_buttons",
+                "to": "+14155551234",
+                "body": "Confirm?",
+                "buttons": [{"id": "yes", "title": "Yes"}],
+            }
+        )
+        assert captured["body"]["type"] == "interactive"
+        assert captured["body"]["interactive"]["type"] == "button"
+        assert captured["body"]["interactive"]["action"]["buttons"] == [
+            {"type": "reply", "reply": {"id": "yes", "title": "Yes"}}
+        ]
+        assert captured["body"]["interactive"]["body"] == {"text": "Confirm?"}
+
+    def test_more_than_three_buttons_is_refused(self):
+        captured = _capture(
+            {
+                "operation": "send_buttons",
+                "to": "+14155551234",
+                "body": "Pick",
+                "buttons": [{"id": str(i), "title": str(i)} for i in range(4)],
+            }
+        )
+        assert captured["envelope"]["success"] is False
+
+    def test_list_row_cap_is_across_all_sections(self):
+        sections = [
+            {"title": "A", "rows": [{"id": f"a{i}", "title": f"a{i}"} for i in range(6)]},
+            {"title": "B", "rows": [{"id": f"b{i}", "title": f"b{i}"} for i in range(6)]},
+        ]
+        captured = _capture(
+            {"operation": "send_list", "to": "+14155551234", "body": "Pick", "sections": sections}
+        )
+        assert captured["envelope"]["success"] is False
+        assert "across every section" in captured["envelope"]["error"]
+
+    def test_cta_url_payload_shape(self):
+        captured = _capture(
+            {
+                "operation": "send_cta_url",
+                "to": "+14155551234",
+                "body": "Open it",
+                "cta_display_text": "Open",
+                "cta_url": "https://example.com",
+            }
+        )
+        assert captured["body"]["interactive"] == {
+            "type": "cta_url",
+            "action": {
+                "name": "cta_url",
+                "parameters": {"display_text": "Open", "url": "https://example.com"},
+            },
+            "body": {"text": "Open it"},
+        }
+
+    def test_interactive_header_is_text_typed(self):
+        captured = _capture(
+            {
+                "operation": "send_cta_url",
+                "to": "+14155551234",
+                "body": "b",
+                "header": "Title",
+                "cta_display_text": "Open",
+                "cta_url": "https://example.com",
+            }
+        )
+        assert captured["body"]["interactive"]["header"] == {"type": "text", "text": "Title"}
+
+    def test_interactive_never_quotes(self):
+        """Meta rejects `context` alongside an interactive payload."""
+        captured = _capture(
+            {
+                "operation": "send_buttons",
+                "to": "+14155551234",
+                "body": "b",
+                "buttons": [{"id": "y", "title": "Y"}],
+                "reply_to_message_id": "wamid.P",
+            }
+        )
+        assert "context" not in captured["body"]
+
+
+class TestFileWidgetVisibility:
+    def test_media_picker_is_gated_on_operation_as_well_as_source(self):
+        """media_source defaults to "file", so keying on it alone rendered the
+        file picker while the operation was send_text."""
+        show = WhatsAppBusinessSendParams.model_fields["media"].json_schema_extra["displayOptions"]["show"]
+        assert show["operation"] == ["send_media"]
+        assert show["media_source"] == ["file"]
+
+
 class TestParamsShape:
     def test_phone_number_id_is_not_a_parameter(self):
         """It selects the business identity a message is sent FROM.

@@ -102,6 +102,7 @@ class WhatsAppBusinessMediaNode(ActionNode):
     credentials = (WhatsAppBusinessCredential,)
     annotations = {"destructive": False, "readonly": False, "open_world": True}
     task_queue = TaskQueue.MESSAGING
+    usable_as_tool = True
 
     Params = WhatsAppBusinessMediaParams
     Output = WhatsAppBusinessMediaOutput
