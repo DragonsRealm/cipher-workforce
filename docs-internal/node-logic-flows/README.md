@@ -12,8 +12,10 @@ match its doc here, and each doc must still describe what the code does.
 - **Refactoring a node**: update the matching contract test in
   `server/tests/nodes/test_<category>.py` *first*, then change the handler,
   then update this doc.
-- **The index below is maintained by hand** (there is no generator script
-  currently). When you add, rename, or remove a card, update its entry below.
+- **The index below is generated.** Run `company docs nodes` after adding,
+  renaming or removing a card; `company docs nodes --check` fails when a
+  registered node has no card. Do not hand-edit between the
+  `AUTO-GENERATED-INDEX` markers.
 
 ## Conventions
 
@@ -26,7 +28,7 @@ match its doc here, and each doc must still describe what the code does.
 
 ## Index
 
-<!-- INDEX-START (manually maintained; filenames are camelCase of the plugin `type`) -->
+<!-- AUTO-GENERATED-INDEX-START -->
 
 ### ai_agents
 
@@ -82,8 +84,8 @@ match its doc here, and each doc must still describe what the code does.
 - [Chat History (`chatHistory`)](./chat_utility/chatHistory.md)
 - [Chat Send (`chatSend`)](./chat_utility/chatSend.md)
 - [Console (`console`)](./chat_utility/console.md)
-- [Create Map (`gmaps_create`)](./chat_utility/gmaps_create.md)
 - [File Handler (`fileHandler`)](./chat_utility/fileHandler.md)
+- [Create Map (`gmaps_create`)](./chat_utility/gmaps_create.md)
 - [Team Monitor (`teamMonitor`)](./chat_utility/teamMonitor.md)
 - [Text Generator (`textGenerator`)](./chat_utility/textGenerator.md)
 
@@ -133,9 +135,6 @@ match its doc here, and each doc must still describe what the code does.
 - [Proxy Status (`proxyStatus`)](./http_proxy/proxyStatus.md)
 
 ### language
-
-Sarvam AI's non-chat REST APIs. The chat models live under `ai_chat_models`
-and share the same credential.
 
 - [Detect Language (`detectLanguage`)](./language/detectLanguage.md)
 - [Speech to Text (`speechToText`)](./language/speechToText.md)
@@ -194,6 +193,13 @@ and share the same credential.
 - [WhatsApp Receive (`whatsappReceive`)](./whatsapp/whatsappReceive.md)
 - [WhatsApp Send (`whatsappSend`)](./whatsapp/whatsappSend.md)
 
+### whatsapp_business
+
+- [WhatsApp Business Media (`whatsappBusinessMedia`)](./whatsapp_business/whatsappBusinessMedia.md)
+- [WhatsApp Business Receive (`whatsappBusinessReceive`)](./whatsapp_business/whatsappBusinessReceive.md)
+- [WhatsApp Business Send (`whatsappBusinessSend`)](./whatsapp_business/whatsappBusinessSend.md)
+- [WhatsApp Business Status (`whatsappBusinessStatus`)](./whatsapp_business/whatsappBusinessStatus.md)
+
 ### workflow_triggers
 
 - [Chat Trigger (`chatTrigger`)](./workflow_triggers/chatTrigger.md)
@@ -204,4 +210,4 @@ and share the same credential.
 - [Webhook Response (`webhookResponse`)](./workflow_triggers/webhookResponse.md)
 - [Webhook Trigger (`webhookTrigger`)](./workflow_triggers/webhookTrigger.md)
 
-<!-- INDEX-END -->
+<!-- AUTO-GENERATED-INDEX-END -->
