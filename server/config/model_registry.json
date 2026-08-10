@@ -1,8 +1,73 @@
 {
-  "_generated": "2026-08-04T06:21:59.323110+00:00",
+  "_generated": "2026-08-10T11:26:16.723945+00:00",
   "_source": "openrouter",
-  "_model_count": 338,
+  "_model_count": 401,
   "models": {
+    "inclusionai/ling-3.0-tiny:free": {
+      "id": "inclusionai/ling-3.0-tiny:free",
+      "name": "inclusionAI: Ling 3.0 Tiny (free)",
+      "provider": "inclusionai",
+      "local_id": "ling-3.0-tiny:free",
+      "context_length": 262144,
+      "max_output_tokens": 32768,
+      "input_price_per_mtok": 0.0,
+      "output_price_per_mtok": 0.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "seed",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ]
+    },
+    "meta/muse-spark-1.2": {
+      "id": "meta/muse-spark-1.2",
+      "name": "Meta: Muse Spark 1.2",
+      "provider": "meta",
+      "local_id": "muse-spark-1.2",
+      "context_length": 1048576,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 1.25,
+      "output_price_per_mtok": 4.25,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
     "qwen/qwen3.8-max": {
       "id": "qwen/qwen3.8-max",
       "name": "Qwen: Qwen3.8 Max",
@@ -45,9 +110,9 @@
       "provider": "deepseek",
       "local_id": "deepseek-v4-flash-latest",
       "context_length": 1048576,
-      "max_output_tokens": 65536,
-      "input_price_per_mtok": 0.09,
-      "output_price_per_mtok": 0.18,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.08,
+      "output_price_per_mtok": 0.252,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -85,8 +150,8 @@
       "provider": "deepseek",
       "local_id": "deepseek-v4-flash-0731",
       "context_length": 1048576,
-      "max_output_tokens": 65536,
-      "input_price_per_mtok": 0.09,
+      "max_output_tokens": 384000,
+      "input_price_per_mtok": 0.08,
       "output_price_per_mtok": 0.18,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -125,8 +190,8 @@
       "provider": "thinkingmachines",
       "local_id": "inkling-small",
       "context_length": 524288,
-      "max_output_tokens": 0,
-      "input_price_per_mtok": 0.5,
+      "max_output_tokens": 262144,
+      "input_price_per_mtok": 0.45,
       "output_price_per_mtok": 1.2,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -148,6 +213,7 @@
         "repetition_penalty",
         "seed",
         "stop",
+        "structured_outputs",
         "temperature",
         "tool_choice",
         "tools",
@@ -247,15 +313,44 @@
         "verbosity"
       ]
     },
-    "inclusionai/ling-3.0-flash:free": {
-      "id": "inclusionai/ling-3.0-flash:free",
-      "name": "Ling-3.0-flash (free)",
+    "anthropic/claude-opus-5:batch": {
+      "id": "anthropic/claude-opus-5:batch",
+      "name": "Claude Opus 5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-5:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 12.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
+    "inclusionai/ling-3.0-flash": {
+      "id": "inclusionai/ling-3.0-flash",
+      "name": "Ling-3.0-flash",
       "provider": "inclusionai",
-      "local_id": "ling-3.0-flash:free",
+      "local_id": "ling-3.0-flash",
       "context_length": 262144,
       "max_output_tokens": 32768,
-      "input_price_per_mtok": 0.0,
-      "output_price_per_mtok": 0.0,
+      "input_price_per_mtok": 0.021,
+      "output_price_per_mtok": 0.063,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -266,8 +361,10 @@
       "supported_parameters": [
         "frequency_penalty",
         "include_reasoning",
+        "logit_bias",
         "logprobs",
         "max_tokens",
+        "min_p",
         "presence_penalty",
         "reasoning",
         "repetition_penalty",
@@ -362,6 +459,35 @@
         "top_p"
       ]
     },
+    "gemini/gemini-3.6-flash:batch": {
+      "id": "google/gemini-3.6-flash:batch",
+      "name": "Google: Gemini 3.6 Flash (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3.6-flash:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.75,
+      "output_price_per_mtok": 3.75,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "gemini/gemini-3.5-flash-lite": {
       "id": "google/gemini-3.5-flash-lite",
       "name": "Google: Gemini 3.5 Flash Lite",
@@ -391,6 +517,35 @@
         "tool_choice",
         "tools",
         "top_p"
+      ]
+    },
+    "gemini/gemini-3.5-flash-lite:batch": {
+      "id": "google/gemini-3.5-flash-lite:batch",
+      "name": "Google: Gemini 3.5 Flash Lite (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3.5-flash-lite:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.15,
+      "output_price_per_mtok": 1.25,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
       ]
     },
     "meituan/longcat-2.0": {
@@ -433,8 +588,8 @@
       "provider": "thinkingmachines",
       "local_id": "inkling",
       "context_length": 1048576,
-      "max_output_tokens": 0,
-      "input_price_per_mtok": 1.0,
+      "max_output_tokens": 262144,
+      "input_price_per_mtok": 0.95,
       "output_price_per_mtok": 4.05,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -455,6 +610,40 @@
         "repetition_penalty",
         "response_format",
         "seed",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
+    "thinkingmachines/inkling:batch": {
+      "id": "thinkingmachines/inkling:batch",
+      "name": "Thinking Machines: Inkling (batch)",
+      "provider": "thinkingmachines",
+      "local_id": "inkling:batch",
+      "context_length": 524288,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.5,
+      "output_price_per_mtok": 2.025,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
         "stop",
         "temperature",
         "tool_choice",
@@ -666,6 +855,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.6-luna-pro:batch": {
+      "id": "openai/gpt-5.6-luna-pro:batch",
+      "name": "OpenAI: GPT-5.6 Luna Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-luna-pro:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.1,
+      "output_price_per_mtok": 0.6,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.6-luna": {
       "id": "openai/gpt-5.6-luna",
       "name": "OpenAI: GPT-5.6 Luna",
@@ -685,6 +902,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.6-luna:batch": {
+      "id": "openai/gpt-5.6-luna:batch",
+      "name": "OpenAI: GPT-5.6 Luna (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-luna:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.1,
+      "output_price_per_mtok": 0.6,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -724,6 +969,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.6-terra-pro:batch": {
+      "id": "openai/gpt-5.6-terra-pro:batch",
+      "name": "OpenAI: GPT-5.6 Terra Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-terra-pro:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 6.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.6-terra": {
       "id": "openai/gpt-5.6-terra",
       "name": "OpenAI: GPT-5.6 Terra",
@@ -743,6 +1016,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.6-terra:batch": {
+      "id": "openai/gpt-5.6-terra:batch",
+      "name": "OpenAI: GPT-5.6 Terra (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-terra:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 6.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -782,6 +1083,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.6-sol-pro:batch": {
+      "id": "openai/gpt-5.6-sol-pro:batch",
+      "name": "OpenAI: GPT-5.6 Sol Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-sol-pro:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 15.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.6-sol": {
       "id": "openai/gpt-5.6-sol",
       "name": "OpenAI: GPT-5.6 Sol",
@@ -811,9 +1140,37 @@
         "tools"
       ]
     },
+    "openai/gpt-5.6-sol:batch": {
+      "id": "openai/gpt-5.6-sol:batch",
+      "name": "OpenAI: GPT-5.6 Sol (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.6-sol:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 15.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "xai/grok-4.5": {
       "id": "x-ai/grok-4.5",
-      "name": "xAI: Grok 4.5",
+      "name": "SpaceXAI: Grok 4.5",
       "provider": "xai",
       "local_id": "grok-4.5",
       "context_length": 500000,
@@ -1053,6 +1410,35 @@
         "verbosity"
       ]
     },
+    "anthropic/claude-sonnet-5:batch": {
+      "id": "anthropic/claude-sonnet-5:batch",
+      "name": "Anthropic: Claude Sonnet 5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-sonnet-5:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
     "gemini/gemini-3.1-flash-lite-image": {
       "id": "google/gemini-3.1-flash-lite-image",
       "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
@@ -1266,6 +1652,42 @@
         "top_p"
       ]
     },
+    "z-ai/glm-5.2:batch": {
+      "id": "z-ai/glm-5.2:batch",
+      "name": "Z.ai: GLM 5.2 (batch)",
+      "provider": "z-ai",
+      "local_id": "glm-5.2:batch",
+      "context_length": 512000,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.7,
+      "output_price_per_mtok": 2.2,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
     "openrouter/fusion": {
       "id": "openrouter/fusion",
       "name": "OpenRouter: Fusion",
@@ -1291,7 +1713,7 @@
       "local_id": "kimi-k2.7-code",
       "context_length": 262144,
       "max_output_tokens": 262144,
-      "input_price_per_mtok": 0.73,
+      "input_price_per_mtok": 0.7,
       "output_price_per_mtok": 3.5,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -1320,6 +1742,41 @@
         "tools",
         "top_k",
         "top_logprobs",
+        "top_p"
+      ]
+    },
+    "moonshotai/kimi-k2.7-code:batch": {
+      "id": "moonshotai/kimi-k2.7-code:batch",
+      "name": "MoonshotAI: Kimi K2.7 Code (batch)",
+      "provider": "moonshotai",
+      "local_id": "kimi-k2.7-code:batch",
+      "context_length": 262144,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.475,
+      "output_price_per_mtok": 2.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
         "top_p"
       ]
     },
@@ -1372,6 +1829,35 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
+    "anthropic/claude-fable-5:batch": {
+      "id": "anthropic/claude-fable-5:batch",
+      "name": "Anthropic: Claude Fable 5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-fable-5:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 5.0,
+      "output_price_per_mtok": 25.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -1466,6 +1952,42 @@
         "repetition_penalty",
         "response_format",
         "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b:batch": {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:batch",
+      "name": "NVIDIA: Nemotron 3 Ultra (batch)",
+      "provider": "nvidia",
+      "local_id": "nemotron-3-ultra-550b-a55b:batch",
+      "context_length": 512288,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.3,
+      "output_price_per_mtok": 1.8,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
         "stop",
         "structured_outputs",
         "temperature",
@@ -1576,6 +2098,41 @@
         "top_p"
       ]
     },
+    "minimax/minimax-m3:batch": {
+      "id": "minimax/minimax-m3:batch",
+      "name": "MiniMax: MiniMax M3 (batch)",
+      "provider": "minimax",
+      "local_id": "minimax-m3:batch",
+      "context_length": 524288,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.15,
+      "output_price_per_mtok": 0.6,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
     "stepfun/step-3.7-flash": {
       "id": "stepfun/step-3.7-flash",
       "name": "StepFun: Step 3.7 Flash",
@@ -1675,6 +2232,35 @@
         "verbosity"
       ]
     },
+    "anthropic/claude-opus-4.8:batch": {
+      "id": "anthropic/claude-opus-4.8:batch",
+      "name": "Anthropic: Claude Opus 4.8 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-4.8:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 12.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
     "qwen/qwen3.7-max": {
       "id": "qwen/qwen3.7-max",
       "name": "Qwen: Qwen3.7 Max",
@@ -1712,7 +2298,7 @@
     },
     "xai/grok-build-0.1": {
       "id": "x-ai/grok-build-0.1",
-      "name": "xAI: Grok Build 0.1",
+      "name": "SpaceXAI: Grok Build 0.1",
       "provider": "xai",
       "local_id": "grok-build-0.1",
       "context_length": 256000,
@@ -1753,6 +2339,37 @@
       "max_output_tokens": 65536,
       "input_price_per_mtok": 1.5,
       "output_price_per_mtok": 9.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
+    "gemini/gemini-3.5-flash:batch": {
+      "id": "google/gemini-3.5-flash:batch",
+      "name": "Google: Gemini 3.5 Flash (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3.5-flash:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.75,
+      "output_price_per_mtok": 4.5,
       "supports_thinking": true,
       "thinking_type": "budget",
       "temperature_range": [
@@ -1897,6 +2514,37 @@
         "top_p"
       ]
     },
+    "gemini/gemini-3.1-flash-lite:batch": {
+      "id": "google/gemini-3.1-flash-lite:batch",
+      "name": "Google: Gemini 3.1 Flash Lite (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3.1-flash-lite:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.125,
+      "output_price_per_mtok": 0.75,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "openai/gpt-chat-latest": {
       "id": "openai/gpt-chat-latest",
       "name": "OpenAI: GPT Chat Latest",
@@ -1924,7 +2572,7 @@
     },
     "xai/grok-4.3": {
       "id": "x-ai/grok-4.3",
-      "name": "xAI: Grok 4.3",
+      "name": "SpaceXAI: Grok 4.3",
       "provider": "xai",
       "local_id": "grok-4.3",
       "context_length": 1000000,
@@ -2149,7 +2797,7 @@
       "local_id": "kimi-latest",
       "context_length": 1048576,
       "max_output_tokens": 1048576,
-      "input_price_per_mtok": 2.9,
+      "input_price_per_mtok": 2.8,
       "output_price_per_mtok": 14.0,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -2348,7 +2996,7 @@
       "local_id": "qwen3.6-35b-a3b",
       "context_length": 262144,
       "max_output_tokens": 262144,
-      "input_price_per_mtok": 0.14,
+      "input_price_per_mtok": 0.15,
       "output_price_per_mtok": 1.0,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -2420,9 +3068,9 @@
       "provider": "qwen",
       "local_id": "qwen3.6-27b",
       "context_length": 262144,
-      "max_output_tokens": 131072,
-      "input_price_per_mtok": 0.289,
-      "output_price_per_mtok": 2.4,
+      "max_output_tokens": 262144,
+      "input_price_per_mtok": 0.6,
+      "output_price_per_mtok": 3.6,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -2480,6 +3128,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.5-pro:batch": {
+      "id": "openai/gpt-5.5-pro:batch",
+      "name": "OpenAI: GPT-5.5 Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.5-pro:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 15.0,
+      "output_price_per_mtok": 90.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.5": {
       "id": "openai/gpt-5.5",
       "name": "OpenAI: GPT-5.5",
@@ -2499,6 +3175,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.5:batch": {
+      "id": "openai/gpt-5.5:batch",
+      "name": "OpenAI: GPT-5.5 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.5:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 15.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -2848,8 +3552,8 @@
       "local_id": "kimi-k2.6",
       "context_length": 262144,
       "max_output_tokens": 262144,
-      "input_price_per_mtok": 0.589,
-      "output_price_per_mtok": 2.48,
+      "input_price_per_mtok": 0.95,
+      "output_price_per_mtok": 4.0,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -2910,15 +3614,44 @@
         "verbosity"
       ]
     },
+    "anthropic/claude-opus-4.7:batch": {
+      "id": "anthropic/claude-opus-4.7:batch",
+      "name": "Anthropic: Claude Opus 4.7 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-4.7:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 12.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
     "z-ai/glm-5.1": {
       "id": "z-ai/glm-5.1",
       "name": "Z.ai: GLM 5.1",
       "provider": "z-ai",
       "local_id": "glm-5.1",
       "context_length": 204800,
-      "max_output_tokens": 128000,
-      "input_price_per_mtok": 0.966,
-      "output_price_per_mtok": 3.036,
+      "max_output_tokens": 131072,
+      "input_price_per_mtok": 1.4,
+      "output_price_per_mtok": 4.4,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -2954,9 +3687,9 @@
       "provider": "gemini",
       "local_id": "gemma-4-26b-a4b-it",
       "context_length": 262144,
-      "max_output_tokens": 16384,
-      "input_price_per_mtok": 0.07,
-      "output_price_per_mtok": 0.34,
+      "max_output_tokens": 262144,
+      "input_price_per_mtok": 0.12,
+      "output_price_per_mtok": 0.4,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -3191,7 +3924,7 @@
     },
     "xai/grok-4.20-multi-agent": {
       "id": "x-ai/grok-4.20-multi-agent",
-      "name": "xAI: Grok 4.20 Multi-Agent",
+      "name": "SpaceXAI: Grok 4.20 Multi-Agent",
       "provider": "xai",
       "local_id": "grok-4.20-multi-agent",
       "context_length": 2000000,
@@ -3221,7 +3954,7 @@
     },
     "xai/grok-4.20": {
       "id": "x-ai/grok-4.20",
-      "name": "xAI: Grok 4.20",
+      "name": "SpaceXAI: Grok 4.20",
       "provider": "xai",
       "local_id": "grok-4.20",
       "context_length": 2000000,
@@ -3373,8 +4106,8 @@
       "local_id": "minimax-m2.7",
       "context_length": 204800,
       "max_output_tokens": 131072,
-      "input_price_per_mtok": 0.25,
-      "output_price_per_mtok": 1.0,
+      "input_price_per_mtok": 0.3,
+      "output_price_per_mtok": 1.2,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -3433,6 +4166,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.4-nano:batch": {
+      "id": "openai/gpt-5.4-nano:batch",
+      "name": "OpenAI: GPT-5.4 Nano (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.4-nano:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.1,
+      "output_price_per_mtok": 0.625,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.4-mini": {
       "id": "openai/gpt-5.4-mini",
       "name": "OpenAI: GPT-5.4 Mini",
@@ -3452,6 +4213,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.4-mini:batch": {
+      "id": "openai/gpt-5.4-mini:batch",
+      "name": "OpenAI: GPT-5.4 Mini (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.4-mini:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.375,
+      "output_price_per_mtok": 2.25,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -3691,6 +4480,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.4-pro:batch": {
+      "id": "openai/gpt-5.4-pro:batch",
+      "name": "OpenAI: GPT-5.4 Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.4-pro:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 15.0,
+      "output_price_per_mtok": 90.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.4": {
       "id": "openai/gpt-5.4",
       "name": "OpenAI: GPT-5.4",
@@ -3710,6 +4527,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.4:batch": {
+      "id": "openai/gpt-5.4:batch",
+      "name": "OpenAI: GPT-5.4 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.4:batch",
+      "context_length": 1050000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 1.25,
+      "output_price_per_mtok": 7.5,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -3766,7 +4611,6 @@
       ],
       "is_reasoning_model": false,
       "supported_parameters": [
-        "max_completion_tokens",
         "max_tokens",
         "response_format",
         "seed",
@@ -3946,9 +4790,9 @@
       "provider": "qwen",
       "local_id": "qwen3.5-122b-a10b",
       "context_length": 262144,
-      "max_output_tokens": 65536,
-      "input_price_per_mtok": 0.26,
-      "output_price_per_mtok": 2.08,
+      "max_output_tokens": 81920,
+      "input_price_per_mtok": 0.29,
+      "output_price_per_mtok": 2.4,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -4128,6 +4972,37 @@
         "top_p"
       ]
     },
+    "gemini/gemini-3.1-pro-preview:batch": {
+      "id": "google/gemini-3.1-pro-preview:batch",
+      "name": "Google: Gemini 3.1 Pro Preview (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3.1-pro-preview:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 6.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "anthropic/claude-sonnet-4.6": {
       "id": "anthropic/claude-sonnet-4.6",
       "name": "Anthropic: Claude Sonnet 4.6",
@@ -4157,6 +5032,37 @@
         "tool_choice",
         "tools",
         "top_k",
+        "top_p",
+        "verbosity"
+      ]
+    },
+    "anthropic/claude-sonnet-4.6:batch": {
+      "id": "anthropic/claude-sonnet-4.6:batch",
+      "name": "Anthropic: Claude Sonnet 4.6 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-sonnet-4.6:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 1.5,
+      "output_price_per_mtok": 7.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
         "top_p",
         "verbosity"
       ]
@@ -4241,7 +5147,7 @@
       "local_id": "minimax-m2.5",
       "context_length": 204800,
       "max_output_tokens": 196608,
-      "input_price_per_mtok": 0.15,
+      "input_price_per_mtok": 0.22,
       "output_price_per_mtok": 0.9,
       "supports_thinking": false,
       "thinking_type": "none",
@@ -4375,6 +5281,37 @@
         "tool_choice",
         "tools",
         "top_k",
+        "top_p",
+        "verbosity"
+      ]
+    },
+    "anthropic/claude-opus-4.6:batch": {
+      "id": "anthropic/claude-opus-4.6:batch",
+      "name": "Anthropic: Claude Opus 4.6 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-4.6:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 12.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
         "top_p",
         "verbosity"
       ]
@@ -4522,8 +5459,8 @@
       "name": "Upstage: Solar Pro 3",
       "provider": "upstage",
       "local_id": "solar-pro-3",
-      "context_length": 128000,
-      "max_output_tokens": 0,
+      "context_length": 131072,
+      "max_output_tokens": 131072,
       "input_price_per_mtok": 0.15,
       "output_price_per_mtok": 0.6,
       "supports_thinking": false,
@@ -4534,14 +5471,17 @@
       ],
       "is_reasoning_model": false,
       "supported_parameters": [
+        "frequency_penalty",
         "include_reasoning",
         "max_tokens",
+        "presence_penalty",
         "reasoning",
         "response_format",
         "structured_outputs",
         "temperature",
         "tool_choice",
-        "tools"
+        "tools",
+        "top_p"
       ]
     },
     "minimax/minimax-m2-her": {
@@ -4848,6 +5788,7 @@
         "temperature",
         "tool_choice",
         "tools",
+        "top_a",
         "top_k",
         "top_logprobs",
         "top_p"
@@ -4859,9 +5800,40 @@
       "provider": "gemini",
       "local_id": "gemini-3-flash-preview",
       "context_length": 1048576,
-      "max_output_tokens": 65535,
+      "max_output_tokens": 65536,
       "input_price_per_mtok": 0.5,
       "output_price_per_mtok": 3.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
+    "gemini/gemini-3-flash-preview:batch": {
+      "id": "google/gemini-3-flash-preview:batch",
+      "name": "Google: Gemini 3 Flash Preview (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-3-flash-preview:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.25,
+      "output_price_per_mtok": 1.5,
       "supports_thinking": true,
       "thinking_type": "budget",
       "temperature_range": [
@@ -4890,7 +5862,7 @@
       "provider": "nvidia",
       "local_id": "nemotron-3-nano-30b-a3b",
       "context_length": 262144,
-      "max_output_tokens": 262144,
+      "max_output_tokens": 228000,
       "input_price_per_mtok": 0.05,
       "output_price_per_mtok": 0.2,
       "supports_thinking": false,
@@ -5003,6 +5975,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5.2-pro:batch": {
+      "id": "openai/gpt-5.2-pro:batch",
+      "name": "OpenAI: GPT-5.2 Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.2-pro:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 10.5,
+      "output_price_per_mtok": 84.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5.2": {
       "id": "openai/gpt-5.2",
       "name": "OpenAI: GPT-5.2",
@@ -5022,6 +6022,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.2:batch": {
+      "id": "openai/gpt-5.2:batch",
+      "name": "OpenAI: GPT-5.2 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.2:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.875,
+      "output_price_per_mtok": 7.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -5355,6 +6383,35 @@
         "verbosity"
       ]
     },
+    "anthropic/claude-opus-4.5:batch": {
+      "id": "anthropic/claude-opus-4.5:batch",
+      "name": "Anthropic: Claude Opus 4.5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-4.5:batch",
+      "context_length": 200000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 2.5,
+      "output_price_per_mtok": 12.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "verbosity"
+      ]
+    },
     "allenai/olmo-3-32b-think": {
       "id": "allenai/olmo-3-32b-think",
       "name": "AllenAI: Olmo 3 32B Think",
@@ -5468,6 +6525,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5.1:batch": {
+      "id": "openai/gpt-5.1:batch",
+      "name": "OpenAI: GPT-5.1 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5.1:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.625,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -5877,6 +6962,36 @@
         "top_p"
       ]
     },
+    "anthropic/claude-haiku-4.5:batch": {
+      "id": "anthropic/claude-haiku-4.5:batch",
+      "name": "Anthropic: Claude Haiku 4.5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-haiku-4.5:batch",
+      "context_length": 200000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 0.5,
+      "output_price_per_mtok": 2.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
     "qwen/qwen3-vl-8b-thinking": {
       "id": "qwen/qwen3-vl-8b-thinking",
       "name": "Qwen: Qwen3 VL 8B Thinking",
@@ -6105,6 +7220,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5-pro:batch": {
+      "id": "openai/gpt-5-pro:batch",
+      "name": "OpenAI: GPT-5 Pro (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5-pro:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 7.5,
+      "output_price_per_mtok": 60.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "z-ai/glm-4.6": {
       "id": "z-ai/glm-4.6",
       "name": "Z.ai: GLM 4.6",
@@ -6160,6 +7303,36 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
+    "anthropic/claude-sonnet-4.5:batch": {
+      "id": "anthropic/claude-sonnet-4.5:batch",
+      "name": "Anthropic: Claude Sonnet 4.5 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-sonnet-4.5:batch",
+      "context_length": 1000000,
+      "max_output_tokens": 64000,
+      "input_price_per_mtok": 1.5,
+      "output_price_per_mtok": 7.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "response_format",
@@ -6272,8 +7445,8 @@
       "local_id": "qwen3-vl-235b-a22b-thinking",
       "context_length": 131072,
       "max_output_tokens": 32768,
-      "input_price_per_mtok": 0.98,
-      "output_price_per_mtok": 3.95,
+      "input_price_per_mtok": 0.4,
+      "output_price_per_mtok": 4.0,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -6403,6 +7576,33 @@
         "top_p"
       ]
     },
+    "openai/gpt-5-codex:batch": {
+      "id": "openai/gpt-5-codex:batch",
+      "name": "OpenAI: GPT-5 Codex (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5-codex:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.625,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "deepseek/deepseek-v3.1-terminus": {
       "id": "deepseek/deepseek-v3.1-terminus",
       "name": "DeepSeek: DeepSeek V3.1 Terminus",
@@ -6477,7 +7677,7 @@
       "provider": "qwen",
       "local_id": "qwen3-next-80b-a3b-thinking",
       "context_length": 262144,
-      "max_output_tokens": 0,
+      "max_output_tokens": 32768,
       "input_price_per_mtok": 0.15,
       "output_price_per_mtok": 1.2,
       "supports_thinking": false,
@@ -6919,6 +8119,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5:batch": {
+      "id": "openai/gpt-5:batch",
+      "name": "OpenAI: GPT-5 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.625,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5-mini": {
       "id": "openai/gpt-5-mini",
       "name": "OpenAI: GPT-5 Mini",
@@ -6948,6 +8176,34 @@
         "tools"
       ]
     },
+    "openai/gpt-5-mini:batch": {
+      "id": "openai/gpt-5-mini:batch",
+      "name": "OpenAI: GPT-5 Mini (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5-mini:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.125,
+      "output_price_per_mtok": 1.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/gpt-5-nano": {
       "id": "openai/gpt-5-nano",
       "name": "OpenAI: GPT-5 Nano",
@@ -6967,6 +8223,34 @@
       "supported_parameters": [
         "include_reasoning",
         "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/gpt-5-nano:batch": {
+      "id": "openai/gpt-5-nano:batch",
+      "name": "OpenAI: GPT-5 Nano (batch)",
+      "provider": "openai",
+      "local_id": "gpt-5-nano:batch",
+      "context_length": 400000,
+      "max_output_tokens": 128000,
+      "input_price_per_mtok": 0.025,
+      "output_price_per_mtok": 0.2,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "reasoning_effort",
@@ -7111,7 +8395,34 @@
       "is_reasoning_model": false,
       "supported_parameters": [
         "include_reasoning",
-        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    },
+    "anthropic/claude-opus-4.1:batch": {
+      "id": "anthropic/claude-opus-4.1:batch",
+      "name": "Anthropic: Claude Opus 4.1 (batch)",
+      "provider": "anthropic",
+      "local_id": "claude-opus-4.1:batch",
+      "context_length": 200000,
+      "max_output_tokens": 32000,
+      "input_price_per_mtok": 7.5,
+      "output_price_per_mtok": 37.5,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        1.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
         "max_tokens",
         "reasoning",
         "response_format",
@@ -7119,9 +8430,7 @@
         "structured_outputs",
         "temperature",
         "tool_choice",
-        "tools",
-        "top_k",
-        "top_p"
+        "tools"
       ]
     },
     "mistralai/codestral-2508": {
@@ -7419,15 +8728,45 @@
         "top_p"
       ]
     },
+    "gemini/gemini-2.5-flash-lite:batch": {
+      "id": "google/gemini-2.5-flash-lite:batch",
+      "name": "Google: Gemini 2.5 Flash Lite (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-2.5-flash-lite:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65535,
+      "input_price_per_mtok": 0.05,
+      "output_price_per_mtok": 0.2,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "qwen/qwen3-235b-a22b-2507": {
       "id": "qwen/qwen3-235b-a22b-2507",
       "name": "Qwen: Qwen3 235B A22B Instruct 2507",
       "provider": "qwen",
       "local_id": "qwen3-235b-a22b-2507",
       "context_length": 262144,
-      "max_output_tokens": 32768,
-      "input_price_per_mtok": 0.1495,
-      "output_price_per_mtok": 0.598,
+      "max_output_tokens": 16384,
+      "input_price_per_mtok": 0.09,
+      "output_price_per_mtok": 0.55,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -7625,8 +8964,8 @@
       "local_id": "mistral-small-3.2-24b-instruct",
       "context_length": 256000,
       "max_output_tokens": 16384,
-      "input_price_per_mtok": 0.075,
-      "output_price_per_mtok": 0.2,
+      "input_price_per_mtok": 0.0938,
+      "output_price_per_mtok": 0.25,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -7716,6 +9055,36 @@
         "top_p"
       ]
     },
+    "gemini/gemini-2.5-flash:batch": {
+      "id": "google/gemini-2.5-flash:batch",
+      "name": "Google: Gemini 2.5 Flash (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-2.5-flash:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65535,
+      "input_price_per_mtok": 0.15,
+      "output_price_per_mtok": 1.25,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "gemini/gemini-2.5-pro": {
       "id": "google/gemini-2.5-pro",
       "name": "Google: Gemini 2.5 Pro",
@@ -7746,6 +9115,36 @@
         "top_p"
       ]
     },
+    "gemini/gemini-2.5-pro:batch": {
+      "id": "google/gemini-2.5-pro:batch",
+      "name": "Google: Gemini 2.5 Pro (batch)",
+      "provider": "gemini",
+      "local_id": "gemini-2.5-pro:batch",
+      "context_length": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_mtok": 0.625,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": true,
+      "thinking_type": "budget",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "openai/o3-pro": {
       "id": "openai/o3-pro",
       "name": "OpenAI: o3 Pro",
@@ -7755,6 +9154,33 @@
       "max_output_tokens": 100000,
       "input_price_per_mtok": 20.0,
       "output_price_per_mtok": 80.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/o3-pro:batch": {
+      "id": "openai/o3-pro:batch",
+      "name": "OpenAI: o3 Pro (batch)",
+      "provider": "openai",
+      "local_id": "o3-pro:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 10.0,
+      "output_price_per_mtok": 40.0,
       "supports_thinking": true,
       "thinking_type": "effort",
       "temperature_range": [
@@ -8122,9 +9548,9 @@
       "provider": "qwen",
       "local_id": "qwen3-14b",
       "context_length": 131072,
-      "max_output_tokens": 8192,
-      "input_price_per_mtok": 0.2275,
-      "output_price_per_mtok": 0.91,
+      "max_output_tokens": 16384,
+      "input_price_per_mtok": 0.12,
+      "output_price_per_mtok": 0.24,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -8252,6 +9678,34 @@
         "tools"
       ]
     },
+    "openai/o4-mini-high:batch": {
+      "id": "openai/o4-mini-high:batch",
+      "name": "OpenAI: o4 Mini High (batch)",
+      "provider": "openai",
+      "local_id": "o4-mini-high:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 0.55,
+      "output_price_per_mtok": 2.2,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/o3": {
       "id": "openai/o3",
       "name": "OpenAI: o3",
@@ -8279,6 +9733,33 @@
         "tools"
       ]
     },
+    "openai/o3:batch": {
+      "id": "openai/o3:batch",
+      "name": "OpenAI: o3 (batch)",
+      "provider": "openai",
+      "local_id": "o3:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 4.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "openai/o4-mini": {
       "id": "openai/o4-mini",
       "name": "OpenAI: o4 Mini",
@@ -8288,6 +9769,33 @@
       "max_output_tokens": 100000,
       "input_price_per_mtok": 1.1,
       "output_price_per_mtok": 4.4,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/o4-mini:batch": {
+      "id": "openai/o4-mini:batch",
+      "name": "OpenAI: o4 Mini (batch)",
+      "provider": "openai",
+      "local_id": "o4-mini:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 0.55,
+      "output_price_per_mtok": 2.2,
       "supports_thinking": true,
       "thinking_type": "effort",
       "temperature_range": [
@@ -8334,6 +9842,33 @@
         "top_p"
       ]
     },
+    "openai/gpt-4.1:batch": {
+      "id": "openai/gpt-4.1:batch",
+      "name": "OpenAI: GPT-4.1 (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4.1:batch",
+      "context_length": 1047576,
+      "max_output_tokens": 32768,
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 4.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "max_tokens",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "openai/gpt-4.1-mini": {
       "id": "openai/gpt-4.1-mini",
       "name": "OpenAI: GPT-4.1 Mini",
@@ -8352,6 +9887,33 @@
       "is_reasoning_model": false,
       "supported_parameters": [
         "max_completion_tokens",
+        "max_tokens",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
+    "openai/gpt-4.1-mini:batch": {
+      "id": "openai/gpt-4.1-mini:batch",
+      "name": "OpenAI: GPT-4.1 Mini (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4.1-mini:batch",
+      "context_length": 1047576,
+      "max_output_tokens": 32768,
+      "input_price_per_mtok": 0.2,
+      "output_price_per_mtok": 0.8,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
         "max_tokens",
         "response_format",
         "seed",
@@ -8390,15 +9952,42 @@
         "top_p"
       ]
     },
+    "openai/gpt-4.1-nano:batch": {
+      "id": "openai/gpt-4.1-nano:batch",
+      "name": "OpenAI: GPT-4.1 Nano (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4.1-nano:batch",
+      "context_length": 1047576,
+      "max_output_tokens": 32768,
+      "input_price_per_mtok": 0.05,
+      "output_price_per_mtok": 0.2,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "max_tokens",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ]
+    },
     "meta/llama-4-maverick": {
       "id": "meta-llama/llama-4-maverick",
       "name": "Meta: Llama 4 Maverick",
       "provider": "meta",
       "local_id": "llama-4-maverick",
       "context_length": 1048576,
-      "max_output_tokens": 16384,
+      "max_output_tokens": 0,
       "input_price_per_mtok": 0.2,
-      "output_price_per_mtok": 0.8,
+      "output_price_per_mtok": 0.696,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -8503,6 +10092,31 @@
       "max_output_tokens": 100000,
       "input_price_per_mtok": 150.0,
       "output_price_per_mtok": 600.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs"
+      ]
+    },
+    "openai/o1-pro:batch": {
+      "id": "openai/o1-pro:batch",
+      "name": "OpenAI: o1-pro (batch)",
+      "provider": "openai",
+      "local_id": "o1-pro:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 75.0,
+      "output_price_per_mtok": 300.0,
       "supports_thinking": true,
       "thinking_type": "effort",
       "temperature_range": [
@@ -8887,6 +10501,34 @@
         "tools"
       ]
     },
+    "openai/o3-mini-high:batch": {
+      "id": "openai/o3-mini-high:batch",
+      "name": "OpenAI: o3 Mini High (batch)",
+      "provider": "openai",
+      "local_id": "o3-mini-high:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 0.55,
+      "output_price_per_mtok": 2.2,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
     "aion-labs/aion-rp-llama-3.1-8b": {
       "id": "aion-labs/aion-rp-llama-3.1-8b",
       "name": "AionLabs: Aion-RP 1.0 (8B)",
@@ -8915,9 +10557,9 @@
       "provider": "qwen",
       "local_id": "qwen2.5-vl-72b-instruct",
       "context_length": 128000,
-      "max_output_tokens": 128000,
-      "input_price_per_mtok": 0.8,
-      "output_price_per_mtok": 1.0,
+      "max_output_tokens": 0,
+      "input_price_per_mtok": 0.25,
+      "output_price_per_mtok": 0.75,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -8984,6 +10626,33 @@
       "max_output_tokens": 100000,
       "input_price_per_mtok": 1.1,
       "output_price_per_mtok": 4.4,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        1.0,
+        1.0
+      ],
+      "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/o3-mini:batch": {
+      "id": "openai/o3-mini:batch",
+      "name": "OpenAI: o3 Mini (batch)",
+      "provider": "openai",
+      "local_id": "o3-mini:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 0.55,
+      "output_price_per_mtok": 2.2,
       "supports_thinking": true,
       "thinking_type": "effort",
       "temperature_range": [
@@ -9260,6 +10929,33 @@
         1.0
       ],
       "is_reasoning_model": true,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ]
+    },
+    "openai/o1:batch": {
+      "id": "openai/o1:batch",
+      "name": "OpenAI: o1 (batch)",
+      "provider": "openai",
+      "local_id": "o1:batch",
+      "context_length": 200000,
+      "max_output_tokens": 100000,
+      "input_price_per_mtok": 7.5,
+      "output_price_per_mtok": 30.0,
+      "supports_thinking": true,
+      "thinking_type": "effort",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
       "supported_parameters": [
         "include_reasoning",
         "max_tokens",
@@ -10149,6 +11845,41 @@
         "web_search_options"
       ]
     },
+    "openai/gpt-4o-mini:batch": {
+      "id": "openai/gpt-4o-mini:batch",
+      "name": "OpenAI: GPT-4o-mini (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4o-mini:batch",
+      "context_length": 128000,
+      "max_output_tokens": 16384,
+      "input_price_per_mtok": 0.075,
+      "output_price_per_mtok": 0.3,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "prediction",
+        "presence_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p",
+        "web_search_options"
+      ]
+    },
     "gemini/gemma-2-27b-it": {
       "id": "google/gemma-2-27b-it",
       "name": "Google: Gemma 2 27B",
@@ -10250,6 +11981,41 @@
         "web_search_options"
       ]
     },
+    "openai/gpt-4o:batch": {
+      "id": "openai/gpt-4o:batch",
+      "name": "OpenAI: GPT-4o (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4o:batch",
+      "context_length": 128000,
+      "max_output_tokens": 16384,
+      "input_price_per_mtok": 1.25,
+      "output_price_per_mtok": 5.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "prediction",
+        "presence_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p",
+        "web_search_options"
+      ]
+    },
     "mistralai/mixtral-8x22b-instruct": {
       "id": "mistralai/mixtral-8x22b-instruct",
       "name": "Mistral: Mixtral 8x22B Instruct",
@@ -10318,6 +12084,39 @@
       "max_output_tokens": 4096,
       "input_price_per_mtok": 10.0,
       "output_price_per_mtok": 30.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ]
+    },
+    "openai/gpt-4-turbo:batch": {
+      "id": "openai/gpt-4-turbo:batch",
+      "name": "OpenAI: GPT-4 Turbo (batch)",
+      "provider": "openai",
+      "local_id": "gpt-4-turbo:batch",
+      "context_length": 128000,
+      "max_output_tokens": 4096,
+      "input_price_per_mtok": 5.0,
+      "output_price_per_mtok": 15.0,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -10577,7 +12376,7 @@
       "provider": "mancer",
       "local_id": "weaver",
       "context_length": 8000,
-      "max_output_tokens": 2000,
+      "max_output_tokens": 6000,
       "input_price_per_mtok": 0.5,
       "output_price_per_mtok": 0.75,
       "supports_thinking": false,
@@ -10612,7 +12411,7 @@
       "provider": "undi95",
       "local_id": "remm-slerp-l2-13b",
       "context_length": 6144,
-      "max_output_tokens": 2048,
+      "max_output_tokens": 6144,
       "input_price_per_mtok": 0.45,
       "output_price_per_mtok": 0.65,
       "supports_thinking": false,
@@ -10648,8 +12447,8 @@
       "local_id": "mythomax-l2-13b",
       "context_length": 8192,
       "max_output_tokens": 4096,
-      "input_price_per_mtok": 0.08,
-      "output_price_per_mtok": 0.11,
+      "input_price_per_mtok": 0.06,
+      "output_price_per_mtok": 0.06,
       "supports_thinking": false,
       "thinking_type": "none",
       "temperature_range": [
@@ -10709,6 +12508,39 @@
         "top_p"
       ]
     },
+    "openai/gpt-3.5-turbo:batch": {
+      "id": "openai/gpt-3.5-turbo:batch",
+      "name": "OpenAI: GPT-3.5 Turbo (batch)",
+      "provider": "openai",
+      "local_id": "gpt-3.5-turbo:batch",
+      "context_length": 16385,
+      "max_output_tokens": 4096,
+      "input_price_per_mtok": 0.25,
+      "output_price_per_mtok": 0.75,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ]
+    },
     "openai/gpt-4": {
       "id": "openai/gpt-4",
       "name": "OpenAI: GPT-4",
@@ -10741,6 +12573,27 @@
         "tools",
         "top_logprobs",
         "top_p"
+      ]
+    },
+    "lmstudio/google/gemma-4-12b-qat": {
+      "id": "lmstudio/google/gemma-4-12b-qat",
+      "name": "google/gemma-4-12b-qat",
+      "provider": "lmstudio",
+      "local_id": "google/gemma-4-12b-qat",
+      "context_length": 205207,
+      "max_output_tokens": 4096,
+      "input_price_per_mtok": 0.0,
+      "output_price_per_mtok": 0.0,
+      "supports_thinking": false,
+      "thinking_type": "none",
+      "temperature_range": [
+        0.0,
+        2.0
+      ],
+      "is_reasoning_model": false,
+      "supported_parameters": [
+        "tools",
+        "vision"
       ]
     }
   }
