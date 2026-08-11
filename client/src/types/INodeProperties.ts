@@ -216,6 +216,8 @@ export interface INodeUIHints {
   isContextPanel?: boolean;
   /** MiddleSection: render explicit durable Memory item controls. */
   isMemoryToolPanel?: boolean;
+  /** MiddleSection: render the Data node's mounts + read-only browser. */
+  isDataPanel?: boolean;
   /** ParameterPanel: skip the Input section (e.g. start, skill, monitor). */
   hideInputSection?: boolean;
   /** ParameterPanel: skip the Output section (e.g. start, skill). */

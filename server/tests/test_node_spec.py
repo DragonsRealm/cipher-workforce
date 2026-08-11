@@ -927,6 +927,7 @@ class TestNodeSpecContractInvariants:
             "isMemoryPanel",
             "isMemoryToolPanel",
             "isContextPanel",
+            "isDataPanel",
             "isToolPanel",
             "requiresContext",
             "systemManaged",

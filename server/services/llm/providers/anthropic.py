@@ -205,7 +205,7 @@ class AnthropicProvider:
                         {
                             "type": "tool_result",
                             "tool_use_id": tool_message.tool_call_id or "",
-                            "content": tool_message.content,
+                            "content": self._tool_result_content(tool_message),
                         }
                     )
                     index += 1
@@ -215,6 +215,30 @@ class AnthropicProvider:
             api_msgs.append(self._to_api_message(m))
             index += 1
         return "\n\n".join(system_parts) if system_parts else None, api_msgs
+
+    @staticmethod
+    def _tool_result_content(m: Message) -> Any:
+        """Anthropic tool_result content: plain string, or a block list when
+        hydrated images ride along (the documented image-in-tool-result
+        shape). Ref-only blocks render nothing here — hydration either
+        produced bytes or a text placeholder before compile time."""
+        images = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": block.source["media_type"],
+                    "data": block.source["data_b64"],
+                },
+            }
+            for block in m.blocks or []
+            if block.type == "image"
+            and isinstance(block.source, dict)
+            and block.source.get("kind") == "bytes"
+        ]
+        if not images:
+            return m.content
+        return [{"type": "text", "text": m.content}, *images]
 
     def _to_api_message(self, m: Message) -> Dict[str, Any]:
         role = "assistant" if m.role == "assistant" else "user"
@@ -226,7 +250,7 @@ class AnthropicProvider:
                     {
                         "type": "tool_result",
                         "tool_use_id": m.tool_call_id or "",
-                        "content": m.content,
+                        "content": self._tool_result_content(m),
                     }
                 ],
             }
