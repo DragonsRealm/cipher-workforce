@@ -494,3 +494,37 @@ is to Reset the deployment, which starts a fresh generation.
 `tests/llm/test_langchain_removed.py` enforces the dependency end state via an
 AST walk over production sources, the `pyproject.toml` declarations, runtime
 importability, and a guarded `core.container` boot.
+
+
+## Multimodal image input (first increment)
+
+Image input rides the same normalized protocol rather than a parallel path.
+`ContentBlock` carries an optional `source` dict, discriminated by `kind`:
+durable `{"kind": "file_ref", "ref": <FileRef kind=image>, "detail": ...}`
+(~450 B) or transient `{"kind": "bytes", "media_type", "data_b64"}`. The wire
+codec's `_durable_source` **raises** on a bytes-kind source, so hydrated
+request material can never enter the journal or a Temporal payload — the
+never-bytes rule from [media_transport.md](media_transport.md), enforced
+structurally.
+
+Flow: a tool result opts in with `llm_media: [{ref, detail}]` (max 8 entries,
+png/jpeg/webp/gif, `ref.workflow_id` required). Both agent loops attach
+ref-only image blocks to the tool message. `run_native_llm_step` calls
+`services/llm/media.py::hydrate_image_blocks` once per step, on deep copies:
+bytes are read through the contained media reader, fitted to a visual-token
+budget (`services/media/image_fit.py`, detail low/auto/high -> small/normal/
+large), and dropped after the HTTP call. Originals never mutate.
+
+**Capability gate**: `provider_supports_vision` reads
+`llm_defaults.json providers.<p>.vision.enabled`; unknown or absent means
+False and the model gets a text placeholder instead — never emit a block a
+model is not confirmed to accept, because a rejected block would be journaled
+and resent every turn. **Encoder status**: Anthropic renders hydrated images
+inside `tool_result.content` (the documented block-list shape). OpenAI
+(Responses `input_image` inside `function_call_output`; Chat Completions
+hoist-to-user-turn) and Gemini (`inline_data` parts beside
+`function_response`) are pending — their `vision.enabled` stays `false` until
+those encoders land, so bytes are never hydrated only to be dropped.
+Text-only providers keep the `visionAnalyze` delegate tool as their vision
+path (see [data_node.md](data_node.md)). Locked by
+`tests/llm/test_media_blocks.py`.

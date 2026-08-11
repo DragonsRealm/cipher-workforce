@@ -85,17 +85,18 @@
 
   <rect class="box p-purple" x="605" y="324" width="500" height="76" rx="6"/>
   <text class="h2" x="855" y="348" text-anchor="middle">ChatUnifier -&gt; native provider SDK</text>
-  <text class="sub" x="855" y="368" text-anchor="middle">ChatOpenAI / ChatAnthropic / ChatGoogleGenerativeAI / ...</text>
-  <text class="sub" x="855" y="386" text-anchor="middle">.bind_tools([StructuredTool, ...])</text>
+  <text class="sub" x="855" y="368" text-anchor="middle">AnthropicProvider / OpenAIProvider / GeminiProvider / ...</text>
+  <text class="sub" x="855" y="386" text-anchor="middle">provider-neutral ToolDef schemas</text>
 
   <path class="conn" d="M 855 400 L 855 448" marker-end="url(#arrow)"/>
   <text class="label" x="865" y="428">bind_tools</text>
 
-  <rect class="box p-purple" x="605" y="448" width="500" height="94" rx="6"/>
-  <text class="h2" x="855" y="472" text-anchor="middle">_run_agent_loop (plain async)</text>
-  <text class="sub" x="855" y="492" text-anchor="middle">loop: ainvoke -&gt; tool_calls? dispatch -&gt; ToolMessage</text>
+  <rect class="box p-purple" x="605" y="448" width="500" height="112" rx="6"/>
+  <text class="h2" x="855" y="472" text-anchor="middle">run_native_agent_loop (plain async)</text>
+  <text class="sub" x="855" y="492" text-anchor="middle">loop: chat -&gt; tool_calls? dispatch -&gt; tool message</text>
   <text class="sub" x="855" y="510" text-anchor="middle">max-iterations guard &#183; delegate_to_&lt;type&gt; auto-injected</text>
   <text class="sub" x="855" y="528" text-anchor="middle">hot-rebind of tools after canvas mutations</text>
+  <text class="sub" x="855" y="546" text-anchor="middle">llm_media image refs -&gt; hydrated per call (vision-gated)</text>
 
   <!-- Convergence arrows -->
   <path class="conn" d="M 295 630 V 662 H 462 V 706" marker-end="url(#arrow)"/>

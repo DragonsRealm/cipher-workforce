@@ -669,3 +669,17 @@ AI Agents delegate to other agents wired to their `input-tools` handle, enabling
 Design decisions (legacy path): **memory isolation** (child uses its own connected memory, not the parent's), **error isolation** (child errors are logged + broadcast, never propagated to the parent), **task tracking** (background tasks live in `_delegated_tasks`, cleaned up on completion).
 
 Key files: `server/services/ai.py` (`DelegateToAgentSchema` in `_get_tool_schema()`, injects `ai_service` / `database` / `nodes` / `edges` into tool config), `server/services/handlers/tools.py` (`_execute_delegated_agent()`, `get_delegated_task_status()`). Full plumbing — memory / parameter / execution-context flow — is in [agent_delegation.md](agent_delegation.md); the multi-agent team-lead variant is in [agent_teams.md](agent_teams.md).
+
+
+## Multimodal tool results
+
+A tool result may opt into vision by including `llm_media: [{"ref": <FileRef
+kind=image>, "detail": "auto"}]` next to its normal payload. The agent loop
+(`agent_runtime.py`) and the Temporal activity path (`agent_activities.py`)
+attach ref-only image blocks to the tool message; `run_native_llm_step`
+hydrates them per provider call, gated by `provider_supports_vision` (unknown
+providers degrade to a text placeholder, so non-vision models keep working
+unchanged). Producers today: the `dataSource` image tier. For text-only host
+models the `visionAnalyze` delegate tool provides image understanding
+instead. Details: [native_llm_sdk.md](native_llm_sdk.md) and
+[data_node.md](data_node.md).

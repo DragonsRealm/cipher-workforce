@@ -120,11 +120,12 @@
   <rect class="panel p-green" x="1320" y="104" width="440" height="936" rx="10"/>
   <text class="h1" x="1540" y="134" text-anchor="middle">External services</text>
 
-  <rect class="box p-green" x="1340" y="152" width="400" height="100" rx="8"/>
+  <rect class="box p-green" x="1340" y="152" width="400" height="116" rx="8"/>
   <text class="h2" x="1540" y="177" text-anchor="middle">LLM providers (12)</text>
   <text class="sub" x="1540" y="197" text-anchor="middle">OpenAI, Anthropic, Gemini, OpenRouter, xAI,</text>
   <text class="sub" x="1540" y="215" text-anchor="middle">DeepSeek, Kimi, Mistral, Groq, Cerebras</text>
   <text class="sub" x="1540" y="233" text-anchor="middle">local: Ollama, LM Studio</text>
+  <text class="sub" x="1540" y="251" text-anchor="middle">image input: native blocks + visionAnalyze delegate</text>
 
   <rect class="box p-green" x="1340" y="280" width="400" height="60" rx="8"/>
   <text class="h2" x="1540" y="305" text-anchor="middle">Google Workspace</text>

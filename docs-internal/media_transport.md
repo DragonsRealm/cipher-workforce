@@ -318,3 +318,27 @@ So the rule for the next kind:
 | An escaping symlink is not listed | `tests/nodes/test_gallery.py::TestWorkspaceContainmentOfSymlinks` |
 | A mutating caller with an unresolvable workflow id is refused, not defaulted | `tests/services/test_workspace_locator.py` |
 | A returned ref round-trips through the GET route | `tests/routers/test_workspace.py` |
+
+
+## Images to models — the hydration boundary
+
+Multimodal input extends the never-bytes rule to LLM requests. Durable state
+(journal events, Temporal payloads, node results) carries image **FileRefs**
+inside `ContentBlock.source` (`kind="file_ref"`, ~450 B); actual bytes exist
+only between `services/llm/media.py::hydrate_image_blocks` and the provider
+HTTP call, on throwaway message copies. The protocol codec raises if a
+bytes-kind source ever reaches serialization — same structural-enforcement
+philosophy as `FileRef.extra="forbid"`.
+
+`services/media/image_fit.py` is the sizing authority: budgets are defined in
+visual tokens (`small`/`normal`/`large` = 256/1024/2048), converted to a
+pixel area (`tokens x patch^2`) and applied with the aspect-preserving,
+patch-grid-snapping `smart_resize` (floors AND ceilings — thumbnails scale
+up). JPEG q90 for opaque images, PNG when alpha must survive. Consumers: the
+`visionAnalyze` delegate node and image-block hydration.
+
+The `dataSource` node is the reference producer: its image read tier returns
+Pillow header metadata plus the FileRef, and adds the `llm_media` opt-in for
+workspace refs of allowlisted types. External-mount images have no FileRef by
+design — `copy_to_workspace` imports them first. Full node reference:
+[data_node.md](data_node.md).
