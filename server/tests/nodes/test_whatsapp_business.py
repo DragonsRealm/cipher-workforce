@@ -423,35 +423,81 @@ class TestRunAndDeployAgreeOnOutputShape:
         assert "_WhatsAppBusinessTrigger" not in NODE_METADATA
 
 
-class TestIconsComeFromTheLibraryNotVendoredArtwork:
-    def test_each_node_type_gets_a_distinct_icon(self):
-        """All four rendered the same glyph before: only Send shipped a
-        per-node SVG, so the rest fell back to the folder's shared one."""
-        from services.node_spec import get_node_spec
+_NODE_TYPES = (
+    "whatsappBusinessSend",
+    "whatsappBusinessMedia",
+    "whatsappBusinessReceive",
+    "whatsappBusinessStatus",
+)
 
-        icons = {}
-        for node_type in (
-            "whatsappBusinessSend",
-            "whatsappBusinessMedia",
-            "whatsappBusinessReceive",
-            "whatsappBusinessStatus",
-        ):
-            spec = get_node_spec(node_type)
-            data = spec if isinstance(spec, dict) else spec.model_dump(mode="json")
-            icons[node_type] = data["icon"]
 
-        assert all(icon.startswith("lucide:") for icon in icons.values())
-        assert len(set(icons.values())) == len(icons)
+class TestEachNodeShipsItsOwnBrandedIcon:
+    """All four rendered the same glyph before: only Send had a per-node
+    SVG, so the rest fell back to the folder's shared one.
 
-    def test_no_vendored_node_svgs_remain(self):
-        """The credential icon stays -- it resolves through a different
-        chain (Credential.get_icon_path) and is a brand mark lucide has no
-        equivalent for."""
+    They are brand artwork rather than a library reference on purpose. A
+    `lucide:<Name>` string is a hard dependency on a third-party export
+    that can be renamed or dropped, and when that happens the node simply
+    renders nothing -- no error. Generated SVGs in the plugin folder have
+    no such failure mode, and carry WhatsApp's own green.
+    """
+
+    def _icon_paths(self):
         import pathlib
 
         folder = pathlib.Path(__file__).resolve().parents[2] / "nodes" / "whatsapp_business"
-        svgs = {p.name for p in folder.glob("*.svg")}
-        assert svgs == {"whatsapp_business.svg"}
+        return folder, {p.name for p in folder.glob("*.svg")}
+
+    def test_every_node_type_resolves_to_its_own_file(self):
+        from nodes._visuals import get_plugin_icon_path
+
+        paths = {t: get_plugin_icon_path(t) for t in _NODE_TYPES}
+        assert all(p is not None for p in paths.values()), paths
+        # Distinct files, not four references to one shared icon.
+        assert len({str(p) for p in paths.values()}) == len(_NODE_TYPES)
+
+    def test_spec_serves_a_distinct_icon_endpoint_per_node(self):
+        from services.node_spec import get_node_spec
+
+        icons = set()
+        for node_type in _NODE_TYPES:
+            spec = get_node_spec(node_type)
+            data = spec if isinstance(spec, dict) else spec.model_dump(mode="json")
+            icons.add(data["icon"])
+        assert len(icons) == len(_NODE_TYPES)
+
+    def test_icons_are_purpose_glyphs_in_whatsapp_colours(self):
+        """One bold glyph per node, painted in WhatsApp green.
+
+        Three earlier attempts failed on the canvas, at roughly 28px:
+        monochrome library line art read as washed-out grey; a hand-drawn
+        speech bubble did not read as WhatsApp at all; and the real logo
+        plus a corner badge left the logo too small and the badge glyph
+        illegible. What works is a single purpose-built symbol filling the
+        box, carrying the brand through colour rather than the mark.
+        """
+        import xml.etree.ElementTree as ET
+
+        folder, names = self._icon_paths()
+        for name in names - {"whatsapp_business.svg"}:
+            body = (folder / name).read_text(encoding="utf-8")
+            ET.fromstring(body)  # malformed SVG renders as nothing, silently
+            assert "#25D366" in body, f"{name} does not use the WhatsApp brand green"
+            # The logo belongs to the credential mark, not the node icons:
+            # shrinking it to fit a badge is what made these unreadable.
+            assert "M17.472 14.382" not in body, f"{name} re-embeds the full logo"
+
+    def test_credential_brand_mark_is_kept(self):
+        """It resolves through a different chain (Credential.get_icon_path),
+        so it is not interchangeable with the per-node files."""
+        _, names = self._icon_paths()
+        assert "whatsapp_business.svg" in names
+
+    def test_no_shared_icon_shadows_the_per_node_files(self):
+        """A folder-level icon.svg would still be reachable, but its only
+        effect here would be to mask a missing per-node file."""
+        _, names = self._icon_paths()
+        assert "icon.svg" not in names
 
 
 class TestFileWidgetVisibility:

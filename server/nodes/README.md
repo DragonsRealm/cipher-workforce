@@ -44,16 +44,18 @@ class AcmeOutput(BaseModel):
 
 
 # 4. The node. (Icon + color are NOT declared on the class.
-#    Icon: prefer a library glyph over vendored artwork — add
-#       `"icons": {"<nodeType>": "lucide:Send"}` to THIS folder's
-#       meta.json (or `"icon"` for one glyph across the folder).
-#       Use `lucide:<ExportName>` (`CheckCheck`, NOT `check-check` —
-#       lookup is on the package's exports) or `lobehub:<brand>`.
-#       Ship `icon.svg` only for artwork no library has, typically a
-#       brand mark; `icon_<nodeType>.svg` for per-node artwork in
-#       multi-node folders. A file always beats a meta.json ref, so
-#       don't ship both. `server/nodes/visuals.json` is the legacy
-#       central registry for plugins with neither.
+#    Icon: for anything with a recognisable brand, drop the mark as
+#       `icon.svg` in THIS folder, or `icon_<nodeType>.svg` per node
+#       type in a multi-node folder. Brand artwork is what makes a node
+#       identifiable at canvas size and depends on nothing external.
+#       For generic utility nodes, meta.json can instead reference a
+#       library glyph: `"icons": {"<nodeType>": "lucide:Send"}` (use
+#       the package's ExportName — `CheckCheck`, NOT `check-check`).
+#       That is the weaker option: the name can be renamed or removed
+#       upstream and the node then renders nothing, and the glyph is
+#       monochrome currentColor line art. A file always beats a
+#       meta.json ref, so don't ship both. `server/nodes/visuals.json`
+#       is the legacy central registry for plugins with neither.
 #    Color: create `meta.json` with `{"color": "#abcdef"}` in this folder.
 #    BaseNode._metadata_dict resolves both at registration time via the
 #    central handler at server/nodes/_visuals.py.)

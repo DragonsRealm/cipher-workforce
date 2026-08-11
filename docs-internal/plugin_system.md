@@ -66,7 +66,7 @@ class SpecializedAgentBase(ActionNode, abstract=True):
 | `type` | Node type string. Matches workflow JSON + registry key. |
 | `version` | Int, bumped on breaking changes. Activity name includes it. |
 | `display_name` / `subtitle` / `description` | Palette + panel header. |
-| *(icon / color)* | **Not class attributes** (removed in F1 — declaring them has no effect). Icon resolves co-located `icon.svg` / `icon_<nodeType>.svg` → the plugin's own `meta.json` (`"icons": {"<nodeType>": "lucide:Send"}`, or folder-wide `"icon"`) → `visuals.json`. Prefer the `meta.json` ref: it reuses a library the frontend already bundles, so there is no artwork to vendor. Color: co-located `meta.json` `{"color": "#..."}`. Wire format on the NodeSpec stays `asset:<key>` / `<lib>:<brand>` / URL / emoji. |
+| *(icon / color)* | **Not class attributes** (removed in F1 — declaring them has no effect). Icon resolves co-located `icon.svg` / `icon_<nodeType>.svg` → the plugin's own `meta.json` (`"icons": {"<nodeType>": "lucide:Send"}`, or folder-wide `"icon"`) → `visuals.json`. Ship the SVG when the node has a brand mark; the `meta.json` ref is for generic utility nodes, and carries the risk that a third-party export name disappears on upgrade and the node then renders nothing. Color: co-located `meta.json` `{"color": "#..."}`. Wire format on the NodeSpec stays `asset:<key>` / `<lib>:<brand>` / URL / emoji. |
 | `group` | Tuple of palette groupings (first is primary). |
 | `component_kind` | Frontend dispatch: `square` / `trigger` / `agent` / `tool` / `model` / `start` / `generic`. |
 | `handles` | React Flow handle topology (`input-main`, `output-main`, …). |

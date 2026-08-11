@@ -116,21 +116,36 @@ because `NodeUserError` is on the framework's non-retryable list:
 
 ## Icons
 
-All four node icons are **library references declared in the plugin's own
-`meta.json`**, not vendored SVGs:
+Each node ships its own `icon_<nodeType>.svg` in the plugin folder: **one bold
+purpose-built glyph** — paper plane, inbound arrow into a tray, double tick,
+photo — painted in WhatsApp green `#25D366` with `#128C7E` for depth. The
+brand comes through the **colour**, not the mark.
 
-```json
-{"color": "#128C7E",
- "icons": {"whatsappBusinessSend": "lucide:Send",
-           "whatsappBusinessMedia": "lucide:Paperclip",
-           "whatsappBusinessReceive": "lucide:Inbox",
-           "whatsappBusinessStatus": "lucide:CheckCheck"}}
-```
+Canvas nodes render these at roughly 28px, which is the constraint that
+decided the design. Three earlier attempts each failed at that size and are
+worth recording, because all three look reasonable in the abstract:
 
-`CheckCheck` is WhatsApp's own delivery tick. `whatsapp_business.svg` remains as
-the *credential* brand mark — it resolves through `Credential.get_icon_path`,
-a different chain, and no library has an equivalent. See
-[plugin_system.md](./plugin_system.md) for the resolution order.
+- **One shared `icon.svg`.** A folder icon satisfies every node type in that
+  folder, so Media, Receive and Status all rendered the same glyph and only
+  Send — which happened to have a per-node file — looked different.
+- **`lucide:` references in `meta.json`.** No artwork to vendor, but lucide
+  glyphs are monochrome `currentColor` line art and rendered as washed-out
+  grey. The reference is also a hard dependency on a third-party export name
+  that can be renamed or removed, and the failure mode is a node that renders
+  nothing rather than an error.
+- **The real WhatsApp logo plus a corner badge.** Unmistakably branded, but
+  the composition needs the logo scaled to ~80% to make room, and the badge
+  glyph then lands at ~10px where a photo or paper plane is unreadable. Two
+  competing shapes in one 28px box is one too many.
+
+`whatsapp_business.svg` is separate and stays: it is the *credential* brand
+mark and resolves through `Credential.get_icon_path`, a different chain.
+
+`test_whatsapp_business.py::TestEachNodeShipsItsOwnBrandedIcon` asserts each
+node type resolves to a distinct file, that every icon parses as XML and
+embeds the authentic mark in brand green, and that no folder-level `icon.svg`
+reappears to shadow them. See [plugin_system.md](./plugin_system.md) for the
+resolution order.
 
 ## Gotchas worth knowing before editing
 
