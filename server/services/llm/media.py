@@ -12,7 +12,7 @@ the journal ever sees bytes.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Sequence
 
 from core.logging import get_logger
 from services.llm.config import LLM_DEFAULTS
