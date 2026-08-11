@@ -187,6 +187,10 @@ class ContentBlock:
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Media descriptor for ``type == "image"`` blocks, discriminated by
+    # ``kind``: durable ``file_ref`` (a FileRef dump) or transient ``bytes``
+    # (hydrated request material — the wire codec refuses to serialize it).
+    source: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -568,6 +572,15 @@ def _tool_call_from_wire(value: Mapping[str, Any]) -> ToolCall:
     )
 
 
+def _durable_source(source: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Only ref-shaped image sources are durable; hydrated bytes are transient."""
+    if source is None:
+        return None
+    if source.get("kind") == "bytes":
+        raise ValueError("image bytes must not enter durable state")
+    return _json_safe(dict(source))
+
+
 def _block_to_wire(block: ContentBlock) -> Dict[str, Any]:
     return {
         "type": block.type,
@@ -578,12 +591,14 @@ def _block_to_wire(block: ContentBlock) -> Dict[str, Any]:
         "tool_call_id": block.tool_call_id,
         "name": block.name,
         "metadata": _json_safe(block.metadata),
+        "source": _durable_source(block.source),
     }
 
 
 def _block_from_wire(value: Mapping[str, Any]) -> ContentBlock:
     tool_call = value.get("tool_call")
     metadata = value.get("metadata")
+    source = value.get("source")
     return ContentBlock(
         type=str(value.get("type") or "text"),
         text=str(value.get("text") or ""),
@@ -595,6 +610,7 @@ def _block_from_wire(value: Mapping[str, Any]) -> ContentBlock:
         tool_call_id=_optional_str(value.get("tool_call_id")),
         name=_optional_str(value.get("name")),
         metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
+        source=dict(source) if isinstance(source, Mapping) else None,
     )
 
 

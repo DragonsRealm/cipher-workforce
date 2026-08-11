@@ -24,6 +24,10 @@ from typing import (
 from pydantic import BaseModel, ValidationError
 
 from core.logging import get_logger
+from services.llm.media import (
+    hydrate_image_blocks,
+    image_blocks_from_tool_result,
+)
 from services.llm.messages import filter_empty_messages
 from services.llm.protocol import (
     LLMError,
@@ -139,13 +143,18 @@ async def run_native_llm_step(
         raise RuntimeError("ChatUnifier is required for native agent execution")
 
     definitions = [_tool_definition(tool) for tool in (tools or ())]
+    # Hydrate once, outside the retry loop, on throwaway copies — refs stay
+    # the durable form; bytes exist only for this provider call.
+    prepared = await hydrate_image_blocks(
+        filter_empty_messages(messages), provider=provider, model=model
+    )
     attempts = max(0, int(explicit_max_retries)) + 1
     for attempt in range(attempts):
         try:
             return await chat_unifier.chat(
                 provider=provider,
                 api_key=api_key,
-                messages=filter_empty_messages(messages),
+                messages=prepared,
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -486,6 +495,9 @@ async def run_native_agent_loop(
                 tool_call_id=call.id,
                 name=call.name,
             )
+            # Tools opt into vision via `llm_media` refs; blocks stay ~450 B
+            # in durable state (hydration happens per provider call).
+            tool_message.blocks.extend(image_blocks_from_tool_result(result))
             messages.append(tool_message)
             await persist_transition(
                 "message.tool_result",

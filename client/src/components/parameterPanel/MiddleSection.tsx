@@ -35,6 +35,7 @@ import ProcessManagerPanel from './ProcessManagerPanel';
 import GalleryPanel from './GalleryPanel';
 import ContextPanel from './ContextPanel';
 import MemoryToolPanel from './MemoryToolPanel';
+import DataPanel from './DataPanel';
 import { useAppStore } from '../../store/useAppStore';
 import { useNodeStatus, useWebSocket, CompactionStats } from '../../contexts/WebSocketContext';
 import { useUserSettingsQuery } from '../../hooks/useUserSettingsQuery';
@@ -192,6 +193,7 @@ const MiddleSection: React.FC<MiddleSectionProps> = ({
   const isMasterSkillNode = hints.isMasterSkillEditor === true;
   const isContextNode = hints.isContextPanel === true;
   const isMemoryToolNode = hints.isMemoryToolPanel === true;
+  const isDataNode = hints.isDataPanel === true;
   // Legacy combined Markdown/transcript panel remains available while
   // normalize_workflow_graph upgrades input-memory graphs.
   const isMemoryNode = hints.isMemoryPanel === true && !isMemoryToolNode;
@@ -602,6 +604,13 @@ const MiddleSection: React.FC<MiddleSectionProps> = ({
           />
         ) : isMemoryToolNode ? (
           <MemoryToolPanel
+            nodeId={nodeId}
+            workflowId={currentWorkflow?.id}
+            parameters={parameters}
+            onParameterChange={onParameterChange}
+          />
+        ) : isDataNode ? (
+          <DataPanel
             nodeId={nodeId}
             workflowId={currentWorkflow?.id}
             parameters={parameters}

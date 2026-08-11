@@ -2469,6 +2469,10 @@ async def _execute_tool_and_append(
         tool_call_id=str(call.get("id") or pending.get("call_id") or ""),
         name=str(call.get("name") or ""),
     )
+    from services.llm.media import image_blocks_from_tool_result
+
+    # Tools opt into vision via `llm_media`; blocks journal as ~450 B refs.
+    tool_message.blocks.extend(image_blocks_from_tool_result(tool_result))
     ref = await _append_event(
         store,
         ref,

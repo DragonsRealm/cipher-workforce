@@ -44,6 +44,13 @@ dependencies = [
     # project's MIT licence) and over pydub / ffprobe, which both require
     # an ffmpeg binary on PATH that nothing installs on Windows.
     "tinytag>=2.0.0",
+    # Data node read tiers (nodes/tool/data_source/_readers.py). First-class
+    # rather than an optional extra so the LLM-facing tool behaves the same
+    # on every install: openpyxl for XLSX (pure Python), Pillow for image
+    # metadata (was already shipping transitively via qrcode[pil]) — and for
+    # services/media/image_fit.py budget resizing.
+    "openpyxl>=3.1.0",
+    "pillow>=10.0.0",
     # Multipart parsing for the workspace upload route. Already present
     # transitively via mcp; declared explicitly so it survives that
     # dependency changing.

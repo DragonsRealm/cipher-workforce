@@ -22,6 +22,10 @@
       "models_endpoint": "https://api.openai.com/v1/models",
       "api_key_param": "openai_api_key",
       "max_tokens_param": "max_tokens",
+      "vision": {
+        "enabled": false,
+        "_note": "Native image input is emitted only when enabled is true; unknown/absent providers get a text placeholder instead (a rejected image block would poison journaled history). Read by services/llm/media.py provider_supports_vision. False here until the OpenAI request encoder renders image blocks (Responses input_image in function_call_output; Chat Completions hoist-to-user-turn) — flipping it early would hydrate bytes the encoder silently drops. Anthropic ships the first encoder; text-only providers keep the visionAnalyze delegate tool."
+      },
       "_models_note": "GPT-5.6 family (sol/terra/luna) GA 2026-07-09. gpt-5.5 / gpt-5.4 remain GA as legacy tiers. Dropped: gpt-5.2 (new requests blocked 2026-06-30), o3 (API shutdown 2026-12-11), o4-mini (API shutdown 2026-10-23) — they fall back to _default constraints if still selected before shutdown.",
       "max_output_tokens": {
         "gpt-5.6-sol": 128000,
@@ -62,6 +66,9 @@
       "models_endpoint": "https://api.anthropic.com/v1/models",
       "api_key_param": "anthropic_api_key",
       "max_tokens_param": "max_tokens",
+      "vision": {
+        "enabled": true
+      },
       "max_output_tokens": {
         "claude-opus-5": 128000,
         "claude-fable-5": 128000,
@@ -112,6 +119,10 @@
       "models_endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
       "api_key_param": "google_api_key",
       "max_tokens_param": "max_output_tokens",
+      "vision": {
+        "enabled": false,
+        "_note": "See openai.vision._note — off until the Gemini encoder renders inline_data parts beside function_response."
+      },
       "_models_note": "Real (concrete) model names only — no -latest rolling aliases. The curated list (max_output_tokens keys) serves BOTH the Gemini Developer API (AIza keys) and Vertex / Agent Platform (AQ. keys); gemini-* entries live-verified on both endpoints (2026-06-12). Vertex 404s on -latest aliases and its models.list rejects API keys, which is why the dropdown is curated instead of live-fetched. Gemma exception: gemma-4-31b-it + gemma-4-26b-a4b-it are served ONLY on the Developer API (free tier, ai.google.dev/gemma/docs/core/gemma_on_gemini_api, verified 2026-07-11) — Vertex keys must not see them, hence vertex_incompatible_models below. Gemma 4 supports systemInstruction and function calling natively (unlike the gemma-3 era); max output is undocumented, so the curated 8192 is a conservative fallback (registry cache wins when present).",
       "max_output_tokens": {
         "gemini-3.6-flash": 65536,
