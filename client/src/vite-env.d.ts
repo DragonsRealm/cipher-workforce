@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 /// <reference types="google.maps" />
+/// <reference types="node" />
 // `google.maps` namespace is exposed via @types/google.maps. tsc 5.x
 // auto-loads all @types/* packages, but tsgo (TypeScript 7 native
 // preview) does not pick the namespace up reliably under pnpm's

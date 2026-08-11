@@ -22,7 +22,12 @@ export interface AudioRef {
   url?: string | null;
 }
 
-/** Structural check — cheaper and more honest than trusting a uiHint alone. */
+/**
+ * Structural check — cheaper and more honest than trusting a uiHint alone.
+ * Kept beside the AudioRef it narrows; the Fast Refresh rule below only
+ * affects dev-time reloads, and moving this costs three files' imports.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
 export const isAudioRef = (value: unknown): value is AudioRef =>
   !!value &&
   typeof value === 'object' &&
