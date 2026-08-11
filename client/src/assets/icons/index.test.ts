@@ -65,9 +65,15 @@ describe('resolveLibraryIcon', () => {
    */
   it('resolves every library icon declared in a plugin meta.json', () => {
     const nodesDir = join(__dirname, '..', '..', '..', '..', 'server', 'nodes');
-    const declared: Array<[string, string]> = [];
+    const metaFiles = pluginMetaFiles(nodesDir);
+    // Guards the guard: color-only meta.json files exist regardless of how
+    // many plugins currently use icon refs, so an empty list here means the
+    // discovery walk broke — not that the inventory shrank. (Zero *refs* is
+    // a legitimate state: brand-heavy plugins ship SVGs instead.)
+    expect(metaFiles.length).toBeGreaterThan(0);
 
-    for (const file of pluginMetaFiles(nodesDir)) {
+    const declared: Array<[string, string]> = [];
+    for (const file of metaFiles) {
       const meta = JSON.parse(readFileSync(file, 'utf-8')) as {
         icon?: string;
         icons?: Record<string, string>;
@@ -77,10 +83,6 @@ describe('resolveLibraryIcon', () => {
         if (ref && ref.includes(':')) declared.push([file, ref]);
       }
     }
-
-    // Guards the guard: if the discovery ever breaks, the loop below would
-    // vacuously pass.
-    expect(declared.length).toBeGreaterThan(0);
 
     const unresolved = declared.filter(([, ref]) => resolveLibraryIcon(ref) === null);
     expect(unresolved).toEqual([]);

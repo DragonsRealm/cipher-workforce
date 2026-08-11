@@ -86,6 +86,22 @@ def _derive_auto_ui_hints(group: Sequence[str]) -> Dict[str, Any]:
     return hints
 
 
+def _icon_fingerprint(path: Any) -> str:
+    """Short content hash used to version a plugin icon URL.
+
+    Content-based rather than mtime-based so a fresh checkout of the same
+    bytes keeps the same URL (and the same browser cache entry). Truncated
+    to 12 hex chars — cache-busting, not integrity. Unreadable files fall
+    back to a constant so registration never breaks over an icon.
+    """
+    import hashlib
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "0"
+
+
 class BaseNode:
     """Abstract plugin node. Do not instantiate directly — subclass
     :class:`ActionNode`, :class:`TriggerNode`, or :class:`ToolNode`.
@@ -294,8 +310,17 @@ class BaseNode:
         # reference), then the central visuals.json. Same shape as the
         # color lookup below: plugin folder first, central registry as the
         # legacy fallback.
-        if get_plugin_icon_path(cls.type) is not None:
-            icon = f"/api/schemas/nodes/{cls.type}/icon"
+        icon_path = get_plugin_icon_path(cls.type)
+        if icon_path is not None:
+            # Fingerprinted URL — standard asset-cache-busting. The icon
+            # route serves `Cache-Control: max-age=86400` on a URL that
+            # otherwise never changes, so replacing an SVG left every
+            # browser showing the old artwork for up to a day. A content
+            # hash in the URL makes the long cache correct instead of
+            # harmful: changed bytes mint a new URL, identical bytes keep
+            # the cached one. Computed once at registration, like every
+            # other field in this dict.
+            icon = f"/api/schemas/nodes/{cls.type}/icon?v={_icon_fingerprint(icon_path)}"
         else:
             icon = get_plugin_icon_ref(cls.type) or get_icon(cls.type)
         color = get_plugin_meta(cls.type, "color") or get_color(cls.type)

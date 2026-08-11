@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -52,10 +54,11 @@ def test_context_node_ships_backend_visual_assets():
     assert icon_path.name == "icon.svg"
     assert icon_path.parent.name == "context"
     assert icon_path.is_file()
-    assert (
-        AgentContextNode._metadata_dict()["icon"]
-        == "/api/schemas/nodes/context/icon"
-    )
+    # Fingerprinted URL: `?v=<content-hash>` busts browser HTTP cache when
+    # the artwork changes (the route serves max-age=86400 on an otherwise
+    # stable URL). The hash varies with the file, so match shape, not value.
+    icon_url = AgentContextNode._metadata_dict()["icon"]
+    assert re.fullmatch(r"/api/schemas/nodes/context/icon\?v=[0-9a-f]{12}", icon_url), icon_url
     assert get_plugin_meta("context", "color") == "#6272a4"
 
 
