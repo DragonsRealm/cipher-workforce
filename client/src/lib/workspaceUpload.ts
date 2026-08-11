@@ -1,5 +1,5 @@
 import { buildApiUrl } from '../config/api';
-import type { AudioRef } from '../types/workspaceFiles';
+import type { AudioRef } from '../components/output/AudioPreview';
 
 /**
  * Mirrors `MEDIA_MAX_UPLOAD_BYTES` in `server/services/media/limits.py`.

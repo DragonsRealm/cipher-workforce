@@ -57,31 +57,7 @@ export interface WorkspaceFileRef {
   url?: string | null;
 }
 
-/**
- * A serialized `AudioRef` (`server/services/media/refs.py::AudioRef`) — a
- * `FileRef` narrowed to a container that `inspect_audio` actually probed.
- *
- * `kind: 'audio'` is an assertion, not a guess: it means the duration and
- * sample rate below were read off the file, so a per-second provider can be
- * billed against them. Note the deliberate absence of any bytes/base64 field —
- * audio travels as a reference. See `services/media/limits.py`.
- */
-export interface AudioRef extends WorkspaceFileRef {
-  kind: 'audio';
-  format?: string;
-  duration_seconds?: number | null;
-  sample_rate?: number | null;
-  channels?: number | null;
-}
-
 const KIND_SET: ReadonlySet<string> = new Set(FILE_REF_KINDS);
-
-/** Structural check — cheaper and more honest than trusting a uiHint alone. */
-export const isAudioRef = (value: unknown): value is AudioRef =>
-  !!value &&
-  typeof value === 'object' &&
-  (value as AudioRef).kind === 'audio' &&
-  typeof (value as AudioRef).path === 'string';
 
 /**
  * Structural check for "this parameter value is a file reference".
