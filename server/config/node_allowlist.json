@@ -34,6 +34,9 @@
     "telegramSend",
     "telegramReceive",
 
+    "discordSend",
+    "discordAction",
+
     "whatsappBusinessSend",
     "whatsappBusinessReceive",
     "whatsappBusinessStatus",

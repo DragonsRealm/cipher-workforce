@@ -61,6 +61,7 @@ _MIGRATED_PLUGINS = (
     "browser",
     "cloudflare",
     "code",
+    "discord",
     "email",
     "gcloud",
     "github",

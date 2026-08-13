@@ -58,6 +58,7 @@ register_group(
     key="whatsapp_business",
     metadata={"label": "WhatsApp Business", "icon": "💼", "color": "#128C7E", "visibility": "normal"},
 )
+register_group(key="discord", metadata={"label": "Discord", "icon": "💬", "color": "#5865F2", "visibility": "dev"})
 register_group(key="email", metadata={"label": "Email", "icon": "✉️", "color": "#8be9fd", "visibility": "dev"})
 register_group(key="payments", metadata={"label": "Payments", "icon": "asset:stripe", "color": "#635BFF", "visibility": "dev"})
 register_group(key="deployment", metadata={"label": "Deployment", "icon": "lobehub:Vercel", "color": "#666666", "visibility": "dev"})
