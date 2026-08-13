@@ -335,6 +335,26 @@ class CredentialsDatabase:
             result = await session.execute(select(EncryptedAPIKey.provider).where(EncryptedAPIKey.session_id == session_id))
             return [row[0] for row in result.all()]
 
+    async def list_key_scopes(self, provider: str) -> List[str]:
+        """
+        List every session_id that has a key stored for one provider.
+
+        The inverse of :meth:`list_api_keys`, which walks the other axis of
+        the ``{session_id}_{provider}`` key. Used by plugins that hold
+        several accounts for the same provider and need to enumerate them.
+
+        Args:
+            provider: Provider name
+
+        Returns:
+            Sorted list of session identifiers
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(EncryptedAPIKey.session_id).where(EncryptedAPIKey.provider == provider).distinct()
+            )
+            return sorted(row[0] for row in result.all())
+
     async def get_api_key_models(self, provider: str, session_id: str = "default") -> List[str]:
         """
         Get stored models for an API key.

@@ -215,6 +215,25 @@ class AuthService:
             logger.error("Failed to get API key", provider=provider, error=str(e))
             return None
 
+    async def list_key_scopes(self, provider: str) -> List[str]:
+        """List every session_id holding a key for one provider.
+
+        Reads the database directly rather than the cache: the cache is
+        populated lazily per lookup, so it only knows the scopes that
+        happen to have been read already.
+
+        Args:
+            provider: API provider name
+
+        Returns:
+            Sorted list of session identifiers, empty on failure
+        """
+        try:
+            return await self.credentials_db.list_key_scopes(provider)
+        except Exception as e:
+            logger.error("Failed to list key scopes", provider=provider, error=str(e))
+            return []
+
     async def get_stored_models(self, provider: str, session_id: str = "default") -> List[str]:
         """Get stored models for provider.
 

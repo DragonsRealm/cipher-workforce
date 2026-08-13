@@ -69,6 +69,35 @@ class TestApiKeyCrud:
         listed = await credentials_db.list_api_keys()
         assert sorted(listed) == ["anthropic", "openai"]
 
+    async def test_list_key_scopes_returns_sessions_for_one_provider(self, credentials_db: CredentialsDatabase):
+        """The inverse axis of list_api_keys: sessions for a provider.
+
+        Plugins holding several accounts for the same provider scope them by
+        session_id, so enumerating the accounts means enumerating the scopes.
+        """
+        await credentials_db.save_api_key("discord", "bot-a")
+        await credentials_db.save_api_key("discord", "bot-b", session_id="discord:222")
+        await credentials_db.save_api_key("discord", "bot-c", session_id="discord:111")
+        # A different provider in one of the same scopes must not leak in.
+        await credentials_db.save_api_key("openai", "sk-x", session_id="discord:111")
+
+        assert await credentials_db.list_key_scopes("discord") == [
+            "default",
+            "discord:111",
+            "discord:222",
+        ]
+
+    async def test_list_key_scopes_is_empty_for_unknown_provider(self, credentials_db: CredentialsDatabase):
+        await credentials_db.save_api_key("openai", "sk-x")
+        assert await credentials_db.list_key_scopes("discord") == []
+
+    async def test_list_key_scopes_drops_a_deleted_scope(self, credentials_db: CredentialsDatabase):
+        await credentials_db.save_api_key("discord", "bot-a")
+        await credentials_db.save_api_key("discord", "bot-b", session_id="discord:222")
+        await credentials_db.delete_api_key("discord", session_id="discord:222")
+
+        assert await credentials_db.list_key_scopes("discord") == ["default"]
+
     async def test_get_api_key_info_does_not_decrypt(self, credentials_db: CredentialsDatabase):
         await credentials_db.save_api_key("openai", "sk-secret", models=["gpt-4", "gpt-3.5"])
         info = await credentials_db.get_api_key_info("openai")
