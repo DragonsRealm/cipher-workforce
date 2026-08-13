@@ -64,21 +64,23 @@ class TestRegistryContract:
     @pytest.mark.asyncio
     async def test_register_then_get_returns_handler(self, fresh_registry):
         captured = []
+        sentinel_ctx = object()
 
-        async def fake_handler(params: Dict[str, Any]):
-            captured.append(params)
+        async def fake_handler(payload: Dict[str, Any], ctx: Any):
+            captured.append((payload, ctx))
             return {"sent": True}
 
         fresh_registry.register_social_send_handler("whatsapp", fake_handler)
         handler = fresh_registry.get_social_send_handler("whatsapp")
 
         assert handler is fake_handler
-        result = await handler({"recipient": "+1234567890"})
+        result = await handler({"recipient": "+1234567890"}, sentinel_ctx)
         assert result == {"sent": True}
-        assert captured == [{"recipient": "+1234567890"}]
+        # ctx is forwarded verbatim: handlers resolve credentials through it.
+        assert captured == [({"recipient": "+1234567890"}, sentinel_ctx)]
 
     def test_idempotent_register_same_callable(self, fresh_registry):
-        async def h(params):
+        async def h(payload, ctx):
             return {}
 
         fresh_registry.register_social_send_handler("whatsapp", h)
@@ -86,10 +88,10 @@ class TestRegistryContract:
         assert fresh_registry.registered_platforms() == frozenset({"whatsapp"})
 
     def test_conflicting_register_raises(self, fresh_registry):
-        async def h1(params):
+        async def h1(payload, ctx):
             return {}
 
-        async def h2(params):
+        async def h2(payload, ctx):
             return {}
 
         fresh_registry.register_social_send_handler("whatsapp", h1)
@@ -97,7 +99,7 @@ class TestRegistryContract:
             fresh_registry.register_social_send_handler("whatsapp", h2)
 
     def test_multiple_platforms_coexist(self, fresh_registry):
-        async def h(params):
+        async def h(payload, ctx):
             return {}
 
         for p in ("whatsapp", "telegram", "slack"):
@@ -146,32 +148,97 @@ class TestNoCrossPluginReachInSocialBase:
         the cross-plugin import behind a runtime import."""
         from nodes.social import _base as social_base
 
-        src = inspect.getsource(social_base._send_via_whatsapp)
+        src = inspect.getsource(social_base.handle_social_send)
         assert "get_social_send_handler" in src, (
-            "_send_via_whatsapp must call get_social_send_handler "
+            "handle_social_send must call get_social_send_handler "
             "from services.plugin.social_provider_registry. Hardcoded "
             "fallback imports defeat the plugin-self-registration pattern."
         )
 
+    def test_dispatcher_names_no_platform(self):
+        """The send dispatcher must not branch on a platform name.
+
+        It used to read ``if channel == "whatsapp"`` and stub everything
+        else, so socialSend's channel enum advertised platforms that could
+        never work. A platform name reappearing here means that branch is
+        growing back.
+        """
+        from nodes.social import _base as social_base
+
+        src = inspect.getsource(social_base.handle_social_send).lower()
+        offenders = [p for p in ("whatsapp", "telegram", "discord", "slack") if p in src]
+        assert not offenders, (
+            f"handle_social_send mentions {offenders}. Platform-specific "
+            "parameter mapping belongs in that plugin's registered adapter "
+            "(see nodes/whatsapp/_social.py), not in the social node."
+        )
+
 
 class TestWhatsappPluginSelfRegistersAsSocialProvider:
-    """Importing the whatsapp plugin registers it as the 'whatsapp'
-    social send handler.
+    """Importing a platform plugin registers its social send handler.
+
+    The two WhatsApp plugins are separate platforms: ``nodes/whatsapp/``
+    drives a personal account through the Go bridge, ``nodes/whatsapp_business/``
+    the official Cloud API. They share no credential and no API, so they
+    register under distinct keys and socialSend offers both.
     """
 
-    def test_whatsapp_plugin_import_populates_registry(self):
+    @pytest.mark.parametrize(
+        "module, platform",
+        [
+            ("nodes.whatsapp", "whatsapp"),
+            ("nodes.whatsapp_business", "whatsapp_business"),
+        ],
+    )
+    def test_plugin_import_populates_registry(self, module, platform):
         from services.plugin import social_provider_registry as reg
 
         try:
-            __import__("nodes.whatsapp")
+            __import__(module)
         except ImportError as exc:  # pragma: no cover
-            pytest.xfail(f"nodes.whatsapp not importable: {exc}")
+            pytest.xfail(f"{module} not importable: {exc}")
 
-        handler = reg.get_social_send_handler("whatsapp")
+        handler = reg.get_social_send_handler(platform)
         assert handler is not None, (
-            "Importing nodes.whatsapp should call "
-            "register_social_send_handler('whatsapp', handle_whatsapp_send). "
+            f"Importing {module} should call "
+            f"register_social_send_handler('{platform}', ...). "
             "Check the __init__.py bottom section."
         )
-        # And it should be callable (sanity).
         assert callable(handler)
+
+    def test_both_whatsapp_platforms_are_distinct(self):
+        """A shared key would make one plugin silently shadow the other —
+        and, because registration raises on a conflicting callable, would
+        break startup instead."""
+        from services.plugin import social_provider_registry as reg
+
+        for module in ("nodes.whatsapp", "nodes.whatsapp_business"):
+            try:
+                __import__(module)
+            except ImportError as exc:  # pragma: no cover
+                pytest.xfail(f"{module} not importable: {exc}")
+
+        personal = reg.get_social_send_handler("whatsapp")
+        business = reg.get_social_send_handler("whatsapp_business")
+        assert personal is not None and business is not None
+        assert personal is not business
+
+    def test_every_registered_platform_is_selectable(self):
+        """A registered platform absent from socialSend's channel enum is
+        unreachable; an enum entry with no handler is a promise the node
+        cannot keep. This catches the first case."""
+        from nodes.social.social_send import SocialSendParams
+        from services.plugin import social_provider_registry as reg
+
+        for module in ("nodes.whatsapp", "nodes.whatsapp_business"):
+            try:
+                __import__(module)
+            except ImportError as exc:  # pragma: no cover
+                pytest.xfail(f"{module} not importable: {exc}")
+
+        channels = set(SocialSendParams.model_fields["channel"].annotation.__args__)
+        missing = sorted(reg.registered_platforms() - channels)
+        assert not missing, (
+            f"Registered social platforms {missing} are missing from "
+            "SocialSendParams.channel, so socialSend can never dispatch to them."
+        )

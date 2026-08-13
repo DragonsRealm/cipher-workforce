@@ -41,7 +41,7 @@ from ._handlers import WS_HANDLERS
 from ._option_loaders import load_channels, load_group_members, load_groups
 from ._refresh import refresh_whatsapp_status
 from ._runtime import WhatsAppRuntime, get_whatsapp_runtime
-from ._service import handle_whatsapp_send
+from ._social import social_send_adapter
 
 # Supervisor: ensures shutdown_all_supervisors() reaches us.
 # get_instance() constructs the singleton once (lazy in spawn, not here).
@@ -81,7 +81,11 @@ register_canary_trigger_type("whatsappReceive", "com.opencompany.whatsapp.messag
 # registry so the social node dispatches by platform identifier
 # instead of cross-importing _service.handle_whatsapp_send. See
 # services/plugin/social_provider_registry.py.
-register_social_send_handler("whatsapp", handle_whatsapp_send)
+#
+# The registered callable is the adapter, not handle_whatsapp_send itself:
+# socialSend's payload shape is not whatsappSend's, and translating between
+# them is this plugin's job rather than the social node's. See ._social.
+register_social_send_handler("whatsapp", social_send_adapter)
 
 # Output schemas for the FE variable panel — self-registered so all
 # whatsapp code stays in this folder (same pattern as telegram).

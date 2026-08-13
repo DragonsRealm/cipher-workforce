@@ -26,6 +26,7 @@ class SocialSendParams(BaseModel):
     # ===== CHANNEL / PLATFORM =====
     channel: Literal[
         "whatsapp",
+        "whatsapp_business",
         "telegram",
         "discord",
         "slack",
@@ -403,10 +404,9 @@ class SocialSendNode(ActionNode):
         from .._base import handle_social_send
 
         response = await handle_social_send(
-            node_id=ctx.node_id,
+            ctx,
+            params.model_dump(),
             node_type=self.type,
-            parameters=params.model_dump(),
-            context=ctx.raw,
         )
         if response.get("success"):
             return response.get("result") or response

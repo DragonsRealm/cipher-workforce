@@ -14,12 +14,14 @@ from __future__ import annotations
 from services.deployment.canary_registry import register_canary_trigger_type
 from services.events import register_webhook_source
 from services.node_output_schemas import register_output_schema
+from services.plugin.social_provider_registry import register_social_send_handler
 
 from services.ws_handler_registry import register_option_loader
 
 from ._credentials import WhatsAppBusinessCredential
 from ._events import MESSAGE_RECEIVED_TYPE, STATUS_UPDATED_TYPE
 from ._option_loaders import load_templates
+from ._social import social_send_adapter
 from ._source import get_webhook_source
 from .whatsapp_business_media import WhatsAppBusinessMediaNode, WhatsAppBusinessMediaOutput
 from .whatsapp_business_receive import (
@@ -43,6 +45,11 @@ register_canary_trigger_type(WhatsAppBusinessReceiveNode.type, MESSAGE_RECEIVED_
 register_canary_trigger_type(WhatsAppBusinessStatusNode.type, STATUS_UPDATED_TYPE)
 
 register_option_loader("whatsappBusinessTemplates", load_templates)
+
+# socialSend routes by platform id. Registered under "whatsapp_business", not
+# "whatsapp": nodes/whatsapp/ owns that key, and the two share no credential
+# and no API.
+register_social_send_handler("whatsapp_business", social_send_adapter)
 
 register_output_schema(WhatsAppBusinessSendNode.type, WhatsAppBusinessSendOutput)
 register_output_schema(WhatsAppBusinessReceiveNode.type, WhatsAppBusinessReceiveOutput)

@@ -17,11 +17,22 @@ Handler signature
 
 ::
 
-    handler(params: Dict[str, Any]) -> Awaitable[Dict[str, Any]]
+    handler(payload: Dict[str, Any]) -> Awaitable[Dict[str, Any]]
 
-The social node maps its own parameter shape onto the platform's
-expected shape and calls the handler. The handler returns the
-platform's native result dict; the social node passes that through.
+``payload`` is **socialSend-shaped**, not platform-shaped: it is the node's
+own parameters plus a resolved ``recipient`` and the normalised
+``channel`` / ``recipient_type`` / ``message_type``. Translating that onto
+the platform's native parameter names is the *handler's* job.
+
+That direction is deliberate. The social node previously did the mapping
+itself, which meant one platform's parameter names (``media_url``,
+``vcard``, ``is_reply``) lived in the platform-neutral module and every new
+platform would have added a branch there. Registering an adapter instead
+keeps each platform's vocabulary inside its own plugin, so
+``handle_social_send`` names no platform at all.
+
+The handler returns the platform's native result dict; the social node
+passes it through after checking ``success``.
 """
 
 from __future__ import annotations
@@ -31,8 +42,8 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from services.plugin.registry import IdempotentRegistry
 
 
-# (params: Dict) -> Awaitable[Dict]
-SocialSendHandler = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
+# (payload: Dict, ctx: NodeContext) -> Awaitable[Dict]
+SocialSendHandler = Callable[[Dict[str, Any], Any], Awaitable[Dict[str, Any]]]
 
 
 _REGISTRY: IdempotentRegistry[str, SocialSendHandler] = IdempotentRegistry("social_send_handler")
@@ -48,11 +59,12 @@ def register_social_send_handler(platform: str, handler: SocialSendHandler) -> N
     Args:
         platform: Lower-case platform identifier (``"whatsapp"``,
             ``"telegram"``, …). Matches the value the social node's
-            ``platform`` parameter holds at runtime.
-        handler: Async function accepting platform-specific
-            ``params: Dict`` and returning the platform's native
-            result dict. The social node builds the params dict by
-            mapping its generic shape onto the platform's keys.
+            ``channel`` parameter holds at runtime.
+        handler: Async function accepting a socialSend-shaped
+            ``payload: Dict`` and the node's ``NodeContext``, returning
+            the platform's native result dict. The handler maps the
+            generic payload onto its own platform's keys — see the
+            module docstring.
     """
     _REGISTRY.register(platform, handler)
 

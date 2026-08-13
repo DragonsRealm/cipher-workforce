@@ -6,9 +6,14 @@ platform (WhatsApp, Telegram, Discord, Slack, Signal, SMS, Webchat,
 Email, Matrix, Teams).
 
 Imported by :class:`nodes.social.social_receive.SocialReceiveNode` and
-:class:`nodes.social.social_send.SocialSendNode`. Calls into
-``nodes.whatsapp._service`` for the WhatsApp bridge stay unchanged — moving
-them out is a separate refactor.
+:class:`nodes.social.social_send.SocialSendNode`.
+
+This module names no platform on the send path. ``handle_social_send``
+resolves the recipient from socialSend's own parameter shape and hands the
+payload to whichever adapter the platform's plugin registered with
+:mod:`services.plugin.social_provider_registry`. Each adapter owns the mapping
+onto its own native parameter names, so adding a platform is one registration
+in that plugin's ``__init__.py`` and zero edits here.
 """
 
 import time
@@ -373,25 +378,26 @@ async def handle_social_receive(
         }
 
 
-async def handle_social_send(node_id: str, node_type: str, parameters: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_social_send(ctx: Any, parameters: Dict[str, Any], node_type: str = "socialSend") -> Dict[str, Any]:
     """Handle Social Send node - routes outbound messages to platform.
 
-    This node sends messages to the configured platform (WhatsApp, Telegram, etc.)
-    Also works as an AI Agent tool.
-
     Args:
-        node_id: The node ID
-        node_type: The node type (socialSend)
+        ctx: The node's NodeContext. Forwarded to the platform handler,
+            which needs it to resolve credentials.
         parameters: Message parameters (channel, recipient, content)
-        context: Execution context
+        node_type: The node type, for the result envelope
 
     Returns:
         Send result with message_id and status
     """
     start_time = time.time()
+    node_id = ctx.node_id
 
     try:
-        channel = parameters.get("channel", "whatsapp")
+        # No default here: SocialSendParams.channel already declares one, and a
+        # second copy would drift. An absent value falls through to the
+        # unregistered-platform error below, which names what is available.
+        channel = parameters.get("channel", "")
         recipient_type = parameters.get("recipient_type", "phone")
         message_type = parameters.get("message_type", "text")
 
@@ -411,12 +417,39 @@ async def handle_social_send(node_id: str, node_type: str, parameters: Dict[str,
         if not recipient:
             raise ValueError(f"Recipient ({recipient_type}) is required")
 
-        # Route to platform-specific handler
-        if channel == "whatsapp":
-            result = await _send_via_whatsapp(parameters, recipient, recipient_type, message_type)
-        else:
-            # Stub for other platforms - will be implemented as they are integrated
-            result = {"success": False, "error": f"Platform '{channel}' is not yet implemented", "message_id": None}
+        # Route to the platform's registered handler. This function names no
+        # platform: each plugin self-registers an adapter from its own
+        # __init__.py and owns the mapping onto its native param shape. See
+        # services/plugin/social_provider_registry.py.
+        #
+        # Imported inside the function, not at module scope: tests patch
+        # these at their canonical path, and a module-level binding would
+        # capture whatever object happened to be installed the first time
+        # this module was imported.
+        from services.plugin.social_provider_registry import (
+            get_social_send_handler,
+            registered_platforms,
+        )
+
+        handler = get_social_send_handler(channel)
+        if handler is None:
+            available = ", ".join(sorted(registered_platforms())) or "none"
+            raise ValueError(
+                f"Platform '{channel}' has no registered send handler. "
+                f"Available: {available}. A platform becomes available when its "
+                f"plugin package calls register_social_send_handler() on import."
+            )
+
+        result = await handler(
+            {
+                **parameters,
+                "channel": channel,
+                "recipient": recipient,
+                "recipient_type": recipient_type,
+                "message_type": message_type,
+            },
+            ctx,
+        )
 
         if not result.get("success"):
             raise Exception(result.get("error", "Send failed"))
@@ -450,73 +483,4 @@ async def handle_social_send(node_id: str, node_type: str, parameters: Dict[str,
         }
 
 
-async def _send_via_whatsapp(parameters: Dict[str, Any], recipient: str, recipient_type: str, message_type: str) -> Dict[str, Any]:
-    """Route message to WhatsApp via the social-provider registry.
-
-    Maps socialSend parameters to whatsappSend parameters, then
-    dispatches through :func:`services.plugin.social_provider_registry.
-    get_social_send_handler`. The whatsapp plugin self-registers as the
-    ``"whatsapp"`` platform from its own ``__init__.py`` — no
-    cross-plugin import from this module.
-    """
-    from services.plugin.social_provider_registry import get_social_send_handler
-
-    whatsapp_send_handler = get_social_send_handler("whatsapp")
-    if whatsapp_send_handler is None:
-        raise RuntimeError(
-            "social: 'whatsapp' platform not registered. "
-            "Check that nodes/whatsapp/__init__.py is imported at startup "
-            "and calls register_social_send_handler('whatsapp', ...). "
-        )
-
-    # Map socialSend params to whatsappSend format
-    whatsapp_params = {
-        "recipient_type": recipient_type,
-        "message_type": message_type,
-    }
-
-    # Set recipient
-    if recipient_type == "phone":
-        whatsapp_params["phone"] = recipient
-    else:
-        whatsapp_params["group_id"] = recipient
-
-    # Map message content based on type
-    if message_type == "text":
-        whatsapp_params["message"] = parameters.get("message", "")
-
-    elif message_type in ("image", "video", "audio", "document", "sticker"):
-        media_source = parameters.get("media_source", "url")
-        whatsapp_params["media_source"] = media_source
-
-        if media_source == "url":
-            whatsapp_params["media_url"] = parameters.get("media_url", "")
-        elif media_source == "base64":
-            whatsapp_params["media_data"] = parameters.get("media_data", "")
-        elif media_source == "file":
-            whatsapp_params["file_path"] = parameters.get("file_path", "")
-
-        if parameters.get("mime_type"):
-            whatsapp_params["mime_type"] = parameters["mime_type"]
-        if parameters.get("caption"):
-            whatsapp_params["caption"] = parameters["caption"]
-        if parameters.get("filename"):
-            whatsapp_params["filename"] = parameters["filename"]
-
-    elif message_type == "location":
-        whatsapp_params["latitude"] = parameters.get("latitude", 0)
-        whatsapp_params["longitude"] = parameters.get("longitude", 0)
-        whatsapp_params["location_name"] = parameters.get("location_name", "")
-        whatsapp_params["address"] = parameters.get("address", "")
-
-    elif message_type == "contact":
-        whatsapp_params["contact_name"] = parameters.get("contact_name", "")
-        whatsapp_params["vcard"] = parameters.get("vcard", "")
-
-    # Reply options
-    if parameters.get("reply_to_message"):
-        whatsapp_params["is_reply"] = True
-        whatsapp_params["reply_message_id"] = parameters.get("reply_message_id", "")
-
-    # Call WhatsApp handler
-    return await whatsapp_send_handler(whatsapp_params)
+__all__ = ["handle_social_receive", "handle_social_send"]
