@@ -3,7 +3,9 @@
 aiohappyeyeballs==2.7.1
     # via aiohttp
 aiohttp==3.14.3
-    # via opencompany-server
+    # via
+    #   discord-py
+    #   opencompany-server
 aiosignal==1.4.0
     # via aiohttp
 aiosqlite==0.22.1
@@ -29,7 +31,7 @@ anyio==4.14.2
     #   sse-starlette
     #   starlette
     #   watchfiles
-apify-client==3.1.0
+apify-client==3.1.2
     # via opencompany-server
 async-timeout==5.0.1
     # via crawlee
@@ -48,18 +50,18 @@ brotlicffi==1.2.0.1 ; platform_python_implementation != 'CPython'
     # via httpx
 cached-property==2.0.1
     # via portkey-ai
-cachetools==7.1.4
+cachetools==7.1.7
     # via crawlee
-certifi==2026.6.17
+certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
     #   requests
-cffi==2.1.0
+cffi==2.1.1
     # via
     #   brotlicffi
     #   cryptography
-charset-normalizer==3.4.9
+charset-normalizer==3.5.0
     # via requests
 click==8.4.2
     # via
@@ -73,7 +75,7 @@ colorama==0.4.6
     #   pytest
     #   qrcode
     #   tqdm
-crawlee==1.9.0
+crawlee==1.9.1
     # via opencompany-server
 cryptography==50.0.0
     # via
@@ -83,6 +85,8 @@ cryptography==50.0.0
 ddgs==9.14.4
     # via opencompany-server
 dependency-injector==4.49.1
+    # via opencompany-server
+discord-py==2.7.1
     # via opencompany-server
 distro==1.9.0
     # via
@@ -98,21 +102,23 @@ email-validator==2.3.0
     # via
     #   opencompany-server
     #   pydantic
+et-xmlfile==2.0.0
+    # via openpyxl
 fake-useragent==2.2.0
     # via ddgs
-fastapi==0.140.13
+fastapi==0.141.1
     # via opencompany-server
-filelock==3.32.0
+filelock==3.32.2
     # via tldextract
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-google-api-core==2.33.0
+google-api-core==2.34.0
     # via google-api-python-client
 google-api-python-client==2.198.0
     # via opencompany-server
-google-auth==2.56.2
+google-auth==2.56.3
     # via
     #   google-api-core
     #   google-api-python-client
@@ -120,19 +126,19 @@ google-auth==2.56.2
     #   google-auth-oauthlib
     #   google-genai
     #   opencompany-server
-google-auth-httplib2==0.4.0
+google-auth-httplib2==0.4.1
     # via google-api-python-client
 google-auth-oauthlib==1.4.0
     # via opencompany-server
-google-genai==2.16.0
+google-genai==2.11.0
     # via
     #   opencompany-server
     #   rlms
-googleapis-common-protos==1.75.0
+googleapis-common-protos==1.75.1
     # via google-api-core
 googlemaps==4.10.0
     # via opencompany-server
-greenlet==3.5.3
+greenlet==3.5.5
     # via
     #   opencompany-server
     #   sqlalchemy
@@ -186,7 +192,7 @@ idna==3.18
     #   requests
     #   tldextract
     #   yarl
-impit==0.13.1
+impit==0.13.2
     # via
     #   apify-client
     #   crawlee
@@ -211,7 +217,7 @@ markdown-it-py==4.2.0
     # via
     #   opencompany-server
     #   rich
-mcp==1.28.1
+mcp==1.29.0
     # via opencompany-server
 mdurl==0.1.2
     # via markdown-it-py
@@ -235,6 +241,8 @@ openai==2.53.0
     # via
     #   opencompany-server
     #   rlms
+openpyxl==3.1.5
+    # via opencompany-server
 opentelemetry-api==1.44.0
     # via
     #   opencompany-server
@@ -246,19 +254,21 @@ opentelemetry-semantic-conventions==0.65b0
     # via opentelemetry-sdk
 orjson==3.11.9
     # via opencompany-server
-packaging==26.2
+packaging==26.3
     # via
     #   pooch
     #   pytest
 pillow==12.3.0
-    # via qrcode
-platformdirs==4.10.0
+    # via
+    #   opencompany-server
+    #   qrcode
+platformdirs==4.11.2
     # via pooch
 pluggy==1.6.0
     # via pytest
 pooch==1.9.0
     # via opencompany-server
-portkey-ai==2.3.2
+portkey-ai==2.3.4
     # via rlms
 primp==1.3.1
     # via ddgs
@@ -268,7 +278,7 @@ propcache==0.5.2
     #   yarl
 protego==0.6.2
     # via crawlee
-proto-plus==1.28.2
+proto-plus==1.28.3
     # via google-api-core
 protobuf==7.35.1
     # via
@@ -303,17 +313,15 @@ pydantic==2.12.5
     #   pydantic-settings
     #   sqlmodel
     #   xdk
-pydantic-core==2.47.0
+pydantic-core==2.41.5
     # via pydantic
 pydantic-monty==0.0.18
     # via opencompany-server
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
     # via
     #   crawlee
     #   mcp
     #   opencompany-server
-pyee==13.0.1
-    # via crawlee
 pygments==2.20.0
     # via
     #   pytest
@@ -390,15 +398,15 @@ sniffio==1.3.1
     #   portkey-ai
 socksio==1.0.0
     # via httpx
-soupsieve==2.8.4
+soupsieve==2.9.2
     # via beautifulsoup4
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
     # via sqlmodel
 sqlmodel==0.0.39
     # via opencompany-server
-sse-starlette==3.4.6
+sse-starlette==3.4.8
     # via mcp
-starlette==1.3.1
+starlette==1.6.0
     # via
     #   fastapi
     #   mcp
@@ -411,11 +419,11 @@ tenacity==9.1.4
     # via google-genai
 text-unidecode==1.3
     # via python-slugify
-tinytag==2.2.1
+tinytag==2.3.0
     # via opencompany-server
-tldextract==5.3.1
+tldextract==5.3.2
     # via crawlee
-tqdm==4.68.4
+tqdm==4.70.0
     # via
     #   openai
     #   portkey-ai
@@ -445,14 +453,13 @@ typing-extensions==4.16.0
     #   pydantic
     #   pydantic-core
     #   pydantic-monty
-    #   pyee
     #   referencing
     #   sqlalchemy
     #   sqlmodel
     #   starlette
     #   temporalio
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.4
     # via
     #   fastapi
     #   mcp
@@ -466,7 +473,7 @@ urllib3==2.7.0
     # via
     #   requests
     #   types-requests
-uvicorn==0.51.0
+uvicorn==0.52.2
     # via
     #   mcp
     #   opencompany-server
@@ -483,7 +490,7 @@ websockets==16.1.1
     #   uvicorn
 wsproto==1.3.2
     # via httpx-ws
-xdk==0.9.0
+xdk==0.10.6
     # via opencompany-server
 yarl==1.24.5
     # via

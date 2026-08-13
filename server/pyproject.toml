@@ -107,6 +107,12 @@ dependencies = [
     # Telegram Bot API
     "python-telegram-bot>=22.6",
 
+    # Discord Gateway. Capped below 3 because the major version tracks the
+    # gateway/API version the client speaks, which is a wire contract rather
+    # than a library detail. Installed without the [voice] extra: voice is out
+    # of scope and the extra pulls PyNaCl plus a native build.
+    "discord.py>=2.7.1,<3",
+
     # Markdown formatting (GFM to platform-native)
     "markdown-it-py>=3.0.0",
 
