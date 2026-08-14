@@ -34,7 +34,10 @@
   --linen: #efeacf;
   --dried-blood: #783c28;
 
-  --font-display: 'UnifrakturCook', 'UnifrakturMaguntia', serif;
+  /* Design-handoff legibility substitution: the original UnifrakturCook
+   * blackletter under uppercase + wide tracking is close to unparseable
+   * at UI sizes; Cinzel holds the same 1349-broadsheet gravitas legibly. */
+  --font-display: 'Cinzel', 'EB Garamond', serif;
   --font-body: 'EB Garamond', 'Cormorant Garamond', serif;
   --font-mono: 'Special Elite', monospace;
   --type-scale-base: 14px;

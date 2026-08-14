@@ -191,7 +191,12 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
     // border treatments via `:root[data-theme="..."] .toolbar`.
     <div className="toolbar flex h-12 items-center justify-between gap-3 border-b border-border-default bg-bg-panel px-3">
       {/* ---------- Left Section ---------- */}
-      <div className="flex items-center gap-1.5">
+      {/* Design-handoff layout contract: every toolbar cluster is pinned
+          (shrink-0) except the workflow-name chip, which is the ONE
+          shrinkable group. Wide-tracking themes (Cyber/Greek uppercase at
+          0.10-0.18em) widen every label; without pinning, the mode toggle
+          and action cluster collapse before the name does. */}
+      <div className="flex shrink-0 items-center gap-1.5">
         <Button
           variant="outline"
           size="icon-sm"
@@ -254,8 +259,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
         </DropdownMenu>
       </div>
 
-      {/* ---------- Center: Workflow Name ---------- */}
-      <div className="flex flex-1 justify-center">
+      {/* ---------- Center: Workflow Name (the one shrinkable group) ---------- */}
+      <div className="flex min-w-0 flex-1 justify-center">
         {isEditing ? (
           <input
             type="text"
@@ -264,30 +269,30 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
             onBlur={handleNameSubmit}
             onKeyDown={handleNameKeyDown}
             autoFocus
-            className="min-w-[200px] rounded-sm border border-accent bg-background px-3 py-1.5 text-center text-sm font-medium text-foreground outline-none"
+            className="min-w-[200px] max-w-full rounded-sm border border-accent bg-background px-3 py-1.5 text-center text-sm font-medium text-foreground outline-none"
           />
         ) : (
           <button
             onClick={handleNameClick}
-            title="Click to rename"
-            className="flex items-center gap-1.5 rounded-sm bg-transparent px-3 py-1.5 transition-colors hover:bg-bg-hover"
+            title={`${workflowName} — click to rename`}
+            className="flex min-w-0 max-w-full items-center gap-1.5 rounded-sm bg-transparent px-3 py-1.5 transition-colors hover:bg-bg-hover"
           >
             {/* font-display + tracking-display + [text-transform] are
                 theme-driven via the new-contract typography tokens. Under
                 light/dark the workflow name reads as our regular sans-serif;
                 under Renaissance it becomes Cinzel uppercase, under Cyber it
-                becomes Major Mono Display uppercase. */}
-            <span className="text-sm font-display font-medium tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]">
+                becomes Space Mono uppercase. */}
+            <span className="truncate text-sm font-display font-medium tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]">
               {workflowName}
             </span>
-            <Pencil className="h-3 w-3 text-fg-muted" />
+            <Pencil className="h-3 w-3 shrink-0 text-fg-muted" />
           </button>
         )}
       </div>
 
-      {/* ---------- Global Model Selector ---------- */}
+      {/* ---------- Global Model Selector (pinned) ---------- */}
       {globalModelState.providers.length > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-sm font-semibold whitespace-nowrap text-node-model">
             Set Global Model
           </span>
@@ -343,8 +348,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
         </div>
       )}
 
-      {/* ---------- Right Section ---------- */}
-      <div className="flex items-center gap-1.5">
+      {/* ---------- Right Section (pinned: mode toggle + actions + save state) ---------- */}
+      <div className="flex shrink-0 items-center gap-1.5">
         {/* Mode Toggle - segmented control */}
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-node-model">Mode:</span>

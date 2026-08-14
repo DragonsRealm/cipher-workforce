@@ -111,7 +111,7 @@ const Modal: React.FC<ModalProps> = ({
             // Header: bg-bg-panel sits one elevation step above bg-bg-app
             // (panel surface above page surface). font-display + tracking
             // + text-transform are theme-driven so titles read as Cinzel
-            // uppercase under Renaissance and Major Mono Display under
+            // uppercase under Renaissance and Space Mono under
             // Cyber, while staying clean sans-serif under light/dark.
             <div className="modal-head relative flex w-full items-center border-b border-border-default bg-bg-panel px-5 py-3">
               <DialogTitle className="absolute left-5 flex items-center gap-2 font-display text-base font-semibold tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]">
