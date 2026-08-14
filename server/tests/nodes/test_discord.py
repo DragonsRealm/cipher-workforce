@@ -24,6 +24,7 @@ from nodes.discord._accounts import (
     storage_scope,
 )
 from nodes.discord.discord_action import DiscordActionNode, DiscordActionParams
+from nodes.discord.discord_receive import DiscordReceiveNode
 from nodes.discord.discord_send import (
     MAX_CONTENT,
     DiscordSendNode,
@@ -392,3 +393,265 @@ class TestToolSchema:
         """A Params field called `type` is silently dropped from the served
         schema, so the node would ship a parameter the panel never renders."""
         assert "type" not in node_cls.Params.model_fields
+
+
+class TestTriggerIsDeployable:
+    """Membership in the constants frozensets is what makes deploy see it.
+
+    Omitting a trigger there is a silent failure, not an error:
+    find_trigger_nodes filters on the set, so deploy simply ignores the node
+    -- no listener, no warning. constants.py says so in a comment for exactly
+    this reason.
+    """
+
+    def test_registered_for_deployment(self):
+        from constants import (
+            EVENT_TRIGGER_TYPES,
+            POLLING_TRIGGER_TYPES,
+            WORKFLOW_TRIGGER_TYPES,
+        )
+
+        assert DiscordReceiveNode.type in EVENT_TRIGGER_TYPES
+        assert DiscordReceiveNode.type in WORKFLOW_TRIGGER_TYPES
+        # Push-based: a polling entry would spawn a poll loop that duplicates
+        # every gateway event.
+        assert DiscordReceiveNode.type not in POLLING_TRIGGER_TYPES
+
+    def test_canary_type_matches_the_emitted_envelope(self):
+        """The registered string becomes the EventType Search Attribute the
+        Visibility query matches on. If it drifted from what the envelope
+        carries, the listener would start and never fire."""
+        from nodes.discord._events import MESSAGE_RECEIVED_TYPE, discord_message_received
+        from services.deployment.canary_registry import cloudevent_type_for
+
+        assert cloudevent_type_for(DiscordReceiveNode.type) == MESSAGE_RECEIVED_TYPE
+        assert discord_message_received({"channel_id": "c1"}).type == MESSAGE_RECEIVED_TYPE
+
+    def test_trigger_has_no_input_handles(self):
+        kinds = [h["kind"] for h in DiscordReceiveNode.handles]
+        assert "output" in kinds
+        assert "input" not in kinds
+
+    def test_filter_builder_is_registered(self):
+        from services.event_waiter import FILTER_BUILDERS
+
+        assert DiscordReceiveNode.type in FILTER_BUILDERS
+
+
+class TestEventShaping:
+    """_dispatch.shape_message feeds _filters; the two move together."""
+
+    def _message(self, **overrides):
+        base = SimpleNamespace(
+            id=111111111111111111,
+            content="hello",
+            created_at=None,
+            attachments=[],
+            mentions=[],
+            reference=None,
+            author=SimpleNamespace(id=222222222222222222, name="bob", display_name="Bob", bot=False),
+            guild=SimpleNamespace(id=333333333333333333, name="Guild"),
+            channel=SimpleNamespace(id=444444444444444444, name="general"),
+            _state=None,
+        )
+        for key, value in overrides.items():
+            setattr(base, key, value)
+        return base
+
+    def test_snowflakes_are_stringified(self):
+        """discord.py exposes ids as int. Past 2^53 a numeric comparison
+        collapses distinct ids, and comparing an id is the most natural edge
+        condition a user writes."""
+        from nodes.discord._dispatch import shape_message
+
+        event = shape_message(self._message(), account_id="default")
+        for field in ("message_id", "channel_id", "guild_id", "author_id"):
+            assert isinstance(event[field], str), field
+
+    def test_dm_has_no_guild(self):
+        from nodes.discord._dispatch import shape_message
+
+        event = shape_message(self._message(guild=None), account_id="default")
+        assert event["is_dm"] is True
+        assert event["guild_id"] is None
+
+    def test_attachments_are_metadata_not_bytes(self):
+        from nodes.discord._dispatch import shape_message
+
+        attachment = SimpleNamespace(
+            id=555555555555555555,
+            filename="a.png",
+            size=10,
+            url="https://cdn.discordapp.com/x",
+            content_type="image/png",
+            width=1,
+            height=2,
+        )
+        event = shape_message(self._message(attachments=[attachment]), account_id="default")
+
+        assert event["has_attachments"] is True
+        rendered = str(event["attachments"])
+        assert "bytes" not in rendered and "base64" not in rendered
+        assert event["attachments"][0]["id"] == "555555555555555555"
+
+
+class TestFilters:
+    def _event(self, **overrides):
+        base = {
+            "account_id": "default",
+            "content": "hello world",
+            "author_is_bot": False,
+            "is_dm": False,
+            "guild_id": "g1",
+            "channel_id": "c1",
+            "author_id": "u1",
+            "mentions_me": False,
+            "has_attachments": False,
+        }
+        base.update(overrides)
+        return base
+
+    def _matches(self, params, **event_overrides):
+        from nodes.discord._filters import build_discord_filter
+
+        return build_discord_filter(params)(self._event(**event_overrides))
+
+    def test_empty_filter_matches(self):
+        assert self._matches({})
+
+    def test_bots_ignored_by_default(self):
+        """Two bots replying to each other is the loop this prevents."""
+        assert not self._matches({}, author_is_bot=True)
+        assert self._matches({"ignore_bots": False}, author_is_bot=True)
+
+    def test_account_scoping(self):
+        """Without this, connecting a second bot makes every trigger fire
+        twice."""
+        assert not self._matches({"account_id": "other"})
+        assert self._matches({"account_id": "default"})
+
+    @pytest.mark.parametrize(
+        "params, overrides, expected",
+        [
+            ({"scope": "dm"}, {"is_dm": False}, False),
+            ({"scope": "dm"}, {"is_dm": True}, True),
+            ({"scope": "guild"}, {"is_dm": True}, False),
+            ({"guild_id": "g2"}, {}, False),
+            ({"channel_id": "c1"}, {}, True),
+            ({"author_id": "u2"}, {}, False),
+            ({"require_mention": True}, {}, False),
+            ({"require_mention": True}, {"mentions_me": True}, True),
+            ({"require_attachment": True}, {}, False),
+            ({"keywords": "world"}, {}, True),
+            ({"keywords": "absent"}, {}, False),
+            ({"keywords": "WORLD"}, {}, True),
+        ],
+    )
+    def test_filter_matrix(self, params, overrides, expected):
+        assert self._matches(params, **overrides) is expected
+
+
+class TestGatewayLifecycle:
+    def test_each_account_gets_its_own_label(self):
+        """The supervisor registry keys on the label; a shared one would mean
+        the second account silently replaced the first."""
+        from nodes.discord._gateway import DiscordGateway
+
+        assert DiscordGateway("a").label != DiscordGateway("b").label
+
+    def test_terminal_errors_are_not_retried(self):
+        """A bad token or an unapproved intent fails identically every time,
+        so retrying only spends the daily IDENTIFY budget."""
+        from nodes.discord._gateway import DiscordGateway
+
+        gateway = DiscordGateway("acct")
+        assert gateway.can_retry()
+
+        class PrivilegedIntentsRequired(Exception):
+            pass
+
+        translated = gateway._translate_start_error(PrivilegedIntentsRequired("nope"))
+        assert isinstance(translated, NodeUserError)
+        assert not gateway.can_retry()
+        assert "Message Content" in str(translated)
+
+    def test_unknown_errors_pass_through_for_retry(self):
+        from nodes.discord._gateway import DiscordGateway
+
+        gateway = DiscordGateway("acct")
+        original = ConnectionResetError("socket died")
+        assert gateway._translate_start_error(original) is original
+        assert gateway.can_retry()
+
+    def test_intents_request_message_content(self):
+        """Without it the gateway connects and delivers empty content, with
+        no error anywhere."""
+        import discord
+
+        from nodes.discord._gateway import _resolve_intents
+
+        intents = _resolve_intents(discord)
+        assert intents.message_content
+        assert intents.guild_messages
+        assert intents.dm_messages
+
+    def test_login_failure_surfaces_immediately(self):
+        """A rejected token raises inside client.start(), not out of
+        wait_until_ready(). Awaiting readiness alone would sit out the whole
+        60s timeout and then report "not ready" for a bad credential."""
+        import sys
+
+        from nodes.discord._gateway import READY_TIMEOUT_SECONDS, DiscordGateway
+
+        class LoginFailure(Exception):
+            pass
+
+        class _FakeClient:
+            def __init__(self, *a, **kw):
+                self._closed = False
+                self.user = None
+                self.guilds = []
+
+            def event(self, fn):
+                return fn
+
+            def is_closed(self):
+                return self._closed
+
+            async def start(self, token):
+                raise LoginFailure("Improper token")
+
+            async def wait_until_ready(self):
+                await asyncio.sleep(READY_TIMEOUT_SECONDS * 10)
+
+            async def close(self):
+                self._closed = True
+
+        fake_discord = SimpleNamespace(
+            Client=_FakeClient,
+            Intents=SimpleNamespace(none=lambda: SimpleNamespace()),
+        )
+
+        async def _resolve(account_id):
+            return {"token": "bad"}
+
+        gateway = DiscordGateway("acct")
+        with (
+            patch.dict(sys.modules, {"discord": fake_discord}),
+            patch("nodes.discord._gateway.resolve_secrets", new=_resolve),
+            patch("nodes.discord._gateway._resolve_intents", return_value=None),
+        ):
+            with pytest.raises(NodeUserError) as excinfo:
+                _run(gateway._do_start())
+
+        assert "token" in str(excinfo.value).lower()
+        assert not gateway.can_retry()
+
+    def test_receive_refuses_to_wait_without_a_connection(self):
+        """Otherwise the Run button registers a waiter that can never
+        resolve, which reads as a hung node."""
+        from nodes.discord.discord_receive import DiscordReceiveNode
+
+        result = _run(DiscordReceiveNode().execute("d1", {}, _ctx()))
+        assert result["success"] is False
+        assert "not connected" in result["error"].lower()

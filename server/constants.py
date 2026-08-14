@@ -356,6 +356,7 @@ EVENT_TRIGGER_TYPES: FrozenSet[str] = frozenset(
         "whatsappReceive",
         "whatsappBusinessReceive",
         "whatsappBusinessStatus",
+        "discordReceive",
         "twitterReceive",
         "workflowTrigger",
         "chatTrigger",
@@ -403,6 +404,7 @@ WORKFLOW_TRIGGER_TYPES: FrozenSet[str] = frozenset(
         # canvas-only today.
         "whatsappBusinessReceive",
         "whatsappBusinessStatus",
+        "discordReceive",
         "workflowTrigger",
         "chatTrigger",
         "taskTrigger",

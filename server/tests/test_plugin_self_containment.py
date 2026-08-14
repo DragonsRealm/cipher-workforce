@@ -79,6 +79,7 @@ _MIGRATED_PLUGINS = (
 _PLUGINS_WITH_HANDLERS = (
     "android",
     "cloudflare",
+    "discord",
     "gcloud",
     "github",
     "google",
