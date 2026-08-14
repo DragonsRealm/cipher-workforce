@@ -42,10 +42,12 @@ const ConditionalEdge: React.FC<ConditionalEdgeProps> = ({
 }) => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
+  // borderRadius 0 = right-angle corners, matching the design-handoff
+  // `step` contract the default edges follow via `type: 'step'`.
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX, sourceY, sourcePosition,
     targetX, targetY, targetPosition,
-    borderRadius: 10,
+    borderRadius: 0,
   });
 
   const hasCondition = !!data?.condition;
@@ -67,7 +69,11 @@ const ConditionalEdge: React.FC<ConditionalEdgeProps> = ({
 
   return (
     <>
-      {/* BaseEdge stroke is the React Flow API contract — must be inline. */}
+      {/* BaseEdge stroke is the React Flow API contract — must be inline.
+          Values are theme tokens only (base.css --edge-* block): a
+          condition-carrying edge highlights in the accent; without a
+          condition every property stays undefined so the resting rule
+          from canvasAnimations.ts applies. */}
       <BaseEdge
         id={id}
         path={edgePath}
@@ -75,8 +81,8 @@ const ConditionalEdge: React.FC<ConditionalEdgeProps> = ({
         style={{
           ...style,
           stroke: hasCondition ? 'var(--accent)' : undefined,
-          strokeWidth: hasCondition ? 2 : undefined,
-          strokeDasharray: hasCondition ? '5 3' : undefined,
+          strokeWidth: hasCondition ? 'var(--edge-stroke-width-done)' : undefined,
+          strokeDasharray: hasCondition ? 'var(--edge-dash)' : undefined,
         }}
       />
 

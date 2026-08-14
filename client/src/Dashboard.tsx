@@ -11,6 +11,7 @@ import {
   ConnectionMode,
   ConnectionLineType,
   SelectionMode,
+  StepEdge,
   Node,
   Edge,
 } from 'reactflow';
@@ -66,6 +67,11 @@ import {
 import { importWorkflowFromFile } from './utils/workflowExport';
 import type { ValidationIssue } from './hooks/useWorkflowValidation';
 import { buildCanvasStyles } from './styles/canvasAnimations';
+
+// Static stylesheet: fully token-driven (var(--edge-*) + semantic
+// tokens), so it is built once at module scope — theme switches restyle
+// it via CSS variable resolution, never a rebuild.
+const canvasCss = buildCanvasStyles();
 
 /** Wire shape returned by the backend ``import_workflow`` WS handler.
  *  Mirrors ``services.workflow_import.import_workflow`` — flat optional
@@ -146,6 +152,12 @@ const createNodeTypes = (): Record<string, React.ComponentType<any>> => {
 // canvas node when prefetch lands (the "canvas-wide snap" symptom).
 const moduleEdgeTypes = {
   conditional: ConditionalEdge,
+  // Design-handoff edge contract: every default edge renders as the
+  // orthogonal step edge. Persisted workflows (incl. the shipped example
+  // seeds) carry `type: 'smoothstep'` from the pre-step era, so the
+  // built-in name is remapped to React Flow's StepEdge renderer — no
+  // data migration needed; stored graphs and exports stay byte-stable.
+  smoothstep: StepEdge,
 };
 
 const initialNodes: Node[] = [];
@@ -689,22 +701,15 @@ const DashboardContent: React.FC = () => {
     });
   }, [edges, nodeStatuses, isExecuting, isCurrentWorkflowDeployed, nodes]);
 
-  // Memoize ReactFlow options to prevent unnecessary re-renders
+  // Memoize ReactFlow options to prevent unnecessary re-renders.
+  // No inline `style` / connectionLineStyle: edge visuals (stroke,
+  // width, dash) are owned entirely by the theme tokens in
+  // themes/base.css via the static stylesheet from canvasAnimations.ts,
+  // which also styles the in-progress .react-flow__connection-path.
   const defaultEdgeOptions = React.useMemo(() => ({
-    type: 'smoothstep',
-    animated: true,
-    style: { stroke: theme.dracula.cyan, strokeWidth: 3 },
-  }), [theme.dracula.cyan]);
-
-  const connectionLineStyle = React.useMemo(() => ({
-    stroke: theme.dracula.cyan,
-    strokeWidth: 2
-  }), [theme.dracula.cyan]);
-
-  // Memoize the injected canvas <style> so the stylesheet isn't
-  // regenerated + re-parsed (a full-document style recalc) on every
-  // Dashboard render — only when the theme palette actually changes.
-  const canvasCss = React.useMemo(() => buildCanvasStyles(theme.colors), [theme.colors]);
+    type: 'step',
+    animated: false,
+  }), []);
 
   // `.react-flow` is intentionally transparent so the parent
   // `.canvas-host` / `.canvas` background-image (per-theme
@@ -1373,7 +1378,7 @@ const DashboardContent: React.FC = () => {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'system-ui, sans-serif',
+        fontFamily: 'var(--font-body)',
       }}>
         {/* Top Toolbar */}
         <TopToolbar
@@ -1495,8 +1500,7 @@ const DashboardContent: React.FC = () => {
                   preventScrolling={true}
                   proOptions={proOptions}
                   defaultEdgeOptions={defaultEdgeOptions}
-                  connectionLineStyle={connectionLineStyle}
-                  connectionLineType={ConnectionLineType.SmoothStep}
+                  connectionLineType={ConnectionLineType.Step}
                   snapToGrid={true}
                   snapGrid={snapGrid}
                   style={reactFlowStyle}
