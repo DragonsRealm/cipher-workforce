@@ -4,7 +4,11 @@
  * Displays console log entries from Console nodes during workflow execution.
  * Includes chat input section for triggering chatTrigger nodes.
  * Shows in a collapsible bottom bar section with clear and filter options.
- * Chat and Console are split 50/50 side by side.
+ *
+ * Design-handoff hybrid layout: split view (default) docks Chat as a
+ * resizable pane beside the Console/Terminal tabs; tab mode makes Chat
+ * the first of three tabs (Chat / Console / Terminal). Toggled via the
+ * Columns2 button in the tab row, persisted in consolePrefs.splitView.
  * Supports resizing by dragging the top edge.
  */
 
@@ -16,7 +20,7 @@ import remarkBreaks from 'remark-breaks';
 import { z } from 'zod';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-json';
-import { ChevronDown, Send } from 'lucide-react';
+import { ChevronDown, Columns2, Send } from 'lucide-react';
 import { useWebSocket, ConsoleLogEntry } from '../../contexts/WebSocketContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -43,7 +47,14 @@ const consolePrefsSchema = z.object({
   fontSize: z.number().min(8).max(40).default(12),
   autoScroll: z.boolean().default(true),
   prettyPrint: z.boolean().default(true),
-  consoleTab: z.enum(['console', 'terminal']).default('console'),
+  // Design-handoff hybrid: Chat is a first-class tab alongside Console /
+  // Terminal. Persisted pre-hybrid values ('console' | 'terminal') stay
+  // valid under the widened enum.
+  consoleTab: z.enum(['chat', 'console', 'terminal']).default('console'),
+  // true (default) = Chat docked as a resizable pane beside the
+  // Console/Terminal tabs (simultaneous chat + logs — the pre-hybrid
+  // layout, preserved for existing users); false = Chat is the first tab.
+  splitView: z.boolean().default(true),
 });
 type ConsolePrefs = z.infer<typeof consolePrefsSchema>;
 const CONSOLE_PREFS_KEY = 'console_panel_prefs_v1';
@@ -169,7 +180,11 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
       return next;
     });
   }, []);
-  const { autoScroll, prettyPrint, consoleTab, panelHeight, chatWidthPercent, fontSize: consoleFontSize } = prefs;
+  const { autoScroll, prettyPrint, consoleTab, splitView, panelHeight, chatWidthPercent, fontSize: consoleFontSize } = prefs;
+  // In split view Chat is always visible as the docked pane, so a
+  // persisted 'chat' tab selection falls back to Console for the tabbed
+  // side; in tab mode all three tabs are selectable.
+  const activeTab = splitView && consoleTab === 'chat' ? 'console' : consoleTab;
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -183,9 +198,12 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
   useEffect(() => {
     if (chatFocusRequest === handledFocusRequestRef.current || !isOpen) return;
     handledFocusRequestRef.current = chatFocusRequest;
+    // In tab mode the chat input only exists while the Chat tab is
+    // active — switch to it before focusing.
+    if (!splitView) setPref('consoleTab', 'chat');
     const frame = requestAnimationFrame(() => chatInputRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [chatFocusRequest, isOpen]);
+  }, [chatFocusRequest, isOpen, splitView, setPref]);
 
   const [chatInput, setChatInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -374,6 +392,132 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
 
   // ------------------------------ Render ------------------------------
 
+  // One chat implementation for both layouts: the split-view docked pane
+  // and the Chat tab. The `chat-msg` / `chat-msg-user` / `chat-msg-bot`
+  // co-classes are the design-handoff structural hooks per-theme CSS
+  // decorates — they must survive any relocation of this block.
+  const chatSection = (
+    <>
+      {/* Header */}
+      <div className="flex min-h-[32px] items-center justify-between border-b border-border-default bg-bg-elevated px-3 py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 font-display text-sm font-semibold tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]">
+            Chat
+            {chatMessages && chatMessages.length > 0 && (
+              <Badge variant="success" className="text-xs">{chatMessages.length}</Badge>
+            )}
+          </span>
+          {chatTriggerNodes.length > 0 && (
+            <Select
+              value={selectedChatTriggerId || '__all__'}
+              onValueChange={(v) => setSelectedChatTriggerId(v === '__all__' ? '' : v)}
+            >
+              <SelectTrigger
+                className="h-6 max-w-[120px] text-xs"
+                onClick={(e) => e.stopPropagation()}
+                title="Select chatTrigger node to target"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Triggers</SelectItem>
+                {chatTriggerNodes.map(node => (
+                  <SelectItem key={node.id} value={node.id}>
+                    {node.data?.label || node.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        {chatMessages && chatMessages.length > 0 && (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={handleClearChat}
+            className="border-destructive/40 text-destructive hover:bg-destructive/10"
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div
+        data-scrollable
+        style={{ fontSize: consoleFontSize }}
+        className="flex-1 overflow-auto px-4 py-3"
+      >
+        {(!chatMessages || chatMessages.length === 0) ? (
+          <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted-foreground">
+            Send a message to trigger chatTrigger nodes
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {chatMessages.map((msg, index) => {
+              const isUser = msg.role === 'user';
+              return (
+                <div
+                  key={`${msg.timestamp}-${index}`}
+                  className={cn(
+                    // `chat-msg` + `chat-msg-user` / `chat-msg-bot`
+                    // co-classes activate per-theme bubble decorations
+                    // (Renaissance: gold-foil user / vellum bot with
+                    // ✦ marker; Cyber: > USER:: / < NODE:: prefixes
+                    // with neon glow; etc.).
+                    'chat-msg max-w-[80%] px-3 py-2 break-words',
+                    isUser
+                      ? 'chat-msg-user mr-0 ml-auto rounded-l-xl rounded-tr-xl rounded-br-sm bg-node-agent-soft'
+                      : 'chat-msg-bot mr-auto ml-0 rounded-r-xl rounded-tl-xl rounded-bl-sm border border-border-default bg-bg-elevated'
+                  )}
+                >
+                  {isUser ? (
+                    <pre className="m-0 leading-tight font-[inherit] text-[length:inherit] whitespace-pre-wrap break-words text-foreground">
+                      {msg.message}
+                    </pre>
+                  ) : (
+                    <div className="chat-markdown text-sm leading-snug text-foreground">
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                        {msg.message}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {formatTimestamp(msg.timestamp)}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={chatEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="flex items-center gap-2 border-t border-border-default bg-bg-elevated px-4 py-2.5">
+        <Input
+          ref={chatInputRef}
+          type="text"
+          placeholder="Type a message..."
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          onKeyDown={handleChatKeyDown}
+          disabled={isSending}
+          className="flex-1"
+        />
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handleSendChat}
+          disabled={isSending || !chatInput.trim()}
+        >
+          <Send className="h-3.5 w-3.5" />
+          {isSending ? '...' : 'Send'}
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     // `chat` co-class is the design-handoff structural hook for per-theme
     // panel decorations (parchment vellum on Renaissance, neon cyan
@@ -432,152 +576,57 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
           (isResizing || isHorizontalResizing) ? '[transition:none]' : 'transition-[height] duration-200 ease-in-out'
         )}
       >
-        {/* ===================== Chat Section (left) ===================== */}
-        <div
-          style={{ width: `${chatWidthPercent}%` }}
-          className="relative flex flex-col overflow-hidden"
-        >
-          {/* Header */}
-          <div className="flex min-h-[32px] items-center justify-between border-b border-border-default bg-bg-elevated px-3 py-1.5">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 font-display text-sm font-semibold tracking-[var(--type-tracking-display)] text-fg-default [text-transform:var(--type-uppercase)]">
-                Chat
-                {chatMessages && chatMessages.length > 0 && (
-                  <Badge variant="success" className="text-xs">{chatMessages.length}</Badge>
-                )}
-              </span>
-              {chatTriggerNodes.length > 0 && (
-                <Select
-                  value={selectedChatTriggerId || '__all__'}
-                  onValueChange={(v) => setSelectedChatTriggerId(v === '__all__' ? '' : v)}
-                >
-                  <SelectTrigger
-                    className="h-6 max-w-[120px] text-xs"
-                    onClick={(e) => e.stopPropagation()}
-                    title="Select chatTrigger node to target"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All Triggers</SelectItem>
-                    {chatTriggerNodes.map(node => (
-                      <SelectItem key={node.id} value={node.id}>
-                        {node.data?.label || node.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            {chatMessages && chatMessages.length > 0 && (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={handleClearChat}
-                className="border-destructive/40 text-destructive hover:bg-destructive/10"
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-
-          {/* Messages */}
-          <div
-            data-scrollable
-            style={{ fontSize: consoleFontSize }}
-            className="flex-1 overflow-auto px-4 py-3"
-          >
-            {(!chatMessages || chatMessages.length === 0) ? (
-              <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted-foreground">
-                Send a message to trigger chatTrigger nodes
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {chatMessages.map((msg, index) => {
-                  const isUser = msg.role === 'user';
-                  return (
-                    <div
-                      key={`${msg.timestamp}-${index}`}
-                      className={cn(
-                        // `chat-msg` + `chat-msg-user` / `chat-msg-bot`
-                        // co-classes activate per-theme bubble decorations
-                        // (Renaissance: gold-foil user / vellum bot with
-                        // ✦ marker; Cyber: > USER:: / < NODE:: prefixes
-                        // with neon glow; etc.).
-                        'chat-msg max-w-[80%] px-3 py-2 break-words',
-                        isUser
-                          ? 'chat-msg-user mr-0 ml-auto rounded-l-xl rounded-tr-xl rounded-br-sm bg-node-agent-soft'
-                          : 'chat-msg-bot mr-auto ml-0 rounded-r-xl rounded-tl-xl rounded-bl-sm border border-border-default bg-bg-elevated'
-                      )}
-                    >
-                      {isUser ? (
-                        <pre className="m-0 leading-tight font-[inherit] text-[length:inherit] whitespace-pre-wrap break-words text-foreground">
-                          {msg.message}
-                        </pre>
-                      ) : (
-                        <div className="chat-markdown text-sm leading-snug text-foreground">
-                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                            {msg.message}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {formatTimestamp(msg.timestamp)}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={chatEndRef} />
-              </div>
-            )}
-          </div>
-
-          {/* Input */}
-          <div className="flex items-center gap-2 border-t border-border-default bg-bg-elevated px-4 py-2.5">
-            <Input
-              ref={chatInputRef}
-              type="text"
-              placeholder="Type a message..."
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={handleChatKeyDown}
-              disabled={isSending}
-              className="flex-1"
-            />
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleSendChat}
-              disabled={isSending || !chatInput.trim()}
+        {/* ===================== Chat (split view: docked left pane) ===================== */}
+        {splitView && (
+          <>
+            <div
+              style={{ width: `${chatWidthPercent}%` }}
+              className="relative flex flex-col overflow-hidden"
             >
-              <Send className="h-3.5 w-3.5" />
-              {isSending ? '...' : 'Send'}
-            </Button>
-          </div>
-        </div>
+              {chatSection}
+            </div>
 
-        {/* Horizontal resize handle */}
-        <div
-          onMouseDown={handleHorizontalResizeStart}
-          className={cn(
-            'w-1.5 shrink-0 cursor-ew-resize transition-colors',
-            isHorizontalResizing
-              ? 'bg-node-agent transition-none'
-              : 'bg-border hover:bg-node-agent-soft'
-          )}
-        />
+            {/* Horizontal resize handle */}
+            <div
+              onMouseDown={handleHorizontalResizeStart}
+              className={cn(
+                'w-1.5 shrink-0 cursor-ew-resize transition-colors',
+                isHorizontalResizing
+                  ? 'bg-node-agent transition-none'
+                  : 'bg-border hover:bg-node-agent-soft'
+              )}
+            />
+          </>
+        )}
 
         {/* ===================== Console / Terminal Section (right) ===================== */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Header with tabs + filters */}
           <div className="flex min-h-[32px] items-center justify-between border-b border-border-default bg-bg-elevated px-3 py-1.5">
-            {/* Tab buttons */}
+            {/* Tab buttons — design-handoff hybrid: Chat is the first tab
+                in tab mode; in split view it lives in the docked pane. */}
             <div className="flex items-center gap-1">
+              {!splitView && (
+                <button
+                  onClick={() => setPref('consoleTab', 'chat')}
+                  className={cn(
+                    'flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs transition-colors',
+                    activeTab === 'chat'
+                      ? 'bg-node-trigger-soft font-semibold text-node-trigger'
+                      : 'text-muted-foreground hover:bg-muted'
+                  )}
+                >
+                  Chat
+                  {chatMessages && chatMessages.length > 0 && (
+                    <Badge variant="success" className="ml-1 px-1 text-xs">{chatMessages.length}</Badge>
+                  )}
+                </button>
+              )}
               <button
                 onClick={() => setPref('consoleTab', 'console')}
                 className={cn(
                   'flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs transition-colors',
-                  consoleTab === 'console'
+                  activeTab === 'console'
                     ? 'bg-node-agent-soft font-semibold text-node-agent'
                     : 'text-muted-foreground hover:bg-muted'
                 )}
@@ -591,7 +640,7 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 onClick={() => setPref('consoleTab', 'terminal')}
                 className={cn(
                   'flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs transition-colors',
-                  consoleTab === 'terminal'
+                  activeTab === 'terminal'
                     ? 'bg-node-model-soft font-semibold text-node-model'
                     : 'text-muted-foreground hover:bg-muted'
                 )}
@@ -601,10 +650,23 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
                   <Badge variant="info" className="ml-1 px-1 text-xs">{terminalLogs.length}</Badge>
                 )}
               </button>
+              <button
+                onClick={() => setPref('splitView', !splitView)}
+                aria-pressed={splitView}
+                title={splitView ? 'Switch to tabs (Chat becomes a tab)' : 'Dock Chat as a split pane'}
+                className={cn(
+                  'ml-1 flex items-center rounded-sm px-1.5 py-0.5 text-xs transition-colors',
+                  splitView
+                    ? 'bg-node-tool-soft text-node-tool'
+                    : 'text-muted-foreground hover:bg-muted'
+                )}
+              >
+                <Columns2 className="h-3.5 w-3.5" />
+              </button>
             </div>
 
             <div className="flex items-center gap-1.5">
-              {consoleTab === 'terminal' && (
+              {activeTab === 'terminal' && (
                 <Select
                   value={terminalLogLevel}
                   onValueChange={(v) => setTerminalLogLevel(v as 'all' | 'error' | 'warning' | 'info' | 'debug')}
@@ -624,7 +686,7 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
                   </SelectContent>
                 </Select>
               )}
-              {consoleTab === 'console' && consoleNodes.length > 0 && (
+              {activeTab === 'console' && consoleNodes.length > 0 && (
                 <Select
                   value={selectedConsoleId || '__all__'}
                   onValueChange={(v) => setSelectedConsoleId(v === '__all__' ? '' : v)}
@@ -649,8 +711,8 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
               <Input
                 type="text"
                 placeholder="Filter..."
-                value={consoleTab === 'console' ? filter : terminalFilter}
-                onChange={(e) => consoleTab === 'console' ? setFilter(e.target.value) : setTerminalFilter(e.target.value)}
+                value={activeTab === 'console' ? filter : terminalFilter}
+                onChange={(e) => activeTab === 'console' ? setFilter(e.target.value) : setTerminalFilter(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
                 className="h-6 w-[100px] text-xs"
               />
@@ -662,7 +724,7 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 />
                 Auto
               </label>
-              {consoleTab === 'console' && (
+              {activeTab === 'console' && (
                 <label
                   className={cn(
                     'flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground transition-colors',
@@ -689,11 +751,11 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 max={MAX_FONT_SIZE}
                 className="h-7 w-14 text-xs"
               />
-              {((consoleTab === 'console' && consoleLogs.length > 0) || (consoleTab === 'terminal' && terminalLogs.length > 0)) && (
+              {((activeTab === 'console' && consoleLogs.length > 0) || (activeTab === 'terminal' && terminalLogs.length > 0)) && (
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={consoleTab === 'console' ? handleClearConsole : clearTerminalLogs}
+                  onClick={activeTab === 'console' ? handleClearConsole : clearTerminalLogs}
                   className="border-destructive/40 text-destructive hover:bg-destructive/10"
                 >
                   Clear
@@ -702,13 +764,19 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
             </div>
           </div>
 
-          {/* Logs body */}
+          {/* Body: Chat tab (tab mode only) reuses the shared chat
+              section; Console / Terminal render the logs body. */}
+          {activeTab === 'chat' ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {chatSection}
+            </div>
+          ) : (
           <div
             data-scrollable
             style={{ fontSize: consoleFontSize }}
             className="flex-1 overflow-auto font-mono"
           >
-            {consoleTab === 'console' ? (
+            {activeTab === 'console' ? (
               filteredLogs.length === 0 ? (
                 <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted-foreground">
                   {consoleLogs.length === 0
@@ -807,6 +875,7 @@ const ConsolePanel: React.FC<ConsolePanelProps> = ({
             )}
             <div ref={logsEndRef} />
           </div>
+          )}
         </div>
       </div>
     </div>

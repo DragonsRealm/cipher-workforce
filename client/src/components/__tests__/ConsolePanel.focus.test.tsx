@@ -6,7 +6,7 @@
  * frame. A chatFocusRequest of 0 (initial) or a closed panel never focuses.
  */
 
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 
 // Full-module replace of the WS context (importActual+spread is broken under
@@ -128,5 +128,43 @@ describe('ConsolePanel chat focus', () => {
     });
 
     expect(input).not.toHaveFocus();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tab mode (design-handoff hybrid): splitView=false makes Chat the first
+// tab. A focus request must first switch to the Chat tab (the input does
+// not exist in the DOM otherwise), then focus the input.
+// ---------------------------------------------------------------------------
+
+describe('ConsolePanel chat focus (tab mode)', () => {
+  const PREFS_KEY = 'console_panel_prefs_v1';
+
+  beforeEach(() => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ splitView: false }));
+  });
+
+  afterEach(() => {
+    localStorage.removeItem(PREFS_KEY);
+  });
+
+  it('renders Chat as a tab and no chat input while another tab is active', () => {
+    renderPanel(true);
+    expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Type a message...')).not.toBeInTheDocument();
+  });
+
+  it('switches to the Chat tab and focuses the input on a focus request', async () => {
+    renderPanel(true);
+
+    act(() => {
+      useAppStore.getState().requestChatFocus();
+    });
+    await act(async () => {
+      await flushAnimationFrame();
+    });
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    expect(input).toHaveFocus();
   });
 });
