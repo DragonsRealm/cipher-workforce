@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# External design handoff bundle (reference-only; merged copy lives in docs-internal/design-system/)
+design_handoff_theme_system/
+
 # npm-generated lock file. This project uses pnpm (canonical lock:
 # ``pnpm-lock.yaml``, tracked). Source checkouts are gated to pnpm
 # by ``scripts/preinstall.js``; ``package-lock.json`` only appears
