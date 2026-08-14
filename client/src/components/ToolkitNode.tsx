@@ -89,7 +89,7 @@ const ToolkitNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'var(--font-body)',
         fontSize: '11px',
         cursor: 'pointer',
       } as NodeStyle}
@@ -181,7 +181,7 @@ const ToolkitNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
               height: theme.nodeSize.outputBadge,
               borderRadius: theme.borderRadius.sm,
               backgroundColor: 'var(--success)',
-              border: `1px solid ${theme.isDarkMode ? theme.colors.background : '#ffffff'}`,
+              border: '1px solid var(--bg-canvas)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

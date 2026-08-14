@@ -43,7 +43,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           // properties; font + sizing must live on the editor's style
           // prop. Colors come from .code-editor-container in index.css.
           style={{
-            fontFamily: "'Consolas', 'Monaco', 'Fira Code', monospace",
+            fontFamily: 'var(--font-mono)',
             fontSize: 13,
             lineHeight: 1.5,
             minHeight: '100%',

@@ -150,7 +150,7 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'var(--font-body)',
         fontSize: '11px',
         cursor: 'pointer',
       } as NodeStyle}
@@ -253,7 +253,7 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
             height: theme.nodeSize.outputBadge,
             borderRadius: theme.borderRadius.sm,
             backgroundColor: isPaused ? 'var(--fg-faint)' : 'var(--warning)',
-            border: `1px solid ${theme.isDarkMode ? theme.colors.background : '#ffffff'}`,
+            border: '1px solid var(--bg-canvas)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -265,7 +265,7 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
           }}
           title={isPaused ? 'Trigger paused — events will run after resume' : 'Trigger Node - Starts workflow execution'}
         >
-          <span style={{ lineHeight: 1, color: theme.isDarkMode ? theme.colors.background : '#1a1d21' }}>{isPaused ? 'Ⅱ' : '⚡'}</span>
+          <span style={{ lineHeight: 1, color: 'var(--fg-on-warning)' }}>{isPaused ? 'Ⅱ' : '⚡'}</span>
         </div>
 
         {/* Backend NodeSpec owns every trigger output, including the
@@ -310,7 +310,7 @@ const TriggerNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
               height: theme.nodeSize.outputBadge,
               borderRadius: theme.borderRadius.sm,
               backgroundColor: 'var(--success)',
-              border: `1px solid ${theme.isDarkMode ? theme.colors.background : '#ffffff'}`,
+              border: '1px solid var(--bg-canvas)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
