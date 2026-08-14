@@ -31,7 +31,10 @@
    * --radius-sm/md/lg/xl are also registered in index.css @theme inline
    * (same values: 4/6/8/12px); --radius-node is the canvas-node radius. */
   --radius-node: 10px;
-  --radius-xl: 12px;
+  /* Derived from the shadcn base radius so the two declarations of
+   * --radius-xl (here and index.css @theme inline) can never desync:
+   * both compute `--radius + 4px` (12px at the default 0.5rem). */
+  --radius-xl: calc(var(--radius) + 4px);
   --radius-pill: 999px;
   /* shadcn base radius — consumed by index.css @theme inline radius calcs. */
   --radius: 0.5rem;
@@ -87,11 +90,15 @@
   --tint-border:          30%;   /* node-X-border; brand border-tint */
   --tint-node-edge:       60%;   /* node-color border ring */
   --tint-gear-hover:      20%;   /* gear button hover border */
+  --tint-edge:            62%;   /* resting canvas-edge stroke (fg mix) */
   /* Shadows / glows */
   --tint-shadow:          18%;   /* resting node accent shadow */
   --tint-shadow-hover:    28%;   /* hover node accent shadow */
   --tint-shadow-selected: 32%;   /* selected node accent shadow */
   --tint-glow:            60%;   /* status-pip + status-box glow */
+  /* Semantic-status soft fills (info/success/warning/danger tinted
+   * surfaces used by theme decorations + chat bubbles) */
+  --tint-semantic-soft:   15%;
   /* Executing-pulse keyframe (three layers: ring / halo / atmosphere) */
   --tint-pulse-ring:       80%;
   --tint-pulse-halo:       50%;
@@ -108,6 +115,7 @@
   --dur-slow: 320ms;
   --ease-default: cubic-bezier(0.2, 0.7, 0.3, 1);
   --ease-emphasis: cubic-bezier(0.6, -0.05, 0.3, 1.4);
+  /* Declared per-theme as motion metadata; currently unread by any rule. */
   --motion-style: smooth;
 
   /* Sound (read by JS in a future phase) */
@@ -116,14 +124,18 @@
   /* Type case toggle — themes flip between `none` / `uppercase` / `capitalize`. */
   --type-uppercase: none;
   --type-tracking-display: 0;
+  /* Declared for completeness; currently unread by any rule. */
   --type-scale-base: 14px;
 
-  /* Cursor + scrollbar */
+  /* Cursor + scrollbar (--cursor-pointer declared per-theme; currently
+   * unread by any rule — --cursor-default is the consumed slot). */
   --cursor-default: auto;
   --cursor-pointer: pointer;
 
   /* Canvas-host background pattern slot — themes override with a CSS
-   * gradient or SVG data-url. Default: no pattern. */
+   * gradient or SVG data-url. Default: no pattern.
+   * (--canvas-grid-opacity is declared per-theme metadata; currently
+   * unread — .canvas-host consumes only --canvas-grid.) */
   --canvas-grid: none;
   --canvas-grid-opacity: 0.4;
 
@@ -134,6 +146,32 @@
    * cyan, Renaissance gold, Surveillance REC red, etc.). The default
    * resolves to the theme's `--info` accent. */
   --node-pulse-color: var(--info);
+
+  /* Canvas-edge tokens (design-handoff contract). Resting edges are one
+   * pale neutral derived from the theme foreground, dashed, thin — so
+   * they stay legible on Renaissance vellum and Cyber's near-black void
+   * alike. Status recolors (executing / completed / error / ...) live in
+   * styles/canvasAnimations.ts and reference ONLY these tokens plus the
+   * semantic color tokens. Themes may override any of them. */
+  --edge-stroke: color-mix(in srgb, var(--fg-default) var(--tint-edge), transparent);
+  --edge-stroke-width: 1.5px;         /* resting */
+  --edge-stroke-width-active: 2.5px;  /* executing / error / selected / *-active */
+  --edge-stroke-width-done: 2px;      /* completed / pending */
+  --edge-dash: 5 5;                   /* resting dash rhythm */
+  --edge-dash-active: 8 4;            /* executing / pending dash-march rhythm */
+
+  /* Semantic-status alias + soft fills. Several skins (greek / plague /
+   * rot / atomic / wasteland / surveillance) reference `--danger` and the
+   * `--*-soft` family in their decoration rules; before these fallback
+   * declarations existed those var() reads computed to invalid and the
+   * fills silently dropped. The color side (--info/--success/--warning/
+   * --destructive) resolves per-theme at computed-value time; themes may
+   * override any of these wholesale. */
+  --danger: var(--destructive);
+  --info-soft:    color-mix(in srgb, var(--info)        var(--tint-semantic-soft), transparent);
+  --success-soft: color-mix(in srgb, var(--success)     var(--tint-semantic-soft), transparent);
+  --warning-soft: color-mix(in srgb, var(--warning)     var(--tint-semantic-soft), transparent);
+  --danger-soft:  color-mix(in srgb, var(--destructive) var(--tint-semantic-soft), transparent);
 }
 
 /* ============================================================================
@@ -197,8 +235,14 @@ html[data-page-hidden] *::after {
   :root[data-theme="renaissance"] .canvas .ornament,
   /* Generic Tailwind animate-pulse used by node execution pip */
   .animate-pulse,
-  /* Wave 21 default node pulse */
-  .react-flow__node.executing .node {
+  /* Wave 21 default node pulse (rect nodes) */
+  .react-flow__node.executing .node,
+  /* Square-node executing pulse — bound at the .sq-node-box rules below;
+   * square nodes (Square/Trigger/Toolkit/Start) are the dominant canvas
+   * topology, so omitting these left most nodes pulsing under
+   * reduced-motion. */
+  .react-flow__node.executing .sq-node-box,
+  .sq-node[data-executing] .sq-node-box {
     animation: none !important;
     transition: none !important;
   }
@@ -413,20 +457,40 @@ html[data-page-hidden] *::after {
  * ============================================================================ */
 
 .sq-node[data-status="success"] .sq-node-box,
-.react-flow__node[data-status="success"] .node {
+.react-flow__node[data-status="success"] .node,
+.react-flow__node.completed .sq-node-box,
+.react-flow__node.completed .node {
   box-shadow:
     0 0 0 1px var(--success),
     0 0 14px color-mix(in srgb, var(--success) var(--tint-glow), transparent);
 }
 
 .sq-node[data-status="error"] .sq-node-box,
-.react-flow__node[data-status="error"] .node {
+.react-flow__node[data-status="error"] .node,
+.react-flow__node.error .sq-node-box,
+.react-flow__node.error .node {
   box-shadow:
     0 0 0 1px var(--destructive),
     0 0 14px color-mix(in srgb, var(--destructive) var(--tint-glow), transparent);
 }
 
-/* TODO(wave-30): mirror data-status from the pip to the outer .sq-node /
- * .react-flow__node wrapper in each canvas-node component so the box
- * glow rules above fire. The wave-29 selectors are pre-positioned;
- * components currently set data-status on the pip only (W26). */
+/* How these fire: Dashboard.tsx paints exactly one execution-status
+ * className (`executing` | `completed` | `error` | `pending`) on the
+ * `.react-flow__node` wrapper for EVERY node type, derived purely from
+ * execution results — that is the trigger for the `.completed`/`.error`
+ * twins above (both node families: `.node` rect + `.sq-node-box` square).
+ * The `data-status` selectors are kept as the documented per-theme
+ * override contract.
+ *
+ * Two load-bearing invariants:
+ * 1. Do NOT mirror SquareNode's pipStatus onto the wrapper — it folds
+ *    CONNECTION state into the bucket (e.g. Android paired → success),
+ *    which would put a permanent outcome glow on idle-but-connected
+ *    nodes. Execution classNames are the correct semantics.
+ * 2. Glow-ladder trap #2 (a box-shadow keyframe overwrites any static
+ *    box-shadow) is satisfied structurally: Dashboard's if-chain assigns
+ *    one class only, `executing` wins over outcome classes, so a pulsing
+ *    node never simultaneously carries the outcome shadow. These rules
+ *    also sit after the `.selected` rules at equal specificity, so a
+ *    completed+selected node shows the outcome glow — outcome outranks
+ *    selection while the status persists. Rule order here is load-bearing. */
