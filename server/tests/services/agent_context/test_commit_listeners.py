@@ -114,7 +114,7 @@ async def test_append_notifies_with_post_commit_state(
         ref,
         event_type="message.assistant",
         operation_id="op-1",
-        message_wire_v2=_wire("hello"),
+        message_wire=_wire("hello"),
         provider="anthropic",
     )
 
@@ -143,13 +143,13 @@ async def test_idempotent_replay_emits_nothing(
         ref,
         event_type="message.assistant",
         operation_id="op-replay",
-        message_wire_v2=wire,
+        message_wire=wire,
     )
     replay = await store.append_transition(
         ref,
         event_type="message.assistant",
         operation_id="op-replay",
-        message_wire_v2=wire,
+        message_wire=wire,
     )
 
     assert first.applied is True
@@ -177,7 +177,7 @@ async def test_listener_failure_cannot_fail_the_commit(
         ref,
         event_type="message.assistant",
         operation_id="op-boom",
-        message_wire_v2=_wire("hello"),
+        message_wire=_wire("hello"),
     )
 
     # The commit stands, and one broken listener does not starve the others.
@@ -225,7 +225,7 @@ async def test_no_listeners_registered_is_a_no_op(
         ref,
         event_type="message.assistant",
         operation_id="op-quiet",
-        message_wire_v2=_wire("hello"),
+        message_wire=_wire("hello"),
     )
 
     assert result.applied is True

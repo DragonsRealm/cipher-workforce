@@ -210,8 +210,8 @@ class TemporalWorkerManager:
         # zero runtime cost when the flag is off (orchestrator routes to
         # execute_node_activity, per-type entries sit idle).
         #
-        # F4.B: register AgentWorkflow + its three activities
-        # (execute_llm_step / persist_turn / compact_memory). The
+        # F4.B: register AgentWorkflow + its agent activities
+        # (execute_llm_step / persist_turn / compact_context / ...). The
         # orchestrator schedules AgentWorkflow as a child workflow
         # for the 15 migrating agent types when
         # ``temporal_agent_workflow_enabled`` is on.

@@ -16,9 +16,10 @@ RFC §6.3 plus the F4 deferred follow-up). Activities defined here:
   ``services.ai`` uses today. Per user decision (plan §15) memory
   appends per turn, not on completion, so workflow failures don't lose
   progress.
-- :func:`compact_agent_memory` — invoke ``CompactionService.compact_context``
-  when token thresholds trip. Returns the compacted summary message
-  list. Token accounting stays in the workflow state.
+- :func:`compact_context` — summarize the live conversation via
+  ``CompactionService`` when token thresholds trip. The workflow swaps
+  its ``messages`` for the summary; token accounting stays in the
+  workflow state.
 
 Determinism: every activity is a leaf computation (LLM ainvoke, DB
 write, summarisation). The workflow that calls them is sandboxed=False
@@ -40,7 +41,7 @@ import hashlib
 import json
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -48,12 +49,6 @@ from temporalio.exceptions import ApplicationError
 from models.agent_context import AgentContextRef
 
 logger = logging.getLogger(__name__)
-
-# The only engine there is. Kept as a named constant rather than inlined
-# because it is written into Temporal history by ``prepare_agent_payload``
-# and read back by ``execute_llm_step`` to detect pre-cutover runs.
-_NATIVE_LLM_ENGINE = "native"
-
 
 # Activity result shapes — keep these in sync with AgentWorkflow's
 # expectations. Pydantic was considered but plain dicts keep the
@@ -234,26 +229,12 @@ async def _execute_native_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     from services.llm.messages import filter_empty_messages
     from services.llm.protocol import (
         LLMError,
-        MESSAGE_WIRE_VERSION,
-        NATIVE_MESSAGE_WIRE_VERSIONS,
         Message,
         ThinkingConfig,
         ToolDef,
         message_to_wire,
         messages_from_wire,
     )
-
-    wire_version = int(
-        payload.get("message_wire_version") or MESSAGE_WIRE_VERSION
-    )
-    if wire_version not in NATIVE_MESSAGE_WIRE_VERSIONS:
-        from temporalio.exceptions import ApplicationError
-
-        raise ApplicationError(
-            f"Unsupported native message wire version {wire_version}",
-            type="InvalidAgentMessageWireVersion",
-            non_retryable=True,
-        )
 
     messages = filter_empty_messages(
         messages_from_wire(payload.get("messages") or [])
@@ -372,7 +353,7 @@ async def _journal_llm_turn(
 
     Observation only: it never influences the request. ``request.snapshot``
     carries the exact list sent, which is what
-    :func:`services.agent_context.runtime.reconstruct_message_wire_v2`
+    :func:`services.agent_context.runtime.reconstruct_transcript`
     documents that event to be — the render boundary that later assistant and
     tool transitions are applied on top of.
     """
@@ -398,7 +379,7 @@ async def _journal_llm_turn(
             event_type="message.assistant",
             operation_id=f"{operation_id}:assistant",
             provider=provider,
-            message_wire_v2=assistant_wire,
+            message_wire=assistant_wire,
         )
     except Exception:
         # Observation must never fail the run. The provider has already been
@@ -453,28 +434,6 @@ async def execute_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
         f"Agent LLM step: provider={payload.get('provider')} " f"model={payload.get('model')} messages={len(payload.get('messages', []))}"
     )
     activity.heartbeat(f"LLM step starting: {payload.get('model')}")
-
-    # ``agent.prepare_payload.v1`` records the engine marker. Its absence
-    # means the run predates the native cutover, when conversation state was
-    # serialised in a retired wire format the native reader cannot
-    # interpret. Failing loudly is the honest outcome: reinterpreting those
-    # messages would silently corrupt the conversation.
-    engine = str(payload.get("llm_engine") or "").strip().lower()
-    if engine != _NATIVE_LLM_ENGINE:
-        from temporalio.exceptions import ApplicationError
-
-        detail = (
-            "was started before the native LLM cutover, so its conversation "
-            "state is in a retired wire format"
-            if not engine
-            else f"records an unsupported LLM engine {engine!r}"
-        )
-        raise ApplicationError(
-            f"This agent run {detail} and cannot continue. Reset the workflow "
-            "to start a new generation.",
-            type="InvalidAgentLLMEngine",
-            non_retryable=True,
-        )
 
     result = await _execute_native_llm_step(payload)
     activity.heartbeat("LLM step: model returned")
@@ -558,61 +517,6 @@ async def persist_agent_turn(payload: Dict[str, Any]) -> Dict[str, Any]:
         "applied": applied,
         "trimmed_count": len(trimmed_pairs),
     }
-
-
-@activity.defn(name="agent.compact_memory")
-async def compact_agent_memory(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Compact the running conversation when token budget exceeded.
-
-    Wraps ``CompactionService.compact_context`` (existing, in
-    ``services/compaction.py``) so the workflow can replace its
-    ``messages`` list with the summary message when needed.
-
-    ``payload``::
-
-        {
-            "session_id": str,
-            "node_id": str,
-            "memory_content": str,
-            "provider": str,
-            "node_id": str,
-            "model": str,
-        }
-
-    Returns ``{"success": bool, "summary": str, "tokens_before": int,
-    "tokens_after": int, "usage": dict}``. Caller replaces its ``messages``
-    with a single summary, resets only the context-threshold counter, and
-    retains both pre-compaction and summarizer usage for final billing.
-    """
-    from services.compaction import get_compaction_service
-
-    activity.heartbeat("Compacting agent memory")
-    svc = get_compaction_service()
-    if svc is None:
-        # CompactionService is a Singleton wired by the FastAPI lifespan
-        # (main.py). If the worker activity runs before lifespan init,
-        # the singleton is None and compaction must no-op so the agent
-        # loop keeps running — the workflow checks ``success`` and
-        # keeps the existing messages list on False.
-        return {
-            "success": False,
-            "error": "CompactionService not initialized (worker bootstrap race)",
-            "summary": "",
-            "tokens_before": 0,
-            "tokens_after": 0,
-            "usage": {},
-        }
-    return await svc.compact_context(
-        session_id=payload["session_id"],
-        node_id=payload["node_id"],
-        memory_content=payload.get("memory_content", ""),
-        provider=payload["provider"],
-        api_key=await _resolve_activity_api_key(payload),
-        model=payload["model"],
-        # Temporal owns activity retries; never repeat an ambiguous provider
-        # request inside the activity or SDK.
-        explicit_max_retries=0,
-    )
 
 
 @activity.defn(name="agent.broadcast_progress")
@@ -1181,7 +1085,10 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
         svc = get_compaction_service()
         if svc is not None:
             cfg = await svc.anthropic_config(model=model, provider=provider)
-            compaction_threshold = int(cfg.get("context_token_threshold") or 0) or None
+            # A disabled service must actually disable compaction — the
+            # workflow treats a falsy threshold as "never compact".
+            if cfg.get("enabled"):
+                compaction_threshold = int(cfg.get("context_token_threshold") or 0) or None
     except Exception:  # noqa: BLE001 — defensive, optional feature
         compaction_threshold = None
 
@@ -1246,10 +1153,6 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001 — last-resort fallback
             effective_recursion_limit = 200
 
-    from services.llm.protocol import MESSAGE_WIRE_VERSION
-
-    message_wire_version = MESSAGE_WIRE_VERSION
-
     return {
         "node_id": node_id,
         "node_type": node_type,
@@ -1280,11 +1183,6 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
             or context.get("execution_id")
             or ""
         ),
-        # The marker `execute_llm_step` checks: a history without it
-        # predates the native cutover and carries messages in a retired wire
-        # format that can no longer be read.
-        "llm_engine": _NATIVE_LLM_ENGINE,
-        "message_wire_version": message_wire_version,
     }
 
 
@@ -1904,7 +1802,6 @@ def collect_agent_activities() -> List[Any]:
     return [
         execute_llm_step,
         persist_agent_turn,
-        compact_agent_memory,
         prepare_agent_payload,
         broadcast_agent_progress,
         store_agent_output,
@@ -1925,28 +1822,20 @@ def collect_agent_activities() -> List[Any]:
         register_task_execution,
         finish_agent_delegation,
         finalize_agent_team,
-        # Context journal surface (formerly collect_agent_v2_activities).
-        # NOTE: execute_tool_activity is deliberately absent — it is a
-        # plain coroutine invoked by each plugin's own activity wrapper in
-        # services/plugin/base.py, not a Temporal activity of its own.
+        # Context journal surface: thread resolution for the view-only
+        # journal, plus the conversation summarizer.
         prepare_context,
-        reconstruct_context_messages,
-        append_context,
         compact_context,
     ]
 
 
 # ---------------------------------------------------------------------------
-# Agent Context journal surface.
+# Agent Context journal surface (view-only).
 #
-# Moved here from the retired ``agent_activities_v2`` module so there is a
-# single agent-activity module. These five activities own the backend
-# execution journal: the request snapshot, the LLM step, tool-result and
-# assistant appends, and compaction.
-#
-# ``execute_tool_activity`` is NOT Temporal-only -- ``services/plugin/base.py``
-# calls it from every plugin's ``as_activity()`` when the node context carries
-# ``protocol == "agent-context-tool-v2"``, so it must stay importable from here.
+# The journal observes the agent; it never feeds the request and is never
+# read back on rollover — continue_as_new carries the live transcript.
+# ``_journal_llm_turn`` records each turn, ``prepare_context`` resolves the
+# thread, and ``compact_context`` summarizes the live conversation.
 # ---------------------------------------------------------------------------
 
 _SENSITIVE_GRAPH_KEYS = frozenset(
@@ -2072,55 +1961,6 @@ def _tool_identity(tool: Mapping[str, Any]) -> Dict[str, Any]:
         "version": int(tool.get("version") or 1),
         "task_queue": str(tool.get("dispatch_task_queue") or ""),
     }
-def _validate_unique_tool_names(
-    tools: Iterable[Mapping[str, Any]],
-    *,
-    phase: str,
-) -> None:
-    """Reject an ambiguous provider-visible tool surface.
-
-    A dict comprehension would otherwise silently select the last connected
-    node.  Validation belongs in this backend preparation/rebind boundary,
-    before another provider request can be billed.
-    """
-
-    seen: Dict[str, str] = {}
-    conflicts: Dict[str, set[str]] = {}
-    for tool in tools:
-        if tool.get("llm_hidden"):
-            continue
-        name = str(tool.get("name") or "").strip()
-        if not name:
-            continue
-        node_id = str(tool.get("tool_node_id") or "")
-        previous = seen.get(name)
-        if previous is None:
-            seen[name] = node_id
-            continue
-        conflicts.setdefault(name, {previous}).add(node_id)
-    if conflicts:
-        details = ", ".join(
-            f"{name!r} ({', '.join(sorted(node_ids))})"
-            for name, node_ids in sorted(conflicts.items())
-        )
-        raise _non_retryable(
-            (
-                f"Context V2 {phase} rejected duplicate canonical tool "
-                f"name(s): {details}"
-            ),
-            "DuplicateAgentToolName",
-        )
-async def _runtime_config(
-    store: Any,
-    payload_ref: str,
-) -> Dict[str, Any]:
-    value = await store.get_blob(payload_ref)
-    if not isinstance(value, dict) or value.get("protocol") != "agent-context-v2":
-        raise _non_retryable(
-            "The Context V2 runtime snapshot is missing or invalid.",
-            "InvalidAgentContextRuntimeSnapshot",
-        )
-    return value
 async def _append_event(
     store: Any,
     ref: AgentContextRef,
@@ -2128,7 +1968,7 @@ async def _append_event(
     event_type: str,
     operation_id: str,
     provider: Optional[str] = None,
-    message_wire_v2: Optional[Dict[str, Any]] = None,
+    message_wire: Optional[Dict[str, Any]] = None,
     payload_ref: Optional[str] = None,
 ) -> AgentContextRef:
     result = await store.append_transition(
@@ -2136,7 +1976,7 @@ async def _append_event(
         event_type=event_type,
         operation_id=operation_id,
         provider=provider,
-        message_wire_v2=message_wire_v2,
+        message_wire=message_wire,
         payload_ref=payload_ref,
     )
     return result.ref
@@ -2187,839 +2027,83 @@ async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"context_ref": _ref_dict(thread)}
 
 
-@activity.defn(name="agent.reconstruct_context_messages")
-async def reconstruct_context_messages(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Replay a Context thread's active transcript. Read-only.
-
-    Used only by ``AgentWorkflow`` after ``continue_as_new``. A rollover
-    carries references, not the conversation, so without this the resumed run
-    rebuilds ``messages`` from system + memory + prompt alone and the agent
-    silently forgets everything it had said — but only when a Context node is
-    attached, since the rollover itself is gated on ``context_ref``.
-
-    Returns ``{"messages": [...], "restored": bool, "reason": str}``. A thread
-    that cannot be replayed reports ``restored: False`` rather than raising, so
-    the workflow falls back to the freshly built list instead of failing a run
-    over a rehydration miss.
-    """
-
-    ref_data = payload.get("context_ref") or {}
-    if not ref_data:
-        return {"messages": [], "restored": False, "reason": "no_context_ref"}
-
-    from services.agent_context import (
-        OpaqueCheckpointError,
-        reconstruct_message_wire_v2,
-    )
-
-    store = _context_store()
-    try:
-        _ref, wires = await reconstruct_message_wire_v2(
-            store, _context_ref(ref_data)
-        )
-    except OpaqueCheckpointError:
-        # A provider-native checkpoint holds opaque continuation state, not a
-        # message list. The provider itself carries that context, so the
-        # rebuilt prompt is the correct fallback.
-        return {"messages": [], "restored": False, "reason": "opaque_checkpoint"}
-    except Exception as exc:  # noqa: BLE001 -- never fail a run over replay
-        activity.logger.warning(
-            "Context transcript replay failed; resuming from the rebuilt "
-            f"prompt instead: {exc!r}"
-        )
-        return {"messages": [], "restored": False, "reason": "replay_failed"}
-
-    messages = [dict(wire) for wire in wires]
-    return {
-        "messages": messages,
-        "restored": bool(messages),
-        "reason": "ok" if messages else "empty_thread",
-    }
-
-
-def _pending_tool_identities(
-    calls: Iterable[Mapping[str, Any]],
-    configured_tools: Iterable[Mapping[str, Any]],
-) -> List[Dict[str, Any]]:
-    index = {
-        str(tool.get("name") or ""): tool
-        for tool in configured_tools
-        if not tool.get("llm_hidden")
-    }
-    pending: List[Dict[str, Any]] = []
-    for call_index, call in enumerate(calls, start=1):
-        name = str(call.get("name") or "")
-        tool = index.get(name) or {}
-        pending.append(
-            {
-                "call_index": call_index,
-                "call_id": str(
-                    call.get("id") or f"call-{call_index}"
-                ),
-                "name": name,
-                "node_id": str(tool.get("tool_node_id") or ""),
-                "node_type": str(tool.get("node_type") or ""),
-                "version": int(tool.get("version") or 1),
-                "task_queue": str(
-                    tool.get("dispatch_task_queue") or ""
-                ),
-                "known": bool(tool),
-            }
-        )
-    return pending
-def _find_call(
-    response: Mapping[str, Any],
-    pending: Mapping[str, Any],
-) -> Dict[str, Any]:
-    call_index = int(pending.get("call_index") or 0)
-    calls = list(response.get("calls") or [])
-    if call_index < 1 or call_index > len(calls):
-        raise _non_retryable(
-            "Pending Context V2 tool identity does not match its response.",
-            "InvalidPendingAgentTool",
-        )
-    call = dict(calls[call_index - 1])
-    if (
-        str(call.get("name") or "") != str(pending.get("name") or "")
-        or str(call.get("id") or f"call-{call_index}")
-        != str(pending.get("call_id") or "")
-    ):
-        raise _non_retryable(
-            "Pending Context V2 tool identity hash boundary was violated.",
-            "InvalidPendingAgentTool",
-        )
-    return call
-async def _validate_tool_args(
-    tool: Mapping[str, Any],
-    call: Mapping[str, Any],
-) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    if call.get("parse_error"):
-        return None, {
-            "error": "Tool arguments were invalid JSON",
-            "detail": str(call.get("parse_error") or ""),
-            "raw_arguments": str(call.get("raw_arguments") or ""),
-        }
-    args = call.get("args") or {}
-    if not isinstance(args, dict):
-        return None, {
-            "error": "Tool arguments must be an object",
-        }
-
-    definition = dict(tool.get("definition") or {})
-    schema = dict(
-        definition.get("parameters")
-        or {"type": "object", "properties": {}}
-    )
-    try:
-        from jsonschema import Draft202012Validator
-
-        Draft202012Validator(schema).validate(args)
-    except Exception as exc:
-        return None, {
-            "error": "Invalid tool arguments",
-            "details": str(exc),
-        }
-
-    # Security-sensitive ToolInput models also validate through the plugin
-    # boundary so model arguments cannot replace persisted configuration.
-    from services.node_registry import get_node_class
-
-    node_cls = get_node_class(str(tool.get("node_type") or ""))
-    if node_cls is not None:
-        model_factory = getattr(node_cls, "tool_input_model", None)
-        if callable(model_factory):
-            try:
-                model = model_factory()
-                value = model.model_validate(args)
-                return (
-                    value.model_dump(mode="json", exclude_unset=True),
-                    None,
-                )
-            except Exception as exc:
-                return None, {
-                    "error": "Invalid tool arguments",
-                    "details": str(exc),
-                }
-    return dict(args), None
-async def _execute_tool_and_append(
-    *,
-    store: Any,
-    ref: AgentContextRef,
-    runtime_config: Dict[str, Any],
-    runtime_config_ref: str,
-    response_ref: str,
-    pending: Dict[str, Any],
-    operation_id: str,
-    iteration: int,
-) -> Dict[str, Any]:
-    from core.container import container
-    from services.handlers.tools import execute_tool
-    from services.llm.protocol import Message, message_to_wire
-    from services.node_registry import get_node_class
-
-    prepared = dict(runtime_config["prepared"])
-    provider = str(prepared.get("provider") or "")
-    response = await store.get_blob(response_ref)
-    if not isinstance(response, dict):
-        raise _non_retryable(
-            "Context V2 response reference is invalid.",
-            "InvalidAgentContextResponse",
-        )
-    call = _find_call(response, pending)
-    tool = next(
-        (
-            item
-            for item in prepared.get("tools") or []
-            if str(item.get("name") or "") == str(call.get("name") or "")
-            and not item.get("llm_hidden")
-        ),
-        None,
-    )
-
-    if tool is None:
-        tool_result: Any = {
-            "error": (
-                f"Tool {call.get('name')!r} is not connected to this agent."
-            )
-        }
-    else:
-        args, validation_error = await _validate_tool_args(tool, call)
-        if validation_error is not None:
-            tool_result = validation_error
-        else:
-            source_context = dict(runtime_config.get("source_context") or {})
-            node_cls = get_node_class(str(tool.get("node_type") or ""))
-            needs_canvas = bool(
-                node_cls is not None
-                and getattr(node_cls, "needs_canvas", False)
-            )
-            tool_info = dict(tool.get("tool_info") or {})
-            execution = {
-                "node_type": str(tool.get("node_type") or ""),
-                "node_id": str(tool.get("tool_node_id") or ""),
-                "parameters": dict(tool_info.get("parameters") or {}),
-                "label": str(
-                    tool_info.get("label")
-                    or tool.get("node_type")
-                    or call.get("name")
-                    or "tool"
-                ),
-                "connected_services": list(
-                    tool_info.get("connected_services") or []
-                ),
-                "workflow_id": runtime_config.get("workflow_id"),
-                "ai_service": container.ai_service(),
-                "database": container.database(),
-                "parent_node_id": runtime_config.get("agent_node_id"),
-                "provider": provider,
-                "nodes": source_context.get("nodes") if needs_canvas else [],
-                "edges": source_context.get("edges") if needs_canvas else [],
-                "workspace_dir": source_context.get("workspace_dir") or "",
-                "session_id": source_context.get("session_id") or "default",
-                "user_id": source_context.get("user_id") or "owner",
-                "execution_id": source_context.get("execution_id"),
-                "root_execution_id": source_context.get("root_execution_id"),
-                "tool_call_id": str(call.get("id") or ""),
-                "operation_id": operation_id,
-                "delegation_depth": source_context.get("delegation_depth", 0),
-                "team_id": source_context.get("team_id"),
-                "max_concurrent_subagents": prepared.get(
-                    "max_concurrent_subagents", 3
-                ),
-                "max_delegation_depth": prepared.get(
-                    "max_delegation_depth", 2
-                ),
-                "auto_rebind_tools": bool(
-                    prepared.get("auto_rebind_tools", True)
-                ),
-            }
-            try:
-                tool_result = await execute_tool(
-                    str(call.get("name") or ""),
-                    args or {},
-                    execution,
-                )
-            except Exception as exc:
-                # Tool failures are exact observable outcomes and are returned
-                # to the model rather than failing the whole agent loop.
-                tool_result = {
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                }
-
-    try:
-        tool_content = json.dumps(
-            tool_result,
-            ensure_ascii=False,
-            default=str,
-        )
-    except Exception:
-        tool_content = str(tool_result)
-    result_ref = await store.put_blob(
-        {
-            "tool_call_id": str(call.get("id") or pending.get("call_id") or ""),
-            "tool_name": str(call.get("name") or ""),
-            "result": tool_result,
-            "iteration": iteration,
-        }
-    )
-    tool_message = Message(
-        role="tool",
-        content=tool_content,
-        tool_call_id=str(call.get("id") or pending.get("call_id") or ""),
-        name=str(call.get("name") or ""),
-    )
-    from services.llm.media import image_blocks_from_tool_result
-
-    # Tools opt into vision via `llm_media`; blocks journal as ~450 B refs.
-    tool_message.blocks.extend(image_blocks_from_tool_result(tool_result))
-    ref = await _append_event(
-        store,
-        ref,
-        event_type="message.tool_result",
-        operation_id=f"{operation_id}:result",
-        provider=provider,
-        message_wire_v2=message_to_wire(tool_message),
-        payload_ref=result_ref,
-    )
-
-    # Canvas-mutating tools can rebind newly-created tool identities without
-    # placing their schemas or operation results in Event History.
-    next_runtime_ref = runtime_config_ref
-    operations = (
-        tool_result.get("operations") or []
-        if isinstance(tool_result, dict)
-        else []
-    )
-    if operations and prepared.get("auto_rebind_tools", True):
-        from services.temporal.agent_activities import refresh_agent_tools
-
-        refreshed = await refresh_agent_tools(
-            {
-                "operations": operations,
-                "agent_node_type": prepared.get("node_type"),
-            }
-        )
-        additions = list(refreshed.get("tools") or [])
-        _validate_unique_tool_names(
-            [*(prepared.get("tools") or []), *additions],
-            phase="hot rebind",
-        )
-        if additions:
-            prepared["tools"] = [
-                *(prepared.get("tools") or []),
-                *additions,
-            ]
-            runtime_config = {
-                **runtime_config,
-                "prepared": prepared,
-            }
-            next_runtime_ref = await store.put_blob(runtime_config)
-            ref = await _append_event(
-                store,
-                ref,
-                event_type="request.tools_rebound",
-                operation_id=f"{operation_id}:rebind",
-                provider=provider,
-                payload_ref=next_runtime_ref,
-            )
-
-    return {
-        "context_ref": _ref_dict(ref),
-        "runtime_config_ref": next_runtime_ref,
-        "result_ref": result_ref,
-        "result_hash": _hash_from_ref(result_ref),
-    }
-async def execute_tool_activity(
-    payload: Dict[str, Any],
-    *,
-    expected_node_type: str,
-    expected_version: int,
-) -> Dict[str, Any]:
-    """Execute one Context V2 tool from its plugin-owned activity.
-
-    The Temporal payload contains only hashes, Context references, and the
-    pending tool identity. Tool arguments and persisted configuration remain
-    in ``AgentContextStore`` and are loaded inside the activity.
-    """
-
-    if payload.get("protocol") != "agent-context-tool-v2":
-        raise _non_retryable(
-            "The plugin activity received an invalid Context V2 tool payload.",
-            "InvalidAgentToolActivityPayload",
-        )
-    pending = dict(payload.get("pending_tool") or {})
-    if (
-        not pending.get("known")
-        or str(pending.get("node_type") or "") != expected_node_type
-        or int(pending.get("version") or 0) != int(expected_version)
-    ):
-        raise _non_retryable(
-            "The pending tool identity does not match the dispatched plugin.",
-            "InvalidPendingAgentTool",
-        )
-
-    store = _context_store()
-    ref = _context_ref(payload["context_ref"])
-    runtime_config_ref = str(payload["runtime_config_ref"])
-    config = await _runtime_config(store, runtime_config_ref)
-    configured = next(
-        (
-            item
-            for item in config["prepared"].get("tools") or []
-            if str(item.get("name") or "") == str(pending.get("name") or "")
-        ),
-        None,
-    )
-    if (
-        not isinstance(configured, dict)
-        or str(configured.get("tool_node_id") or "")
-        != str(pending.get("node_id") or "")
-        or str(configured.get("node_type") or "") != expected_node_type
-        or int(configured.get("version") or 1) != int(expected_version)
-    ):
-        raise _non_retryable(
-            "The persisted tool binding no longer matches the pending identity.",
-            "InvalidPendingAgentTool",
-        )
-
-    return await _execute_tool_and_append(
-        store=store,
-        ref=ref,
-        runtime_config=config,
-        runtime_config_ref=runtime_config_ref,
-        response_ref=str(payload["response_ref"]),
-        pending=pending,
-        operation_id=str(payload["operation_id"]),
-        iteration=int(payload.get("iteration") or 0),
-    )
-async def _lifetime_usage(
-    store: Any,
-    ref: AgentContextRef,
-    operation_prefix: str,
-) -> Dict[str, int]:
-    totals: Dict[str, int] = {}
-    after = 0
-    while True:
-        page, next_after = await store.load_journal_page(
-            ref,
-            after_sequence=after,
-            limit=200,
-            epoch=ref.epoch,
-        )
-        for event in page:
-            if (
-                event.event_type
-                not in {"message.assistant", "context.compacted"}
-                or not event.payload_ref
-                or not event.operation_id.startswith(operation_prefix)
-            ):
-                continue
-            value = await store.get_blob(event.payload_ref)
-            if not isinstance(value, dict):
-                continue
-            for key, amount in (value.get("usage") or {}).items():
-                if isinstance(amount, int):
-                    totals[key] = totals.get(key, 0) + amount
-        if next_after is None:
-            break
-        after = next_after
-    return totals
-async def _finalize(
-    *,
-    store: Any,
-    ref: AgentContextRef,
-    runtime_config: Dict[str, Any],
-    response_ref: str,
-    operation_id: str,
-    truncated: bool,
-) -> Dict[str, Any]:
-    from core.container import container
-
-    response = await store.get_blob(response_ref)
-    if not isinstance(response, dict):
-        raise _non_retryable(
-            "Context V2 final response reference is invalid.",
-            "InvalidAgentContextResponse",
-        )
-    prepared = dict(runtime_config["prepared"])
-    operation_prefix = str(runtime_config.get("operation_prefix") or "")
-    usage = await _lifetime_usage(store, ref, operation_prefix)
-    result = {
-        "response": str(response.get("content") or ""),
-        "thinking": response.get("thinking"),
-        "model": prepared.get("model"),
-        "provider": prepared.get("provider"),
-        "usage": usage,
-        "execution_id": (
-            runtime_config.get("source_context") or {}
-        ).get("execution_id"),
-        "root_execution_id": (
-            runtime_config.get("source_context") or {}
-        ).get("root_execution_id"),
-        "truncated": truncated,
-    }
-    output_ref = await store.put_blob(result)
-    ref = await _append_event(
-        store,
-        ref,
-        event_type=(
-            "response.truncated" if truncated else "response.final"
-        ),
-        operation_id=f"{operation_id}:response",
-        provider=str(prepared.get("provider") or ""),
-        payload_ref=output_ref,
-    )
-
-    workflow_service = container.workflow_service()
-    session_id = str(
-        (runtime_config.get("source_context") or {}).get("session_id")
-        or "default"
-    )
-    node_id = str(runtime_config.get("agent_node_id") or "")
-    for output_name in ("output_main", "output_top", "output_0"):
-        await workflow_service.store_node_output(
-            session_id,
-            node_id,
-            output_name,
-            result,
-        )
-
-    try:
-        from services.skill_runtime import clear_skill_turn
-
-        await clear_skill_turn(
-            str(runtime_config.get("workflow_id") or ""),
-            str(
-                (runtime_config.get("source_context") or {}).get(
-                    "execution_id"
-                )
-                or ""
-            ),
-            node_id,
-        )
-    except Exception:
-        activity.logger.exception(
-            "Context V2 finalization could not clear active skills"
-        )
-
-    return {
-        "context_ref": _ref_dict(ref),
-        "output_ref": output_ref,
-        "response_hash": _hash_from_ref(response_ref),
-    }
-@activity.defn(name="agent.append_context")
-async def append_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Record an unknown tool outcome or finalize a persisted response."""
-
-    from services.llm.protocol import Message, message_to_wire
-
-    store = _context_store()
-    ref = _context_ref(payload["context_ref"])
-    runtime_config_ref = str(payload["runtime_config_ref"])
-    config = await _runtime_config(store, runtime_config_ref)
-    action = str(payload.get("action") or "")
-    operation_id = str(payload["operation_id"])
-    iteration = int(payload.get("iteration") or 0)
-
-    if action == "record_unknown_tool":
-        pending = dict(payload["pending_tool"])
-        if pending.get("known"):
-            raise _non_retryable(
-                "Known tools must execute on their plugin-owned activity.",
-                "InvalidAgentToolActivityPayload",
-            )
-        return await _execute_tool_and_append(
-            store=store,
-            ref=ref,
-            runtime_config=config,
-            runtime_config_ref=runtime_config_ref,
-            response_ref=str(payload["response_ref"]),
-            pending=pending,
-            operation_id=operation_id,
-            iteration=iteration,
-        )
-    if action == "append_messages":
-        # Journal turns that were produced outside a journaling activity.
-        # The agent loop executes tools through its own per-type and
-        # delegation paths, so their results never pass through
-        # ``_execute_tool_and_append``; without this the journal loses every
-        # tool result and the next reconstruction replays an assistant turn
-        # whose tool calls have no answers.
-        wires = list(payload.get("messages") or [])
-        current = ref
-        for offset, wire in enumerate(wires):
-            if not isinstance(wire, dict):
-                continue
-            current = await _append_event(
-                store,
-                current,
-                event_type=str(payload.get("event_type") or "message.tool"),
-                operation_id=f"{operation_id}:{offset}",
-                provider=str(config.get("prepared", {}).get("provider") or ""),
-                message_wire_v2=wire,
-            )
-        return {"context_ref": _ref_dict(current), "appended": len(wires)}
-
-    if action == "finalize":
-        return await _finalize(
-            store=store,
-            ref=ref,
-            runtime_config=config,
-            response_ref=str(payload["response_ref"]),
-            operation_id=operation_id,
-            truncated=False,
-        )
-    if action == "truncate":
-        prepared = dict(config["prepared"])
-        content = (
-            "[Recursion limit reached. Simplify the task or increase the "
-            "agent recursion limit.]"
-        )
-        message = Message(role="assistant", content=content)
-        response_ref = await store.put_blob(
-            {
-                "kind": "final",
-                "assistant_message": message_to_wire(message),
-                "content": content,
-                "thinking": None,
-                "usage": {},
-                "iteration": iteration,
-                "truncated": True,
-            }
-        )
-        ref = await _append_event(
-            store,
-            ref,
-            event_type="message.assistant",
-            operation_id=f"{operation_id}:assistant",
-            provider=str(prepared.get("provider") or ""),
-            message_wire_v2=message_to_wire(message),
-            payload_ref=response_ref,
-        )
-        return await _finalize(
-            store=store,
-            ref=ref,
-            runtime_config=config,
-            response_ref=response_ref,
-            operation_id=operation_id,
-            truncated=True,
-        )
-    raise _non_retryable(
-        f"Unknown Context V2 append action {action!r}.",
-        "InvalidAgentContextAppendAction",
-    )
-def _estimate_tokens(value: Any) -> int:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=str,
-    )
-    return max(1, (len(encoded) + 3) // 4)
 @activity.defn(name="agent.compact_context")
-async def compact_context(
-    payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Run Temporal compaction through the shared provider adapter service."""
+async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Summarize the live conversation into a compact replacement.
 
-    from core.container import container
-    from services.agent_context import (
-        AgentContextCompactionService,
-        CompactionConflictError,
-        ContextCompactionCandidate,
-        ContextCompactionPolicy,
-        reconstruct_message_wire_v2,
-    )
-    from services.agent_runtime import run_native_llm_step
-    from services.llm.protocol import (
-        Message,
-        message_from_wire,
-        message_to_wire,
-    )
-    from services.temporal.agent_activities import (
-        _await_with_llm_heartbeats,
-        _resolve_activity_api_key,
-    )
+    Simple by design: render the wire messages to text, ask
+    ``CompactionService`` for its five-section summary, return it. The
+    workflow swaps its ``messages`` for the summary. No journal side
+    effects and no checkpoints — the next LLM turn journals a fresh
+    ``request.snapshot`` containing the compacted messages, so the
+    Context panel and any later rollover see the compacted state
+    naturally.
 
-    store = _context_store()
-    ref = _context_ref(payload["context_ref"])
-    config = await _runtime_config(
-        store,
-        str(payload["runtime_config_ref"]),
-    )
-    prepared = dict(config["prepared"])
-    provider = str(prepared.get("provider") or "")
-    model = str(prepared.get("model") or "")
-    policy = ContextCompactionPolicy.from_mapping(
-        dict(config.get("context_policy") or {})
-    )
-    response = await store.get_blob(str(payload["response_ref"]))
-    usage = (
-        dict(response.get("usage") or {})
-        if isinstance(response, dict)
-        else {}
-    )
-    active_input_tokens = int(usage.get("input_tokens") or 0) + int(
-        usage.get("output_tokens") or 0
-    )
-    output_headroom = max(0, int(prepared.get("max_tokens") or 0))
-    rendered_request: Optional[List[Dict[str, Any]]] = None
-    try:
-        ref, rendered_request = await reconstruct_message_wire_v2(store, ref)
-    except Exception:
-        # Provider-native checkpoints may be intentionally opaque. Exact
-        # provider usage still drives pressure in that case.
-        rendered_request = None
+    ``payload``::
 
-    async def _portable_compactor(
-        wires: list[dict[str, Any]],
-        _policy: ContextCompactionPolicy,
-    ) -> ContextCompactionCandidate:
-        transcript: list[str] = []
-        for wire in wires:
-            message = message_from_wire(wire)
-            line = f"{message.role.upper()}: {message.content}"
-            if message.tool_calls:
-                line += "\nTOOL_CALLS: " + json.dumps(
-                    [
-                        {
-                            "id": call.id,
-                            "name": call.name,
-                            "args": call.args,
-                            "raw_arguments": call.raw_arguments,
-                            "parse_error": call.parse_error,
-                        }
-                        for call in message.tool_calls
-                    ],
-                    ensure_ascii=False,
-                    default=str,
-                )
-            if message.tool_call_id:
-                line += (
-                    f"\nTOOL_RESULT_FOR: {message.tool_call_id} "
-                    f"({message.name or 'tool'})"
-                )
-            transcript.append(line)
-        prompt = (
-            "Create a compact, provider-portable continuation checkpoint "
-            "for the exact agent transcript below. Preserve instructions, "
-            "decisions, constraints, identifiers, completed and pending "
-            "tool work, errors, open questions, and the next action. Never "
-            "claim a tool ran unless its result appears. Return only the "
-            "checkpoint.\n\n"
-            + "\n\n".join(transcript)
-        )
-        api_key = await _resolve_activity_api_key(prepared)
-        compacted = await _await_with_llm_heartbeats(
-            run_native_llm_step(
-                container.chat_unifier(),
-                provider=provider,
-                api_key=api_key,
-                messages=[Message(role="user", content=prompt)],
-                model=model,
-                temperature=0.2,
-                max_tokens=min(4096, output_headroom or 4096),
-                sdk_max_retries=0,
-                explicit_max_retries=0,
-                translate_errors=False,
+        {
+            "session_id": str,
+            "node_id": str,
+            "messages": [<message wire>],   # the live transcript
+            "provider": str,
+            "model": str,
+        }
+
+    Returns ``{"success": bool, "summary": str, "usage": dict}``.
+    """
+
+    from services.compaction import get_compaction_service
+    from services.llm.protocol import message_from_wire
+
+    activity.heartbeat("Compacting agent context")
+    svc = get_compaction_service()
+    if svc is None:
+        # Singleton wired by the FastAPI lifespan (main.py). A worker
+        # bootstrap race must not kill the run — the workflow checks
+        # ``success`` and keeps its existing messages on False.
+        return {
+            "success": False,
+            "error": (
+                "CompactionService not initialized (worker bootstrap race)"
             ),
-            detail=f"Context V2 compaction waiting: {model}",
-        )
-        summary = str(compacted.content or "").strip()
-        if not summary:
-            raise ValueError("empty_compaction_candidate")
-        summary_wire = dict(
-            message_to_wire(
-                Message(
-                    role="user",
-                    content=(
-                        "<agent_context_checkpoint>\n"
-                        f"{summary}\n"
-                        "</agent_context_checkpoint>"
-                    ),
-                )
+            "summary": "",
+            "usage": {},
+        }
+
+    lines: List[str] = []
+    for wire in payload.get("messages") or []:
+        if not isinstance(wire, dict):
+            continue
+        try:
+            message = message_from_wire(wire)
+        except Exception:
+            continue
+        line = f"{message.role.upper()}: {message.content}"
+        if message.tool_calls:
+            line += "\nTOOL_CALLS: " + json.dumps(
+                [
+                    {"name": call.name, "args": call.args}
+                    for call in message.tool_calls
+                ],
+                ensure_ascii=False,
+                default=str,
             )
-        )
-        message_from_wire(summary_wire)
-        billing_usage = compacted.billing_usage or compacted.usage
-        return ContextCompactionCandidate(
-            strategy="portable_structured",
-            replay_payload={
-                "format": "agent-context-portable-v1",
-                "messages": [summary_wire],
-            },
-            active_token_count=_estimate_tokens([summary_wire]),
-            lifetime_usage=asdict(billing_usage),
-        )
+        if message.tool_call_id:
+            line += (
+                f"\nTOOL_RESULT_FOR: {message.name or message.tool_call_id}"
+            )
+        lines.append(line)
 
-    operation_id = str(payload["operation_id"])
-    try:
-        result = await AgentContextCompactionService(
-            store
-        ).update_pressure_and_compact(
-            ref,
-            operation_id=operation_id,
-            provider=provider,
-            model=model,
-            policy=policy,
-            active_input_tokens=active_input_tokens,
-            output_headroom=output_headroom,
-            rendered_request=rendered_request,
-            portable_compactor=_portable_compactor,
-        )
-    except CompactionConflictError:
-        latest = await store.load_active(ref)
-        return {
-            "context_ref": _ref_dict(latest.ref),
-            "status": "cas_conflict",
-        }
-    except Exception as exc:
-        activity.logger.warning(
-            "Context V2 compaction failed; prior checkpoint retained: %s",
-            type(exc).__name__,
-        )
-        latest = await store.load_active(ref)
-        return {
-            "context_ref": _ref_dict(latest.ref),
-            "status": "failed",
-            "error_code": type(exc).__name__,
-        }
+    return await svc.compact_context(
+        session_id=str(payload.get("session_id") or "default"),
+        node_id=payload["node_id"],
+        memory_content="\n\n".join(lines),
+        provider=payload["provider"],
+        api_key=await _resolve_activity_api_key(payload),
+        model=payload["model"],
+        # Temporal owns activity retries; never repeat an ambiguous provider
+        # request inside the activity or SDK.
+        explicit_max_retries=0,
+    )
 
-    latest_ref = result.ref
-    response_payload: Dict[str, Any] = {
-        "context_ref": _ref_dict(latest_ref),
-        "status": result.reason,
-        "active_pressure": result.pressure_tokens,
-        "context_window": result.context_window,
-    }
-    if result.compacted and result.checkpoint is not None:
-        usage_ref = await store.put_blob(
-            {
-                "usage": result.lifetime_usage,
-                "active_tokens_before": active_input_tokens + output_headroom,
-                "active_tokens_after": result.pressure_tokens,
-                "checkpoint_ref": result.checkpoint.replay_payload_ref,
-                "strategy": result.checkpoint.strategy,
-            }
-        )
-        latest_ref = await _append_event(
-            store,
-            latest_ref,
-            event_type="context.compacted",
-            operation_id=f"{operation_id}:event",
-            provider=provider,
-            payload_ref=usage_ref,
-        )
-        response_payload.update(
-            {
-                "context_ref": _ref_dict(latest_ref),
-                "status": "compacted",
-                "strategy": result.checkpoint.strategy,
-                "checkpoint_hash": _hash_from_ref(
-                    result.checkpoint.replay_payload_ref
-                ),
-                "active_tokens_after": result.pressure_tokens,
-            }
-        )
-    return response_payload
+

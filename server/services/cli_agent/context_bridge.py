@@ -29,7 +29,7 @@ from services.agent_context import (
     AgentContextTransitionWriter,
     OpaqueCheckpointError,
     import_generation_zero_handoff,
-    reconstruct_message_wire_v2,
+    reconstruct_transcript,
 )
 from services.llm.protocol import Message, message_from_wire, message_to_wire
 
@@ -96,9 +96,9 @@ async def _observable_handoff_messages(
             "request.snapshot",
         }:
             continue
-        if event.message_wire_v2 is not None:
+        if event.message_wire is not None:
             if include_message_wires:
-                messages.append(_portable_wire(event.message_wire_v2))
+                messages.append(_portable_wire(event.message_wire))
             continue
 
         payload = (
@@ -148,7 +148,7 @@ async def _build_portable_handoff(
     fidelity = "portable"
     reconstructed: list[dict[str, Any]] = []
     try:
-        _, reconstructed = await reconstruct_message_wire_v2(
+        _, reconstructed = await reconstruct_transcript(
             store,
             state.ref,
         )
@@ -373,7 +373,7 @@ class SpecializedAgentContextBridge:
             separators=(",", ":"),
         )
         return (
-            "## Prior agent context (portable MessageWireV2 replay)\n"
+            "## Prior agent context (portable MessageWire replay)\n"
             "The backend reconstructed the following committed context "
             "from the previous provider. Treat it as prior conversation "
             "state and continue from it.\n"

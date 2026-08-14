@@ -96,7 +96,7 @@ async def _import_legacy_events(
                         f"{source.ref.thread_id}:{event.payload_hash}"
                     ),
                 ),
-                message_wire_v2=dict(message_to_wire(message)),
+                message_wire=dict(message_to_wire(message)),
                 payload_ref=event.payload_ref,
                 provider="legacy",
             )

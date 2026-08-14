@@ -5,7 +5,6 @@ import json
 import pytest
 
 from services.llm.protocol import (
-    MESSAGE_WIRE_VERSION,
     ContentBlock,
     LLMError,
     LLMErrorCategory,
@@ -20,7 +19,7 @@ from services.llm.protocol import (
 )
 
 
-def test_message_wire_v2_round_trips_ordered_blocks_and_provider_state():
+def test_message_wire_round_trips_ordered_blocks_and_provider_state():
     good_call = ToolCall(id="call-1", name="lookup", args={"q": "weather"})
     malformed_call = ToolCall.from_raw(
         id="call-2",
@@ -56,7 +55,8 @@ def test_message_wire_v2_round_trips_ordered_blocks_and_provider_state():
     )
 
     wire = message_to_wire(original)
-    assert wire["version"] == MESSAGE_WIRE_VERSION
+    # One unversioned wire shape — no version discriminator.
+    assert "version" not in wire
     # The payload must be safe for Temporal's ordinary JSON payload codec.
     json.dumps(wire)
 
@@ -75,7 +75,7 @@ def test_message_wire_v2_round_trips_ordered_blocks_and_provider_state():
     )
 
 
-def test_messages_helpers_accept_generators_and_pre_version_flat_shape():
+def test_messages_helpers_accept_generators_and_flat_shape():
     encoded = messages_to_wire(
         Message(role="user", content=str(index)) for index in range(2)
     )

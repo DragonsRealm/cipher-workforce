@@ -59,7 +59,7 @@ class AgentContextTransitionSink(Protocol):
         event_type: str,
         operation_id: str,
         provider: str,
-        message_wire_v2: Optional[Dict[str, Any]] = None,
+        message_wire: Optional[Dict[str, Any]] = None,
         payload: Optional[Dict[str, Any]] = None,
     ) -> Any: ...
 
@@ -265,7 +265,7 @@ async def run_native_agent_loop(
             event_type=event_type,
             operation_id=f"{context_operation_id}:{operation_id}",
             provider=provider,
-            message_wire_v2=message_to_wire(message) if message else None,
+            message_wire=message_to_wire(message) if message else None,
             payload=payload,
         )
 

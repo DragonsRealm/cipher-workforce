@@ -350,8 +350,6 @@ def _agent_payload() -> dict:
         "max_iterations": 2,
         "thinking_config": None,
         "compaction_threshold": None,
-        "llm_engine": "native",
-        "message_wire_version": 2,
     }
 
 

@@ -288,7 +288,7 @@ class NativeOutputContextAdapter(PortableContextAdapter):
         committed_prefix: Sequence[AgentContextEvent],
     ) -> Optional[ContextCompactionCandidate]:
         for event in reversed(committed_prefix):
-            wire = event.message_wire_v2
+            wire = event.message_wire
             if not isinstance(wire, dict):
                 continue
             state = wire.get("provider_state")
@@ -605,10 +605,10 @@ class AgentContextCompactionService:
             else _base_messages(base_replay)
         )
         wires.extend(
-            deepcopy(event.message_wire_v2)
+            deepcopy(event.message_wire)
             for event in plan.committed_prefix
             if event.sequence > snapshot_sequence
-            and isinstance(event.message_wire_v2, dict)
+            and isinstance(event.message_wire, dict)
         )
         return wires
 
@@ -636,7 +636,7 @@ def _is_complete_transaction(
     event = events[index]
     if event.event_type in {"response.final", "response.truncated"}:
         return True
-    wire = event.message_wire_v2
+    wire = event.message_wire
     if event.event_type == "message.assistant" and isinstance(wire, dict):
         calls = wire.get("tool_calls")
         return not isinstance(calls, list) or not calls
@@ -650,7 +650,7 @@ def _is_complete_transaction(
             break
     if assistant_index is None:
         return False
-    assistant_wire = events[assistant_index].message_wire_v2 or {}
+    assistant_wire = events[assistant_index].message_wire or {}
     calls = assistant_wire.get("tool_calls")
     if not isinstance(calls, list) or not calls:
         return False
@@ -665,7 +665,7 @@ def _is_complete_transaction(
             return False
         if result.event_type != "message.tool_result":
             continue
-        result_wire = result.message_wire_v2 or {}
+        result_wire = result.message_wire or {}
         completed.add(str(result_wire.get("tool_call_id") or ""))
     return bool(requested) and requested.issubset(completed)
 
@@ -674,9 +674,9 @@ def _message_wires(
     events: Sequence[AgentContextEvent],
 ) -> list[dict[str, Any]]:
     return [
-        deepcopy(event.message_wire_v2)
+        deepcopy(event.message_wire)
         for event in events
-        if isinstance(event.message_wire_v2, dict)
+        if isinstance(event.message_wire, dict)
     ]
 
 

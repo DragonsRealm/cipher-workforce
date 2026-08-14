@@ -30,7 +30,7 @@ def _event(
     return AgentContextEvent(
         sequence=sequence,
         event_type=event_type,
-        message_wire_v2=wire,
+        message_wire=wire,
         operation_id=f"operation-{sequence}",
         provider="openai",
         previous_hash=f"{sequence - 1:064x}",
@@ -131,7 +131,7 @@ async def test_pressure_is_idempotent_and_portable_checkpoint_keeps_tail(
                 ref,
                 event_type=event_type,
                 operation_id=f"transition-{index}",
-                message_wire_v2=wire,
+                message_wire=wire,
                 provider="gemini",
             )
         ).ref
@@ -286,7 +286,7 @@ async def test_native_checkpoint_stops_at_marker_and_keeps_later_events_exact(
                 ref,
                 event_type=event_type,
                 operation_id=f"native-boundary-{index}",
-                message_wire_v2=wire,
+                message_wire=wire,
                 provider="openai",
             )
         ).ref
@@ -314,7 +314,7 @@ async def test_native_checkpoint_stops_at_marker_and_keeps_later_events_exact(
     state = await store.load_active(result.ref)
     assert state.ref == result.ref
     assert [event.sequence for event in state.tail] == [2, 3, 4]
-    assert [event.message_wire_v2 for event in state.tail] == [
+    assert [event.message_wire for event in state.tail] == [
         tool_wire,
         _wire("final after tool"),
         None,
@@ -335,7 +335,7 @@ async def test_compaction_returns_authoritative_ref_after_concurrent_append(
                 ref,
                 event_type="message.assistant",
                 operation_id=f"authoritative-ref-{index}",
-                message_wire_v2=_wire(f"message-{index}"),
+                message_wire=_wire(f"message-{index}"),
                 provider="gemini",
             )
         ).ref
@@ -345,7 +345,7 @@ async def test_compaction_returns_authoritative_ref_after_concurrent_append(
             ref,
             event_type="message.assistant",
             operation_id="authoritative-ref-concurrent",
-            message_wire_v2=_wire("concurrent tail"),
+            message_wire=_wire("concurrent tail"),
             provider="gemini",
         )
         return ContextCompactionCandidate(

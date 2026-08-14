@@ -14,6 +14,11 @@ import pytest
 def _tool(node_id: str, *, name: str = "write_todos", label: str = "Todos") -> dict:
     return {
         "name": name,
+        "definition": {
+            "name": name,
+            "description": "Write a todo list",
+            "parameters": {"type": "object", "properties": {}},
+        },
         "node_type": "writeTodos",
         "version": 1,
         "task_queue": "write-todos",
@@ -293,10 +298,10 @@ class TestAgentCallIdentity:
             )
         ]
         # The conflicting tool never enters the next LLM binding surface.
-        assert len(llm_payloads[1]["tool_data"]) == 1
-        tool_messages = [m for m in llm_payloads[1]["messages"] if m.get("type") == "tool"]
+        assert len(llm_payloads[1]["tools"]) == 1
+        tool_messages = [m for m in llm_payloads[1]["messages"] if m.get("role") == "tool"]
         assert len(tool_messages) == 1
-        assert "DuplicateToolNameError" in tool_messages[0]["data"]["content"]
+        assert "DuplicateToolNameError" in tool_messages[0]["content"]
         assert any(phase.get("phase") == "tool_error" for phase in phases)
 
 

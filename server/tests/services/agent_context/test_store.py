@@ -27,7 +27,7 @@ from services.agent_context import (
     ContextArchivedError,
     StaleEpochError,
     import_generation_zero_handoff,
-    reconstruct_message_wire_v2,
+    reconstruct_transcript,
 )
 from services.llm.protocol import (
     ContentBlock,
@@ -193,7 +193,7 @@ async def test_generation_zero_legacy_artifact_handoff_is_idempotent(
 
     first = await import_generation_zero_handoff(store, target)
     second = await import_generation_zero_handoff(store, first)
-    _, replay = await reconstruct_message_wire_v2(store, second)
+    _, replay = await reconstruct_transcript(store, second)
     bindings = await store.load_provider_bindings(
         second,
         provider="claude_code",
@@ -227,7 +227,7 @@ async def test_generation_zero_legacy_artifact_handoff_is_idempotent(
         execution_id=None,
     )
     later = await import_generation_zero_handoff(store, later_target)
-    _, later_replay = await reconstruct_message_wire_v2(store, later)
+    _, later_replay = await reconstruct_transcript(store, later)
     assert len(later_replay) == 1
 
 
@@ -358,14 +358,14 @@ async def test_append_is_exact_ordered_hash_chained_and_idempotent(
         ref,
         event_type="assistant",
         operation_id="provider-response-1",
-        message_wire_v2=_wire("first", with_tool=True),
+        message_wire=_wire("first", with_tool=True),
         provider="openai",
     )
     duplicate = await store.append_transition(
         ref,
         event_type="assistant",
         operation_id="provider-response-1",
-        message_wire_v2=_wire("first", with_tool=True),
+        message_wire=_wire("first", with_tool=True),
         provider="openai",
     )
     with pytest.raises(
@@ -376,7 +376,7 @@ async def test_append_is_exact_ordered_hash_chained_and_idempotent(
             ref,
             event_type="assistant",
             operation_id="provider-response-1",
-            message_wire_v2=_wire(
+            message_wire=_wire(
                 "this must not replace the committed event"
             ),
             provider="openai",
@@ -385,7 +385,7 @@ async def test_append_is_exact_ordered_hash_chained_and_idempotent(
         first.ref,
         event_type="tool_result",
         operation_id="tool-result-1",
-        message_wire_v2=dict(
+        message_wire=dict(
             message_to_wire(
                 Message(
                     role="tool",
@@ -402,7 +402,7 @@ async def test_append_is_exact_ordered_hash_chained_and_idempotent(
     assert [event.sequence for event in state.tail] == [1, 2]
     assert duplicate.applied is False
     assert duplicate.event.payload_hash == first.event.payload_hash
-    assert state.tail[0].message_wire_v2 == _wire("first", with_tool=True)
+    assert state.tail[0].message_wire == _wire("first", with_tool=True)
     assert state.tail[1].previous_hash == state.tail[0].payload_hash
     assert state.ref.revision == 2
 
@@ -440,14 +440,14 @@ async def test_load_active_rejects_corrupt_event_chain(
         ref,
         event_type="message.assistant",
         operation_id="integrity-event-1",
-        message_wire_v2=_wire("first"),
+        message_wire=_wire("first"),
         provider="openai",
     )
     second = await store.append_transition(
         first.ref,
         event_type="message.assistant",
         operation_id="integrity-event-2",
-        message_wire_v2=_wire("second"),
+        message_wire=_wire("second"),
         provider="openai",
     )
 
@@ -496,7 +496,7 @@ async def test_load_active_rejects_corrupt_checkpoint_source(
                 ref,
                 event_type="message.assistant",
                 operation_id=f"checkpoint-integrity-{index}",
-                message_wire_v2=_wire(f"message-{index}"),
+                message_wire=_wire(f"message-{index}"),
                 provider="openai",
             )
         ).ref
@@ -541,14 +541,14 @@ async def test_blob_digest_is_verified_for_direct_and_checkpoint_replay(
         ref,
         event_type="message.assistant",
         operation_id="blob-integrity-event-1",
-        message_wire_v2=_wire("first"),
+        message_wire=_wire("first"),
         provider="openai",
     )
     second = await store.append_transition(
         first.ref,
         event_type="message.assistant",
         operation_id="blob-integrity-event-2",
-        message_wire_v2=_wire("second"),
+        message_wire=_wire("second"),
         provider="openai",
     )
     plan = await store.prepare_compaction(
@@ -599,7 +599,7 @@ async def test_parallel_appends_serialize_without_losing_events(
                 ref,
                 event_type="message.assistant",
                 operation_id=f"parallel-{index}",
-                message_wire_v2=_wire(f"parallel-message-{index}"),
+                message_wire=_wire(f"parallel-message-{index}"),
             )
             for index in range(8)
         )
@@ -625,7 +625,7 @@ async def test_epoch_rotation_fences_late_writes_and_keeps_handoff(
             old_ref,
             event_type="message.assistant",
             operation_id="before-provider-fork",
-            message_wire_v2=_wire("old epoch exact message"),
+            message_wire=_wire("old epoch exact message"),
             provider="openai",
         )
     ).ref
@@ -656,7 +656,7 @@ async def test_epoch_rotation_fences_late_writes_and_keeps_handoff(
             old_ref,
             event_type="assistant",
             operation_id="late-provider-response",
-            message_wire_v2=_wire("late"),
+            message_wire=_wire("late"),
         )
     # Retrying the already-committed rotation is idempotent even with the old
     # reference that it deliberately fenced.
@@ -720,7 +720,7 @@ async def test_compaction_cas_keeps_concurrent_tail(context_database):
             ref,
             event_type="assistant",
             operation_id=f"response-{index}",
-            message_wire_v2=_wire(f"message-{index}"),
+            message_wire=_wire(f"message-{index}"),
             provider="openai",
         )
         ref = result.ref
@@ -736,7 +736,7 @@ async def test_compaction_cas_keeps_concurrent_tail(context_database):
         ref,
         event_type="assistant",
         operation_id="response-4",
-        message_wire_v2=_wire("message-4"),
+        message_wire=_wire("message-4"),
         provider="openai",
     )
     replay_ref = await store.put_blob(
@@ -772,7 +772,7 @@ async def test_failed_compaction_preserves_prior_active_state(
                 ref,
                 event_type="assistant",
                 operation_id=f"failure-response-{index}",
-                message_wire_v2=_wire(f"failure-{index}"),
+                message_wire=_wire(f"failure-{index}"),
             )
         ).ref
     before = await store.load_active(ref)
@@ -803,14 +803,14 @@ async def test_runtime_writer_blobs_payloads_and_reconstructs_portable_replay(
         event_type="message.assistant",
         operation_id="writer-1",
         provider="openai",
-        message_wire_v2=first_wire,
+        message_wire=first_wire,
         payload={"usage": {"input_tokens": 10}},
     )
     second = await writer.append_transition(
         event_type="message.assistant",
         operation_id="writer-2",
         provider="openai",
-        message_wire_v2=second_wire,
+        message_wire=second_wire,
     )
     assert writer.ref == second.ref
     assert first.event.payload_ref is not None
@@ -834,7 +834,7 @@ async def test_runtime_writer_blobs_payloads_and_reconstructs_portable_replay(
         active_token_count=20,
     )
     latest = writer.ref.model_copy(update={"revision": writer.ref.revision + 1})
-    reconstructed_ref, wires = await reconstruct_message_wire_v2(
+    reconstructed_ref, wires = await reconstruct_transcript(
         store,
         latest,
     )
@@ -865,7 +865,7 @@ async def test_reconstruction_uses_latest_exact_request_snapshot(
         event_type="message.assistant",
         operation_id="assistant-after-snapshot",
         provider="openai",
-        message_wire_v2=assistant,
+        message_wire=assistant,
     )
     # Metadata-only final events must not appear in provider replay.
     await writer.append_transition(
@@ -875,7 +875,7 @@ async def test_reconstruction_uses_latest_exact_request_snapshot(
         payload={"finish_reason": "stop"},
     )
 
-    _, wires = await reconstruct_message_wire_v2(store, writer.ref)
+    _, wires = await reconstruct_transcript(store, writer.ref)
     assert wires == [system, user, assistant]
 
 
@@ -968,7 +968,7 @@ async def test_archive_fences_writes_and_purge_removes_state(context_database):
             ref,
             event_type="assistant",
             operation_id="before-archive",
-            message_wire_v2=_wire("preserved until purge"),
+            message_wire=_wire("preserved until purge"),
         )
     ).ref
     archived = await store.archive(ref, operation_id="archive-1")
@@ -977,7 +977,7 @@ async def test_archive_fences_writes_and_purge_removes_state(context_database):
             ref,
             event_type="assistant",
             operation_id="after-archive",
-            message_wire_v2=_wire("must not commit"),
+            message_wire=_wire("must not commit"),
         )
 
     # Archive is recoverable and idempotent; purge is the separate,
@@ -1071,7 +1071,7 @@ async def test_authorized_handlers_paginate_raw_data_but_redact_exports(
         event_type="message.assistant",
         operation_id="handler-event-2",
         provider="openai",
-        message_wire_v2=_wire("classified response"),
+        message_wire=_wire("classified response"),
     )
 
     page = await context_handlers.handle_get_agent_context(
@@ -1111,7 +1111,7 @@ async def test_authorized_handlers_paginate_raw_data_but_redact_exports(
     assert '"redacted": true' in exported["content"]
     assert "classified prompt" not in exported["content"]
     assert "classified response" not in exported["content"]
-    assert "message_wire_v2" not in exported["content"]
+    assert "message_wire" not in exported["content"]
     assert "payload_ref" not in exported["content"]
 
     unauthorized = await context_handlers.handle_get_agent_context(
@@ -1183,7 +1183,7 @@ async def test_clear_and_fork_handlers_rotate_epoch_with_metadata_events(
             event_type="message.assistant",
             operation_id="lifecycle-event",
             provider="openai",
-            message_wire_v2=_wire("before clear"),
+            message_wire=_wire("before clear"),
         )
     ).ref
 

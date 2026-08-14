@@ -2,7 +2,7 @@
 
 The dataclasses in this module deliberately contain only JSON-safe data.  SDK
 objects are useful while normalising a response, but must never leak into the
-agent/Temporal message history.  ``MessageWireV2`` is represented as a plain
+agent/Temporal message history.  ``MessageWire`` is represented as a plain
 dictionary so it can be recorded by Temporal without a custom payload codec.
 
 All providers implement :class:`LLMProvider` (structural typing via Protocol).
@@ -27,15 +27,6 @@ from typing import (
     runtime_checkable,
 )
 
-
-MESSAGE_WIRE_VERSION = 2
-"""Current durable message representation version."""
-
-SUPPORTED_MESSAGE_WIRE_VERSIONS = frozenset({1, 2})
-"""Every durable version this worker can decode; never derive from current."""
-
-NATIVE_MESSAGE_WIRE_VERSIONS = frozenset({2})
-"""Versioned native-agent formats accepted by the Temporal activity."""
 
 MAX_PROVIDER_STATE_DEPTH = 20
 BINARY_STATE_MARKER = "__opencompany_bytes_base64__"
@@ -73,10 +64,9 @@ def decode_binary_state(value: Any) -> Any:
         raise ValueError("Invalid durable binary-state base64") from exc
 
 
-class MessageWireV2(TypedDict):
-    """Versioned JSON object recorded in memory and Temporal histories."""
+class MessageWire(TypedDict):
+    """The one JSON message shape recorded in memory and Temporal histories."""
 
-    version: int
     role: str
     content: str
     blocks: List[Dict[str, Any]]
@@ -473,15 +463,14 @@ class LLMError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Durable MessageWireV2 codec
+# Durable MessageWire codec
 # ---------------------------------------------------------------------------
 
 
-def message_to_wire(message: Message) -> MessageWireV2:
-    """Serialize a message to the versioned, JSON-safe wire contract."""
+def message_to_wire(message: Message) -> MessageWire:
+    """Serialize a message to the JSON-safe wire contract."""
 
     return {
-        "version": MESSAGE_WIRE_VERSION,
         "role": message.role,
         "content": message.content,
         "blocks": [_block_to_wire(block) for block in message.blocks],
@@ -493,26 +482,23 @@ def message_to_wire(message: Message) -> MessageWireV2:
 
 
 def message_from_wire(value: Mapping[str, Any]) -> Message:
-    """Decode MessageWireV2 (and the pre-version flat native shape)."""
+    """Decode the wire shape produced by :func:`message_to_wire`."""
 
-    version = value.get("version", value.get("wire_version", 1))
-    if version not in SUPPORTED_MESSAGE_WIRE_VERSIONS:
-        raise ValueError(f"Unsupported message wire version: {version!r}")
+    if not isinstance(value, Mapping) or not (
+        value.get("role") or value.get("type")
+    ):
+        raise ValueError("Invalid message wire object: missing role")
 
     calls = [
         _tool_call_from_wire(call)
         for call in value.get("tool_calls", ())
         if isinstance(call, Mapping)
     ]
-    blocks = (
-        [
-            _block_from_wire(block)
-            for block in value.get("blocks", ())
-            if isinstance(block, Mapping)
-        ]
-        if version in NATIVE_MESSAGE_WIRE_VERSIONS
-        else []
-    )
+    blocks = [
+        _block_from_wire(block)
+        for block in value.get("blocks", ())
+        if isinstance(block, Mapping)
+    ]
     return Message(
         role=str(value.get("role") or value.get("type") or "user"),
         content=str(value.get("content") or ""),
@@ -524,7 +510,7 @@ def message_from_wire(value: Mapping[str, Any]) -> Message:
     )
 
 
-def messages_to_wire(messages: Iterable[Message]) -> List[MessageWireV2]:
+def messages_to_wire(messages: Iterable[Message]) -> List[MessageWire]:
     return [message_to_wire(message) for message in messages]
 
 

@@ -935,43 +935,6 @@ class BaseNode:
             from core.container import container
             from services.status_broadcaster import get_status_broadcaster
 
-            if context.get("protocol") == "agent-context-tool-v2":
-                from services.temporal.agent_activities import (
-                    execute_tool_activity,
-                )
-
-                pending = dict(context.get("pending_tool") or {})
-                tool_node_id = str(pending.get("node_id") or "")
-                activity.heartbeat(
-                    f"Executing Context V2 tool {cls.type}: {tool_node_id}"
-                )
-                beat_task: Optional[asyncio.Task] = None
-                if cls.start_to_close_timeout > cls.heartbeat_timeout:
-
-                    async def _tool_beat_loop() -> None:
-                        while True:
-                            await asyncio.sleep(30)
-                            activity.heartbeat(
-                                f"Still executing Context V2 tool "
-                                f"{cls.type}: {tool_node_id}"
-                            )
-
-                    beat_task = asyncio.create_task(_tool_beat_loop())
-                try:
-                    result = await execute_tool_activity(
-                        context,
-                        expected_node_type=cls.type,
-                        expected_version=cls.version,
-                    )
-                    activity.heartbeat(
-                        f"Context V2 tool {cls.type} completed: "
-                        f"{tool_node_id}"
-                    )
-                    return result
-                finally:
-                    if beat_task is not None:
-                        beat_task.cancel()
-
             node_id = context["node_id"]
             workflow_id = context.get("workflow_id")
             execution_id = context.get("execution_id")

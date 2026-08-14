@@ -289,8 +289,9 @@ async def test_native_loop_persists_context_transitions_before_tool_execution():
     class _Sink:
         async def append_transition(self, **kwargs):
             observed.append(("context", kwargs["event_type"]))
-            if kwargs.get("message_wire_v2"):
-                assert kwargs["message_wire_v2"]["version"] == 2
+            if kwargs.get("message_wire"):
+                assert "version" not in kwargs["message_wire"]
+                assert kwargs["message_wire"].get("role")
             assert kwargs["operation_id"].startswith("execution-9:")
 
     async def execute(_name, args):

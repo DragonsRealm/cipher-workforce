@@ -12,10 +12,7 @@ from services.llm.config import (
     build_headers,
 )
 from services.llm.protocol import (
-    MESSAGE_WIRE_VERSION,
-    NATIVE_MESSAGE_WIRE_VERSIONS,
-    SUPPORTED_MESSAGE_WIRE_VERSIONS,
-    MessageWireV2,
+    MessageWire,
     ThinkingConfig,
     ToolDef,
     ToolCall,
@@ -60,10 +57,7 @@ __all__ = [
     "resolve_temperature",
     "build_headers",
     # Protocol types
-    "MESSAGE_WIRE_VERSION",
-    "NATIVE_MESSAGE_WIRE_VERSIONS",
-    "SUPPORTED_MESSAGE_WIRE_VERSIONS",
-    "MessageWireV2",
+    "MessageWire",
     "ThinkingConfig",
     "ToolDef",
     "ToolCall",

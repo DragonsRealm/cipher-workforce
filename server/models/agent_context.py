@@ -1,7 +1,7 @@
 """Durable Agent Context V2 contracts and normalized persistence records.
 
 The public models in this module are deliberately payload-reference oriented.
-Only :class:`AgentContextEvent` may expose an exact ``MessageWireV2`` value,
+Only :class:`AgentContextEvent` may expose an exact ``MessageWire`` value,
 and only when an authorized caller explicitly loads the journal.  Workflow
 graphs, node parameters, Temporal commands, status events, and ordinary node
 outputs use :class:`AgentContextRef` instead.
@@ -50,7 +50,7 @@ class AgentContextEvent(BaseModel):
 
     sequence: int = PydanticField(ge=1)
     event_type: str
-    message_wire_v2: Optional[dict[str, Any]] = None
+    message_wire: Optional[dict[str, Any]] = None
     payload_ref: Optional[str] = None
     operation_id: str
     provider: Optional[str] = None
@@ -221,7 +221,7 @@ class AgentContextEventRecord(SQLModel, table=True):
     epoch: int = Field(index=True)
     sequence: int
     event_type: str = Field(max_length=100)
-    message_wire_v2: Optional[dict[str, Any]] = Field(
+    message_wire: Optional[dict[str, Any]] = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )

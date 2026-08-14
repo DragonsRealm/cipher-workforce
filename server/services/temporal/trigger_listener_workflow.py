@@ -87,16 +87,17 @@ _FILTER_ACTIVITY_TIMEOUT = timedelta(seconds=10)
 def _history_pressure(soft_cap: int) -> bool:
     """True when the server suggests continue-as-new or the current
     history length crossed ``soft_cap``. False outside a real workflow
-    runtime (direct unit invocation), where history cannot grow. Shared
-    by the listener, polling, and controller rollover checks."""
+    runtime (direct unit invocation, or a stubbed ``workflow.info()``),
+    where history cannot grow. Shared by the listener, polling, agent,
+    and controller rollover checks."""
     try:
         info = workflow.info()
+        return bool(
+            info.is_continue_as_new_suggested()
+            or info.get_current_history_length() > soft_cap
+        )
     except Exception:  # direct unit invocation outside Temporal runtime
         return False
-    return bool(
-        info.is_continue_as_new_suggested()
-        or info.get_current_history_length() > soft_cap
-    )
 
 
 def event_workflow_search_attributes(

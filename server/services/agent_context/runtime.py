@@ -43,7 +43,7 @@ class AgentContextTransitionWriter:
         event_type: str,
         operation_id: str,
         provider: str,
-        message_wire_v2: Optional[dict[str, Any]] = None,
+        message_wire: Optional[dict[str, Any]] = None,
         payload: Optional[dict[str, Any]] = None,
     ) -> AgentContextAppendResult:
         payload_ref = (
@@ -57,14 +57,14 @@ class AgentContextTransitionWriter:
                 event_type=event_type,
                 operation_id=operation_id,
                 provider=provider,
-                message_wire_v2=message_wire_v2,
+                message_wire=message_wire,
                 payload_ref=payload_ref,
             )
             self.ref = result.ref
             return result
 
 
-async def reconstruct_message_wire_v2(
+async def reconstruct_transcript(
     store: AgentContextStore,
     ref: AgentContextRef,
 ) -> tuple[AgentContextRef, list[dict[str, Any]]]:
@@ -72,7 +72,7 @@ async def reconstruct_message_wire_v2(
 
     Provider-native checkpoints are intentionally opaque and must be replayed
     by that provider's context adapter.  Portable checkpoints use a JSON
-    object containing ``messages`` (or ``message_wire_v2`` /
+    object containing ``messages`` (or ``message_wire`` /
     ``replay_messages``) and can be reconstructed here.
     """
 
@@ -86,7 +86,7 @@ async def reconstruct_message_wire_v2(
         elif isinstance(payload, dict):
             candidates = (
                 payload.get("messages")
-                or payload.get("message_wire_v2")
+                or payload.get("message_wire")
                 or payload.get("replay_messages")
             )
         else:
@@ -166,10 +166,10 @@ async def reconstruct_message_wire_v2(
         )
     )
     wires.extend(
-        dict(event.message_wire_v2)
+        dict(event.message_wire)
         for event in state.tail
         if event.sequence > snapshot_sequence
-        and event.message_wire_v2 is not None
+        and event.message_wire is not None
     )
     return state.ref, wires
 
@@ -178,15 +178,15 @@ async def reconstruct_messages(
     store: AgentContextStore,
     ref: AgentContextRef,
 ) -> tuple[AgentContextRef, list[Message]]:
-    """Typed convenience wrapper over :func:`reconstruct_message_wire_v2`."""
+    """Typed convenience wrapper over :func:`reconstruct_transcript`."""
 
-    current_ref, wires = await reconstruct_message_wire_v2(store, ref)
+    current_ref, wires = await reconstruct_transcript(store, ref)
     return current_ref, [message_from_wire(wire) for wire in wires]
 
 
 __all__ = [
     "AgentContextTransitionWriter",
     "OpaqueCheckpointError",
-    "reconstruct_message_wire_v2",
+    "reconstruct_transcript",
     "reconstruct_messages",
 ]

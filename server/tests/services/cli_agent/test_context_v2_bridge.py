@@ -18,7 +18,7 @@ from nodes.agent.claude_code_agent._pool import (
     ClaudeSessionPool,
     PooledClaudeSession,
 )
-from services.agent_context import reconstruct_message_wire_v2
+from services.agent_context import reconstruct_transcript
 from services.cli_agent.context_bridge import SpecializedAgentContextBridge
 from services.cli_agent.protocol import CanonicalUsage
 from services.cli_agent.service import AICliService
@@ -190,7 +190,7 @@ async def test_provider_change_forks_epoch_with_portable_handoff(monkeypatch):
         tail=[handoff_event],
     )
     store.get_blob.return_value = handoff
-    _, reconstructed = await reconstruct_message_wire_v2(
+    _, reconstructed = await reconstruct_transcript(
         store,
         new_ref,
     )

@@ -15,9 +15,9 @@ Architecture (matches Temporal's AI Cookbook canonical pattern):
               │      → returns "final" OR "tool_calls"
               ├─> if tool_calls:
               │      execute_activity(node.{tool_type}.v1) for each
-              ├─> execute_activity(agent.persist_turn.v1)
+              ├─> execute_activity(agent.persist_turn)
               ├─> token check; if over threshold:
-              │      execute_activity(agent.compact_memory.v1)
+              │      execute_activity(agent.compact_context)
               └─> repeat until "final" or max_iterations
 
 User decisions baked in (plan §15):
@@ -47,6 +47,7 @@ References:
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -79,9 +80,6 @@ COMPACT_MEMORY_TIMEOUT = timedelta(minutes=5)
 TOOL_STEP_TIMEOUT = timedelta(minutes=10)
 TOOL_HEARTBEAT_TIMEOUT = timedelta(minutes=2)
 LLM_STEP_HEARTBEAT_TIMEOUT = timedelta(minutes=1)
-
-NATIVE_LLM_ENGINE = "native"
-LEGACY_LLM_ENGINE = "langchain"
 
 # Bounded loop count to defend against a runaway LLM. Plugin classes
 # override via ``payload["max_iterations"]`` (set by
@@ -127,7 +125,7 @@ def _native_message(
     tool_call_id: Optional[str] = None,
     name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build the canonical v2 wire representation without SDK objects."""
+    """Build the canonical wire representation without SDK objects."""
 
     from services.llm.protocol import Message, message_to_wire
 
@@ -144,40 +142,24 @@ def _native_message(
 def _append_tool_result_message(
     messages: List[Dict[str, Any]],
     *,
-    llm_engine: str,
     content: str,
     tool_call_id: str,
     name: str,
 ) -> None:
-    """Append a tool result in the history-pinned engine's wire format."""
+    """Append a tool result message in the canonical wire shape."""
 
-    if llm_engine == NATIVE_LLM_ENGINE:
-        messages.append(
-            _native_message(
-                role="tool",
-                content=content,
-                tool_call_id=tool_call_id,
-                name=name,
-            )
-        )
-        return
-
-    # Do not change this legacy shape: histories created before the cutover
-    # pass it through the legacy message reader on replay.
     messages.append(
-        {
-            "type": "tool",
-            "data": {
-                "content": content,
-                "tool_call_id": tool_call_id,
-                "name": name,
-            },
-        }
+        _native_message(
+            role="tool",
+            content=content,
+            tool_call_id=tool_call_id,
+            name=name,
+        )
     )
 
 
 def _native_assistant_thinking(message: Any) -> Optional[str]:
-    """Read reasoning text from a MessageWireV2 assistant turn.
+    """Read reasoning text from a MessageWire assistant turn.
 
     ``agent.execute_llm_step.v1`` keeps its historical tool-call result keys,
     so native tool turns carry their reasoning only inside the canonical
@@ -240,10 +222,18 @@ _INHERITED_SCOPE_KEYS = (
 # signal and this soft cap is the deterministic backstop.
 _AGENT_HISTORY_SOFT_CAP = 10_000
 
-# State carried across a rollover. Deliberately all O(1) or bounded: the
-# transcript is NOT carried -- a journal-backed run reconstructs it from
-# the Context store, which is the whole point of holding refs.
+# State carried across a rollover: refs, counters, usage totals, and the
+# live transcript itself. Carrying the transcript keeps the resumed run's
+# conversation exact with no replay machinery; compaction keeps it
+# token-bounded and the byte guard below keeps it under Temporal's 2 MiB
+# payload error limit.
 _RESUME_MARKER = "_agent_resume"
+
+# Byte ceiling for the carried transcript (Temporal's payload error limit is
+# 2 MiB for the WHOLE continue_as_new argument, which also carries the
+# original context). Past this the rollover restarts from the opening
+# prompt with a warning instead of failing the rollover itself.
+_CAN_TRANSCRIPT_MAX_BYTES = 1_000_000
 
 
 def _inherited_scope(context: Dict[str, Any]) -> Dict[str, Any]:
@@ -625,18 +615,6 @@ class AgentWorkflow:
             start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,  # 60s default
             retry_policy=AGENT_ACTIVITY_RETRY,
         )
-        # The prepare result is recorded in history. Absence of the marker is
-        # the deterministic migration sentinel for pre-cutover executions.
-        has_recorded_engine = "llm_engine" in payload
-        llm_engine = str(
-            payload.get("llm_engine") or LEGACY_LLM_ENGINE
-        ).strip().lower()
-        if llm_engine not in {NATIVE_LLM_ENGINE, LEGACY_LLM_ENGINE}:
-            raise ValueError(f"Unsupported agent LLM engine {llm_engine!r}")
-        message_wire_version = int(
-            payload.get("message_wire_version")
-            or (2 if llm_engine == NATIVE_LLM_ENGINE else 1)
-        )
         # Stable per-run execution id, forwarded into every tool-call
         # activity so session-keyed nodes (browser) reuse one instance
         # across iterations instead of minting a fresh uuid per call
@@ -716,20 +694,13 @@ class AgentWorkflow:
                 "result": {"iterations": 0, "usage": {}},
             }
 
-        # ---- Build initial message list ---------------------------------
-        # Native executions use the SDK-neutral v2 wire codec. Legacy
-        # histories keep the legacy canonical {type, data} shape exactly.
-        # ---- Context journal -------------------------------------------
-        # A Context node makes the backend journal every turn the agent sends.
-        # It never steers the request: the LLM activity always builds from
-        # ``messages``, and ``context_ref`` only says where to record. The
-        # workflow itself holds references, never transcript content.
-        #
-        # The one place the journal is read back is the continue-as-new
-        # rollover below, which carries references rather than the
-        # conversation.
+        # ---- Context journal (view-only) --------------------------------
+        # A Context node makes the backend journal every turn the agent sends,
+        # for the Context panel. It never steers the request: the LLM activity
+        # always builds from ``messages``, and ``context_ref`` only says where
+        # to record. The rollover does NOT read the journal back — the live
+        # transcript itself crosses the continue-as-new boundary.
         context_ref: Optional[Dict[str, Any]] = None
-        runtime_config_ref = ""
         if payload.get("context_descriptor"):
             await self._wait_until_resumed()
             prepared_context = await workflow.execute_activity(
@@ -745,79 +716,37 @@ class AgentWorkflow:
                 retry_policy=AGENT_ACTIVITY_RETRY,
             )
             context_ref = prepared_context.get("context_ref")
-            runtime_config_ref = str(
-                prepared_context.get("runtime_config_ref") or ""
-            )
         if resume:
-            # Only references and counters cross the rollover boundary; the
-            # transcript is replayed from the journal further down.
             context_ref = resume.get("context_ref") or context_ref
-            runtime_config_ref = (
-                str(resume.get("runtime_config_ref") or "") or runtime_config_ref
-            )
 
+        # ---- Build the message list -------------------------------------
+        # A resumed run continues from the exact transcript the previous run
+        # carried across continue_as_new. Only a fresh run builds the
+        # system + memory + prompt opening.
+        carried_transcript = list(resume.get("transcript") or [])
         messages: List[Dict[str, Any]] = []
+        user_prompt = payload.get("user_prompt") or ""
+        memory_markdown = payload.get("memory_content") or ""
 
         system = payload.get("system_message") or ""
-        if system:
-            if llm_engine == NATIVE_LLM_ENGINE:
+        if carried_transcript:
+            messages = [dict(message) for message in carried_transcript]
+        else:
+            if system:
                 messages.append(_native_message(role="system", content=system))
-            else:
-                messages.append(
-                    {"type": "system", "data": {"content": system}}
-                )
 
-        # Pre-loaded memory becomes an additional system note. The actual
-        # parse / append happens in the persist_turn activity, but the
-        # current markdown content seeds the conversation here.
-        memory_markdown = payload.get("memory_content") or ""
-        if memory_markdown:
-            memory_content = f"## Prior conversation:\n{memory_markdown}"
-            if llm_engine == NATIVE_LLM_ENGINE:
+            # Pre-loaded memory becomes an additional system note. The actual
+            # parse / append happens in the persist_turn activity, but the
+            # current markdown content seeds the conversation here.
+            if memory_markdown:
+                memory_content = f"## Prior conversation:\n{memory_markdown}"
                 messages.append(
                     _native_message(role="system", content=memory_content)
                 )
-            else:
-                messages.append(
-                    {"type": "system", "data": {"content": memory_content}}
-                )
 
-        user_prompt = payload.get("user_prompt") or ""
-        if user_prompt:
-            if llm_engine == NATIVE_LLM_ENGINE:
-                messages.append(_native_message(role="user", content=user_prompt))
-            else:
+            if user_prompt:
                 messages.append(
-                    {"type": "human", "data": {"content": user_prompt}}
-                )
-
-        # ---- Resume: replay the transcript from the journal --------------
-        # continue_as_new carries references, not the conversation, so the
-        # list built above is just system + memory + prompt. Without this the
-        # agent forgets everything it had said mid-run — and only when a
-        # Context node is attached, since the rollover is gated on
-        # ``context_ref``. The journal is authoritative here because it holds
-        # the exact message list each turn was sent with.
-        if resume and context_ref:
-            await self._wait_until_resumed()
-            replayed = await workflow.execute_activity(
-                "agent.reconstruct_context_messages",
-                args=[{"context_ref": context_ref}],
-                activity_id="reconstruct-context-messages",
-                start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,
-                retry_policy=AGENT_ACTIVITY_RETRY,
-            )
-            restored = replayed.get("messages") or []
-            if restored:
-                messages = [dict(message) for message in restored]
-            else:
-                # An opaque provider checkpoint or an unreadable thread. The
-                # rebuilt prompt is the honest fallback; log which, so a
-                # forgetful agent is diagnosable rather than mysterious.
-                workflow.logger.warning(
-                    "AgentWorkflow resumed without a replayed transcript "
-                    f"({replayed.get('reason') or 'unknown'}); continuing from "
-                    "the rebuilt prompt"
+                    _native_message(role="user", content=user_prompt)
                 )
 
         # Map LLM tool name -> {node_type, version, task_queue, node_id,
@@ -828,11 +757,21 @@ class AgentWorkflow:
         compaction_threshold = payload.get("compaction_threshold")
         thinking_accumulated = ""
         final_content: Optional[str] = None
-        # Billing/observability is cumulative for the entire execution.
+        # Billing/observability is cumulative for the entire execution and
+        # survives continue_as_new via the resume marker — the final result
+        # must report every generation's tokens, not just the last one.
         # Context usage is reset only after a summary replaces the active
         # message history and exists solely to decide when to compact again.
-        usage_total: Dict[str, int] = {}
-        context_usage_total: Dict[str, int] = {}
+        usage_total: Dict[str, int] = {
+            k: int(v)
+            for k, v in dict(resume.get("usage") or {}).items()
+            if isinstance(v, int)
+        }
+        context_usage_total: Dict[str, int] = {
+            k: int(v)
+            for k, v in dict(resume.get("context_usage") or {}).items()
+            if isinstance(v, int)
+        }
 
         # Emit "executing" + phase="starting" via the existing
         # broadcast_agent_progress activity (CloudEvents
@@ -867,93 +806,50 @@ class AgentWorkflow:
             )
             await self._wait_until_resumed()
 
-            # Strip per-turn fields the activity doesn't need. Native turns
-            # receive only provider-neutral JSON tool definitions. Legacy
-            # histories retain raw tool_info so their activity rebuilds the
-            # exact StructuredTool surface it used before the cutover.
+            # Strip per-turn fields the activity doesn't need. Turns receive
+            # only provider-neutral JSON tool definitions.
             visible_tools = [t for t in tools if not t.get("llm_hidden")]
-            if llm_engine == NATIVE_LLM_ENGINE:
-                llm_payload = {
-                    "node_id": payload["node_id"],
-                    "provider": payload["provider"],
-                    "model": payload["model"],
-                    "messages": messages,
-                    "tools": [
-                        t["definition"]
-                        for t in visible_tools
-                        if t.get("definition")
-                    ],
-                    "system_message": system,
-                    "temperature": payload.get("temperature", 0.7),
-                    "max_tokens": payload.get("max_tokens", 4096),
-                    "thinking_config": payload.get("thinking_config"),
-                    "llm_engine": NATIVE_LLM_ENGINE,
-                    "message_wire_version": message_wire_version,
-                    # Journalling only. The activity always builds its request
-                    # from ``messages`` above; these just tell it where to
-                    # record the turn it actually sent. A Context node observes
-                    # the agent, it never steers it.
-                    **(
-                        {
-                            "context_ref": context_ref,
-                            # Scoped by agent node as well as firing: two
-                            # agents wired to one Context node resolve to the
-                            # same thread, so a firing-only id made them mint
-                            # identical operation ids, collide on
-                            # (thread, operation_id), and have their turns
-                            # discarded by the store's idempotency guard.
-                            "journal_operation_id": (
-                                f"{journal_operation_id}:{agent_node_id}"
-                                f":iter:{iteration}"
-                            ),
-                        }
-                        if context_ref
-                        else {}
-                    ),
-                    # A provider may stop a turn to compact rather than to
-                    # answer. Without the finish reason that response is
-                    # indistinguishable from a normal completion and gets
-                    # returned to the user as a truncated final answer.
-                    "include_finish_reason": True,
-                }
-            else:
-                if not has_recorded_engine:
-                    # Preserve both values and insertion order of the
-                    # pre-cutover JSON payload so replay emits the same
-                    # encoded activity command bytes for histories that
-                    # already scheduled a turn.
-                    llm_payload = {
-                        "provider": payload["provider"],
-                        "model": payload["model"],
-                        "api_key": payload["api_key"],
-                        "messages": messages,
-                        "tool_data": [
-                            t["tool_info"] for t in visible_tools
-                        ],
-                        "system_message": system,
-                        "temperature": payload.get("temperature", 0.7),
-                        "max_tokens": payload.get("max_tokens", 4096),
-                        "thinking_config": payload.get("thinking_config"),
+            llm_payload = {
+                "node_id": payload["node_id"],
+                "provider": payload["provider"],
+                "model": payload["model"],
+                "messages": messages,
+                "tools": [
+                    t["definition"]
+                    for t in visible_tools
+                    if t.get("definition")
+                ],
+                "system_message": system,
+                "temperature": payload.get("temperature", 0.7),
+                "max_tokens": payload.get("max_tokens", 4096),
+                "thinking_config": payload.get("thinking_config"),
+                # Journalling only. The activity always builds its request
+                # from ``messages`` above; these just tell it where to
+                # record the turn it actually sent. A Context node observes
+                # the agent, it never steers it.
+                **(
+                    {
+                        "context_ref": context_ref,
+                        # Scoped by agent node as well as firing: two
+                        # agents wired to one Context node resolve to the
+                        # same thread, so a firing-only id made them mint
+                        # identical operation ids, collide on
+                        # (thread, operation_id), and have their turns
+                        # discarded by the store's idempotency guard.
+                        "journal_operation_id": (
+                            f"{journal_operation_id}:{agent_node_id}"
+                            f":iter:{iteration}"
+                        ),
                     }
-                else:
-                    # Newly prepared emergency-switch executions still use
-                    # the legacy adapter but resolve credentials inside the
-                    # activity, just like native runs.
-                    llm_payload = {
-                        "node_id": payload["node_id"],
-                        "provider": payload["provider"],
-                        "model": payload["model"],
-                        "messages": messages,
-                        "tool_data": [
-                            t["tool_info"] for t in visible_tools
-                        ],
-                        "system_message": system,
-                        "temperature": payload.get("temperature", 0.7),
-                        "max_tokens": payload.get("max_tokens", 4096),
-                        "thinking_config": payload.get("thinking_config"),
-                        "llm_engine": LEGACY_LLM_ENGINE,
-                        "message_wire_version": 1,
-                    }
+                    if context_ref
+                    else {}
+                ),
+                # A provider may stop a turn to compact rather than to
+                # answer. Without the finish reason that response is
+                # indistinguishable from a normal completion and gets
+                # returned to the user as a truncated final answer.
+                "include_finish_reason": True,
+            }
 
             # Wave 17.2: one-shot retry. The LLM call is not idempotent —
             # a worker crash mid-call must not silently re-bill the full
@@ -962,56 +858,40 @@ class AgentWorkflow:
             # future enhancement can re-ask with context; today we
             # surface the error to the canvas and stop the loop.
             try:
-                if has_recorded_engine:
-                    step_result = await workflow.execute_activity(
-                        "agent.execute_llm_step",
-                        args=[llm_payload],
-                        activity_id=f"llm-step-{iteration + 1}",
-                        start_to_close_timeout=LLM_STEP_TIMEOUT,
-                        heartbeat_timeout=LLM_STEP_HEARTBEAT_TIMEOUT,
-                        retry_policy=LLM_STEP_RETRY,
-                    )
-                else:
-                    step_result = await workflow.execute_activity(
-                        "agent.execute_llm_step",
-                        args=[llm_payload],
-                        activity_id=f"llm-step-{iteration + 1}",
-                        start_to_close_timeout=LLM_STEP_TIMEOUT,
-                        retry_policy=LLM_STEP_RETRY,
-                    )
+                step_result = await workflow.execute_activity(
+                    "agent.execute_llm_step",
+                    args=[llm_payload],
+                    activity_id=f"llm-step-{iteration + 1}",
+                    start_to_close_timeout=LLM_STEP_TIMEOUT,
+                    heartbeat_timeout=LLM_STEP_HEARTBEAT_TIMEOUT,
+                    retry_policy=LLM_STEP_RETRY,
+                )
             except Exception as e:
                 cause = getattr(e, "cause", None)
                 raw_detail = str(cause) if cause is not None else str(e)
-                if not has_recorded_engine:
-                    # Exact pre-cutover result behavior: replayed histories
-                    # exposed the activity cause text in their terminal
-                    # workflow result. Changing it would alter completion.
-                    detail = raw_detail
+                cause_type = str(getattr(cause, "type", "") or "")
+                cause_message = str(
+                    getattr(cause, "message", "") or ""
+                ).strip()
+                safe_activity_types = {
+                    "MissingAgentProviderCredential",
+                    "EmptyAgentPrompt",
+                }
+                if cause_type.startswith("LLMError."):
+                    detail = (
+                        cause_message
+                        or "The language model request failed."
+                    )
+                elif cause_type in safe_activity_types:
+                    detail = (
+                        cause_message
+                        or "The language model request failed."
+                    )
                 else:
-                    cause_type = str(getattr(cause, "type", "") or "")
-                    cause_message = str(
-                        getattr(cause, "message", "") or ""
-                    ).strip()
-                    safe_activity_types = {
-                        "MissingAgentProviderCredential",
-                        "InvalidAgentMessageWireVersion",
-                        "EmptyAgentPrompt",
-                    }
-                    if cause_type.startswith("LLMError."):
-                        detail = (
-                            cause_message
-                            or "The language model request failed."
-                        )
-                    elif cause_type in safe_activity_types:
-                        detail = (
-                            cause_message
-                            or "The language model request failed."
-                        )
-                    else:
-                        detail = (
-                            "The language model step failed unexpectedly. "
-                            "Retry the run or check server logs."
-                        )
+                    detail = (
+                        "The language model step failed unexpectedly. "
+                        "Retry the run or check server logs."
+                    )
                 workflow.logger.error(
                     f"AgentWorkflow LLM step failed (iteration {iteration + 1}, "
                     f"no auto-retry): {raw_detail}"
@@ -1054,12 +934,11 @@ class AgentWorkflow:
             for k, v in (step_result.get("usage") or {}).items():
                 if isinstance(v, int):
                     usage_total[k] = usage_total.get(k, 0) + v
-                    if has_recorded_engine:
-                        context_usage_total[k] = (
-                            context_usage_total.get(k, 0) + v
-                        )
+                    context_usage_total[k] = (
+                        context_usage_total.get(k, 0) + v
+                    )
             step_thinking = step_result.get("thinking")
-            if not step_thinking and llm_engine == NATIVE_LLM_ENGINE:
+            if not step_thinking:
                 step_thinking = _native_assistant_thinking(
                     step_result.get("assistant_message")
                 )
@@ -1677,14 +1556,13 @@ class AgentWorkflow:
                 raise
 
             for call_index, call in enumerate(calls):
-                if llm_engine == NATIVE_LLM_ENGINE and call.get("parse_error"):
+                if call.get("parse_error"):
                     # Native adapters retain malformed arguments rather than
                     # throwing during normalization. Return a deterministic
                     # tool result and let the model repair its invocation on
                     # the next turn; never execute partially parsed args.
                     _append_tool_result_message(
                         messages,
-                        llm_engine=llm_engine,
                         content=_serialise_tool_result(
                             {
                                 "error": "Tool arguments were invalid JSON",
@@ -1703,7 +1581,6 @@ class AgentWorkflow:
                     workflow.logger.warning(f"AgentWorkflow: LLM called unknown tool {call.get('name')!r}; " "returning error to model")
                     _append_tool_result_message(
                         messages,
-                        llm_engine=llm_engine,
                         content=(
                             f"Error: tool {call.get('name')!r} is not "
                             "connected to this agent."
@@ -1750,7 +1627,6 @@ class AgentWorkflow:
                         # instead of spawning a child that cannot run.
                         _append_tool_result_message(
                             messages,
-                            llm_engine=llm_engine,
                             content=(
                                 '{"error": "delegate_to_* requires a '
                                 "non-empty 'task' argument describing "
@@ -1763,7 +1639,6 @@ class AgentWorkflow:
                     if delegation_depth >= max_delegation_depth:
                         _append_tool_result_message(
                             messages,
-                            llm_engine=llm_engine,
                             content=(
                                 '{"error": "Maximum delegation depth '
                                 f'{max_delegation_depth} exceeded."}}'
@@ -1874,6 +1749,12 @@ class AgentWorkflow:
                             raise
                         else:
                             await _release_delegation_permit(call_index)
+                        # The child is done — drop its handle so a completed
+                        # delegation no longer blocks the rollover guard.
+                        # (An agent that delegates every turn previously
+                        # could never continue_as_new and grew until
+                        # Temporal's hard history terminate.)
+                        delegation_handles.pop(call_index, None)
                         child_succeeded = (
                             bool(tool_result.get("success", True))
                             if isinstance(tool_result, dict) else True
@@ -1962,7 +1843,9 @@ class AgentWorkflow:
                                 # Await in original tool-call order; every
                                 # child was already started above, so slow
                                 # earlier siblings do not prevent later work.
-                                delegated = await task_manager_delegation_tasks[call_index]
+                                # pop: a finished task must not block the
+                                # rollover guard for the rest of the turn.
+                                delegated = await task_manager_delegation_tasks.pop(call_index)
                             else:
                                 delegated = await _run_task_manager_delegation(
                                     tool_result["delegation_request"], call_index, call
@@ -2148,7 +2031,6 @@ class AgentWorkflow:
 
                 _append_tool_result_message(
                     messages,
-                    llm_engine=llm_engine,
                     content=tool_content,
                     tool_call_id=call.get("id", ""),
                     name=call.get("name", ""),
@@ -2180,71 +2062,51 @@ class AgentWorkflow:
             )
 
             # ---- Compaction check --------------------------------------
-            if has_recorded_engine:
-                token_total = int(
-                    context_usage_total.get("total_tokens") or 0
-                )
-                if not token_total:
-                    token_total = sum(
-                        int(context_usage_total.get(key) or 0)
-                        for key in (
-                            "input_tokens",
-                            "cache_creation_tokens",
-                            "cache_read_tokens",
-                            "output_tokens",
-                        )
-                    )
-            else:
-                # Exact pre-cutover schedule predicate. Captured histories
-                # ignored total/cache/reasoning fields here.
+            # Simple by design: token threshold -> summarize the live
+            # conversation -> swap messages. No memory-node gate, no
+            # checkpoint machinery. A later rollover resumes from the
+            # compacted state for free, because the next LLM turn journals
+            # a fresh request.snapshot containing the compacted messages.
+            token_total = int(
+                context_usage_total.get("total_tokens") or 0
+            )
+            if not token_total:
                 token_total = sum(
-                    int(usage_total.get(key) or 0)
-                    for key in ("input_tokens", "output_tokens")
+                    int(context_usage_total.get(key) or 0)
+                    for key in (
+                        "input_tokens",
+                        "cache_creation_tokens",
+                        "cache_read_tokens",
+                        "output_tokens",
+                    )
                 )
-            if compaction_threshold and token_total >= compaction_threshold and memory_markdown:
+            if compaction_threshold and token_total >= compaction_threshold:
                 workflow.logger.info(f"AgentWorkflow compaction triggered: {token_total} tokens")
-                if has_recorded_engine:
-                    compact_payload = {
-                        "session_id": payload.get(
-                            "session_id", "default"
-                        ),
-                        "node_id": payload["node_id"],
-                        "memory_content": memory_markdown,
-                        "provider": payload["provider"],
-                        "model": payload["model"],
-                    }
-                else:
-                    # Preserve values and insertion order of the historical
-                    # activity command, including its recorded credential.
-                    compact_payload = {
-                        "session_id": payload.get(
-                            "session_id", "default"
-                        ),
-                        "node_id": payload["node_id"],
-                        "memory_content": memory_markdown,
-                        "provider": payload["provider"],
-                        "api_key": payload["api_key"],
-                        "model": payload["model"],
-                    }
+                compact_payload = {
+                    "session_id": payload.get("session_id", "default"),
+                    "node_id": payload["node_id"],
+                    "messages": messages,
+                    "provider": payload["provider"],
+                    "model": payload["model"],
+                }
                 await self._wait_until_resumed()
                 compact_result = await workflow.execute_activity(
-                    "agent.compact_memory",
+                    "agent.compact_context",
                     args=[compact_payload],
-                    activity_id=f"compact-memory-{iteration + 1}",
+                    activity_id=f"compact-context-{iteration + 1}",
                     start_to_close_timeout=COMPACT_MEMORY_TIMEOUT,
                     retry_policy=AGENT_ACTIVITY_RETRY,
                 )
                 # The summarizer is another billed model call. Include it in
                 # execution-wide usage whether persistence after the call
                 # succeeds or fails, but never in the active-context counter.
-                if has_recorded_engine:
-                    for key, value in (
-                        compact_result.get("usage") or {}
-                    ).items():
-                        if isinstance(value, int):
-                            usage_total[key] = (
-                                usage_total.get(key, 0) + value
-                            )
+                for key, value in (
+                    compact_result.get("usage") or {}
+                ).items():
+                    if isinstance(value, int):
+                        usage_total[key] = (
+                            usage_total.get(key, 0) + value
+                        )
                 # Compaction is best-effort. When the service errors or
                 # was not initialized (worker bootstrap race), keep the
                 # existing messages and let the loop continue — masking
@@ -2262,42 +2124,21 @@ class AgentWorkflow:
                         # plus the last user prompt — same pattern
                         # ``CompactionService`` uses today in services/ai.py.
                         compacted_content = f"## Compacted summary:\n{summary}"
-                        if llm_engine == NATIVE_LLM_ENGINE:
-                            messages = [
-                                _native_message(
-                                    role="system",
-                                    content=system,
-                                ),
-                                _native_message(
-                                    role="system",
-                                    content=compacted_content,
-                                ),
-                                _native_message(
-                                    role="user",
-                                    content=user_prompt,
-                                ),
-                            ]
-                        else:
-                            messages = [
-                                {
-                                    "type": "system",
-                                    "data": {"content": system},
-                                },
-                                {
-                                    "type": "system",
-                                    "data": {"content": compacted_content},
-                                },
-                                {
-                                    "type": "human",
-                                    "data": {"content": user_prompt},
-                                },
-                            ]
-                        memory_markdown = summary
-                        if has_recorded_engine:
-                            context_usage_total = {}
-                        else:
-                            # Exact pre-cutover completion shape.
-                            usage_total = {}
+                        messages = [
+                            _native_message(
+                                role="system",
+                                content=system,
+                            ),
+                            _native_message(
+                                role="system",
+                                content=compacted_content,
+                            ),
+                            _native_message(
+                                role="user",
+                                content=user_prompt,
+                            ),
+                        ]
+                        context_usage_total = {}
 
             # ---- Continue-as-new -------------------------------------
             # Only at a clean turn boundary, and never while a delegation
@@ -2309,11 +2150,30 @@ class AgentWorkflow:
                 _history_pressure,
             )
 
-            if context_ref and _history_pressure(_AGENT_HISTORY_SOFT_CAP):
+            if _history_pressure(_AGENT_HISTORY_SOFT_CAP):
                 delegations_live = bool(
                     delegation_handles or task_manager_delegation_tasks
                 )
                 if not delegations_live:
+                    # The live transcript crosses the boundary directly.
+                    # Compaction keeps it token-bounded; the byte guard
+                    # below keeps a pathological transcript away from
+                    # Temporal's 2 MiB payload error (which would fail the
+                    # rollover itself). Oversized and uncompactable means
+                    # restarting from the opening prompt with a warning —
+                    # visible, and strictly better than a dead run.
+                    carried = messages
+                    transcript_bytes = len(
+                        json.dumps(carried, default=str).encode("utf-8")
+                    )
+                    if transcript_bytes > _CAN_TRANSCRIPT_MAX_BYTES:
+                        workflow.logger.warning(
+                            f"AgentWorkflow rollover transcript is "
+                            f"{transcript_bytes} bytes (> "
+                            f"{_CAN_TRANSCRIPT_MAX_BYTES}); dropping to the "
+                            "opening prompt"
+                        )
+                        carried = []
                     workflow.logger.info(
                         f"AgentWorkflow continue_as_new at iteration "
                         f"{iteration + 1} (history pressure)"
@@ -2324,9 +2184,11 @@ class AgentWorkflow:
                                 **context,
                                 _RESUME_MARKER: {
                                     "context_ref": context_ref,
-                                    "runtime_config_ref": runtime_config_ref,
                                     "iteration": iteration + 1,
                                     "execution_id": execution_id,
+                                    "transcript": carried,
+                                    "usage": usage_total,
+                                    "context_usage": context_usage_total,
                                 },
                             }
                         ]

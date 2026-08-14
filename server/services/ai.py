@@ -360,7 +360,7 @@ class AIService:
             ContextCompactionPolicy,
             import_generation_zero_handoff,
             provider_context_request_options,
-            reconstruct_message_wire_v2,
+            reconstruct_transcript,
         )
         from services.llm.protocol import (
             Message,
@@ -439,13 +439,13 @@ class AIService:
         ref = await import_generation_zero_handoff(store, ref)
 
         # A provider transition is an epoch boundary.  Opaque state remains
-        # archived while the observable MessageWireV2 replay is handed off.
+        # archived while the observable MessageWire replay is handed off.
         summary = await store.load_thread_summary(ref)
         if (
             summary.provider
             and summary.provider != provider
         ):
-            _, handoff_wires = await reconstruct_message_wire_v2(store, ref)
+            _, handoff_wires = await reconstruct_transcript(store, ref)
             portable_handoff_wires: list[dict[str, Any]] = []
             for handoff_wire in handoff_wires:
                 source_message = message_from_wire(handoff_wire)
@@ -510,7 +510,7 @@ class AIService:
                     exc,
                 )
 
-        ref, history_wires = await reconstruct_message_wire_v2(store, ref)
+        ref, history_wires = await reconstruct_transcript(store, ref)
         history = [message_from_wire(wire) for wire in history_wires]
         policy = ContextCompactionPolicy.from_mapping(
             context_data.get("policy")

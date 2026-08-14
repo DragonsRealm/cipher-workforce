@@ -17,7 +17,7 @@ from services.agent_context.store import (
 from services.agent_context.runtime import (
     AgentContextTransitionWriter,
     OpaqueCheckpointError,
-    reconstruct_message_wire_v2,
+    reconstruct_transcript,
     reconstruct_messages,
 )
 from services.agent_context.compaction import (
@@ -51,6 +51,6 @@ __all__ = [
     "get_provider_context_adapter",
     "import_generation_zero_handoff",
     "provider_context_request_options",
-    "reconstruct_message_wire_v2",
+    "reconstruct_transcript",
     "reconstruct_messages",
 ]

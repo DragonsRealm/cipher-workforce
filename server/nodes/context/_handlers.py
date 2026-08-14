@@ -24,7 +24,7 @@ from models.agent_context import (
 from services.agent_context import (
     AgentContextStore,
     OpaqueCheckpointError,
-    reconstruct_message_wire_v2,
+    reconstruct_transcript,
 )
 from services.agent_context.lifecycle import fence_context_provider_resources
 from services.plugin import NodeUserError
@@ -440,7 +440,7 @@ async def _portable_handoff(
     active = await store.load_active(thread.ref)
     portable = True
     try:
-        _, messages = await reconstruct_message_wire_v2(
+        _, messages = await reconstruct_transcript(
             store,
             active.ref,
         )
@@ -449,9 +449,9 @@ async def _portable_handoff(
         # Historical opaque checkpoints cannot be translated. Preserve the
         # exact observable tail and clearly mark the handoff as partial.
         messages = [
-            event.message_wire_v2
+            event.message_wire
             for event in active.tail
-            if event.message_wire_v2 is not None
+            if event.message_wire is not None
         ]
     return await store.put_blob(
         {
