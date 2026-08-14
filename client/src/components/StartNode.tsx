@@ -51,7 +51,7 @@ const StartNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnectabl
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'var(--font-body)',
         fontSize: '11px',
         cursor: 'pointer',
       } as NodeStyle}

@@ -165,7 +165,7 @@ const TeamMonitorNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConn
         '--node-color': nodeColor,
         width: 200,
         minHeight: 120,
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'var(--font-body)',
         fontSize: 10,
         overflow: 'hidden',
       } as NodeStyle}

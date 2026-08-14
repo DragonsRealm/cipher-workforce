@@ -87,7 +87,7 @@ const MapsPreviewPanel: React.FC<MapsPreviewPanelProps> = ({
         backgroundColor: theme.colors.backgroundAlt,
         fontSize: theme.fontSize.xs,
         color: theme.colors.textSecondary,
-        fontFamily: 'monospace',
+        fontFamily: 'var(--font-mono)',
         flexShrink: 0
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
