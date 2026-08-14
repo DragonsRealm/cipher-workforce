@@ -65,7 +65,9 @@ The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk�
 - `styles.css` — global entry; imports everything in `tokens/`.
 - `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `motion.css`, `animations.css`, `fonts.css`, `base.css`.
 - `guidelines/` — foundation specimen cards (Design System tab), plus `THEMES.md` (deep analysis of the app's 12-theme architecture) and `theme-matrix.html` (visual comparison of all 12 themes).
-- `reference/themes/` — verbatim copies of all 13 theme CSS files from the repo (`base, light, dark + 10 skins`) for porting.
+- `reference/themes/` — pointer README only; the snapshots went stale and were retired in favor of the authoritative `client/src/themes/`.
+- `HANDOFF.md` — merged design-handoff brief + recorded product amendments (read alongside `IMPLEMENTATION.md`).
+- `reference-mockup/` — 17-panel × 12-theme fidelity target (`Panel Theme Matrix.dc.html`, open in a browser).
 - `assets/` — `product-canvas-screenshot.png`, `diagrams/*.svg` (official README diagrams).
 - `components/buttons/` — ActionButton (6 intents), Button (shadcn variants).
 - `components/forms/` — Input, Select, RadioGroup, Textarea, Switch, Checkbox, Slider, ApiKeyInput.
@@ -81,5 +83,5 @@ The app ships 12 visual themes (light, dark, Renaissance, Cyber, Edo, Steampunk�
 - **Fonts substituted:** Geist served from Google Fonts instead of the app's bundled `@fontsource-variable/geist` (same typeface, different delivery). Drop real `.woff2` files into `tokens/` + add `@font-face` if pixel-exact metrics matter.
 - **No official logo found in the repo** (favicon is the Vite placeholder; README hero is a GitHub user-attachment). The wordmark card sets "OpenCompany" in Geist 600 as a stand-in — replace with the real mark when available.
 - opencompany.sh marketing site isn't in the repo; no marketing UI kit was invented.
-- The app's 10 themed skins are analyzed in `guidelines/THEMES.md` (token contract, per-theme matrix, porting recipe) with sources in `reference/themes/` — but only light/dark are encoded as live token scopes here. Ask to port a skin (e.g. Cyber) into `tokens/` if you want it usable.
+- The app's 10 themed skins are analyzed in `guidelines/THEMES.md` (token contract, per-theme matrix, porting recipe) with the authoritative sources in `client/src/themes/` — but only light/dark are encoded as live token scopes here. Ask to port a skin (e.g. Cyber) into `tokens/` if you want it usable.
 - **Motion** is documented in `guidelines/ANIMATIONS.md` and encoded in `tokens/animations.css` (per-theme `--dur`/`--ease`/`--motion-style` scopes + signature keyframes for all 12 themes). Live demo: `guidelines/animations-all-themes.html`.

@@ -963,12 +963,13 @@ if (SOCIAL_CATEGORIES.includes(categoryKey.toLowerCase())) {
 ```
 
 ### Console Panel
-The Console Panel provides a resizable bottom panel with three sections: Chat (AI conversation), Console (node execution logs), and Terminal (planned).
+The Console Panel provides a resizable bottom panel with three sections: Chat (AI conversation), Console (node execution logs), and Terminal (server logs). **Hybrid layout (design-handoff)**: split view (default) docks Chat as a resizable pane beside the Console/Terminal tabs so chat and logs stay simultaneously visible during agent runs; tab mode makes Chat the first of three tabs. Toggled via the Columns2 button in the tab row; persisted in `consolePrefs.splitView` (default `true` — existing users see no change). One shared `chatSection` JSX serves both layouts so the per-theme `chat-msg*` decoration co-classes survive.
 
 #### Features
-- **Resizable**: Drag handle at top to resize, persisted to localStorage
-- **Three Tabs**: Chat, Console, Terminal (placeholder)
-- **Chat Section**: Send messages to Chat Trigger nodes, view conversation history
+- **Resizable**: Drag handle at top to resize (vertical) + chat-pane divider (horizontal, split view), persisted to localStorage
+- **Hybrid Chat placement**: docked split pane (default) or first tab — `consolePrefs.splitView`
+- **Tabs**: Chat (tab mode only) / Console / Terminal
+- **Chat Section**: Send messages to Chat Trigger nodes, view conversation history; `chatFocusRequest` switches to the Chat tab before focusing when in tab mode
 - **Console Section**: View and filter node execution logs
 
 #### Node Selector Dropdowns

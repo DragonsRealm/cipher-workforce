@@ -2,13 +2,19 @@
 
 > **Merged copy (2026-08)** — this is the handoff brief from the external
 > `design_handoff_theme_system/` bundle, merged into
-> `docs-internal/design-system/` as the canonical location. Path mapping:
-> the bundle's `themes/` is byte-identical to the live
-> [`client/src/themes/`](../../client/src/themes/) (which is authoritative);
-> its `tokens/` / `components/` / `guidelines/` / `ui_kits/` are this
-> directory's same-named folders; its `_source_docs/` are this directory's
-> root files; `reference-mockup/` lives here at
-> [`reference-mockup/`](./reference-mockup/).
+> `docs-internal/design-system/` as the canonical location. The external
+> bundle was verified fully migrated (every directory diffed against its
+> in-repo counterpart) and **removed from disk on 2026-08-14**; a
+> `.gitignore` entry guards against a re-drop. Path mapping of what it
+> contained: its `themes/` was byte-identical to the live
+> [`client/src/themes/`](../../client/src/themes/) (which is authoritative
+> and has since moved ahead via the fidelity pass); its `tokens/` /
+> `components/` / `guidelines/` / `ui_kits/` are this directory's
+> same-named folders; its `_source_docs/` are this directory's root files;
+> `reference-mockup/` lives here at
+> [`reference-mockup/`](./reference-mockup/); its `assets/diagrams/` were
+> stripped exports of the richer sources already in
+> [`assets/diagrams/`](./assets/diagrams/).
 >
 > **Product amendments** (decisions recorded after the fidelity pass —
 > where this brief and the product deliberately differ, the amendment

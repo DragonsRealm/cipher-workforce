@@ -84,7 +84,7 @@ Surface hierarchy across themes; every theme assigns these in its `:root[data-th
 
 | Tailwind utility | CSS var | Purpose |
 |---|---|---|
-| `font-display` | `--font-display` | Headings, panel titles, action labels (Cinzel under Ren, Major Mono under Cyber) |
+| `font-display` | `--font-display` | Headings, panel titles, action labels (Cinzel under Ren, Space Mono under Cyber) |
 | `font-body` | `--font-body` | Paragraph + UI copy |
 | `font-mono` | `--font-mono` | Code, console, JSON, status bar, kbd |
 
@@ -159,10 +159,10 @@ Result by theme (display font / tracking / case):
 - **Edo** — Shippori Mincho / 0.06em / `none`
 - **Steampunk** — IM Fell English SC / 0.10em / `uppercase`
 - **Atomic** — Bevan / 0.06em / `uppercase`
-- **Cyber** — Major Mono Display / 0.18em / `uppercase`
+- **Cyber** — Space Mono / 0.18em / `uppercase` (design-handoff legibility substitution for Major Mono Display, which renders lowercase as sparse fragments at UI sizes)
 - **Wasteland** — Special Elite / 0.10em / `uppercase`
 - **Rot** — Pirata One / 0.04em / `none`
-- **Plague** — UnifrakturCook / 0.06em / `uppercase`
+- **Plague** — Cinzel / 0.06em / `uppercase` (substitution for UnifrakturCook — blackletter under uppercase + tracking is unparseable at UI sizes)
 - **Surveillance** — Anonymous Pro / 0.10em / `uppercase`
 
 ## Adding a new theme
@@ -249,7 +249,7 @@ the surrounding chrome. Every other surface uses Tailwind + tokens. New themes c
 - **Sound throttling** (W19) — `type` and `hover` events throttled to a 30 ms last-fire window inside the engine to prevent OscillatorNode flooding. See [Throttling](#throttling).
 - **Migrated chrome**: TopToolbar, WorkflowSidebar, ComponentPalette + ComponentItem + CollapsibleSection, ConsolePanel chrome, SettingsPanel, Modal, ParameterPanel modal title, AIResultModal title, OutputDisplayPanel title, InputSection title
 - **New shell components**: StatusBar (fixed-bottom system line with WS connection / workflow / theme / clock), CommandPalette (`⌘K`), CommandPaletteHost (canonical command list with Workflow / Run / Open / View / Theme groups)
-- **Google Fonts** — deferred-load `<link>` covers all 12 themes' typefaces (Cinzel, Cormorant Garamond, IM Fell English / SC, JetBrains Mono, Major Mono Display, VT323, Shippori Mincho, Sawarabi Mincho, Special Elite, Bevan, Lato, Pirata One, EB Garamond, UnifrakturCook, Anonymous Pro, IBM Plex Mono, Courier Prime, Space Mono)
+- **Google Fonts** — deferred-load `<link>` covers all 12 themes' typefaces (Cinzel, Cormorant Garamond, IM Fell English / SC, JetBrains Mono, VT323, Shippori Mincho, Sawarabi Mincho, Special Elite, Bevan, Lato, Pirata One, EB Garamond, Anonymous Pro, IBM Plex Mono, Courier Prime, Space Mono). Major Mono Display + UnifrakturCook were trimmed from the URL when the legibility substitutions landed (Cyber → Space Mono, Plague → Cinzel).
 - **Sound contract** — [client/src/lib/sound.ts](../client/src/lib/sound.ts) ports the upstream WebAudio engine with all 10 packs (`parchment`, `marble`, `ink`, `clockwork`, `vibraphone`, `terminal`, `scrap`, `crypt`, `bell`, `telex`). [client/src/hooks/useSound.ts](../client/src/hooks/useSound.ts) reads `--sound-pack` from `:root` on theme change and mirrors the `soundEnabled` Zustand slice into `Sounds.setEnabled()`. Settings panel ships the toggle (Audio section). Persists to `localStorage['opencompany-sound']`; **default ON** (browsers gesture-gate WebAudio without a separate permission API — the AudioContext starts suspended and resumes on the user's first pointerdown / keydown / touchstart via `Sounds.unlock()`, registered as a one-shot capture-phase listener in `useSoundSync()`).
 - **Canvas overlay packs** — [client/src/hooks/useAppTheme.ts](../client/src/hooks/useAppTheme.ts) extended from 2-way (`{light, dark}`) to 10-way: a `THEME_OVERRIDES` map applies a small overlay (primary, focus, focusRing, action colours, edge palette) on top of `lightColors` / `darkColors`. Existing call sites continue to read `theme.colors.X` and `theme.isDarkMode` unchanged; canvas selection rings, action buttons, and edge strokes pick up the active theme's accents under any of the 10 themes.
 
@@ -522,3 +522,4 @@ cd client && npx eslint <files>
 | `design_handoff_machinaos_themes/` (external design handoff, not in repo) | Reference HTML mocks + token spec |
 | `design_handoff_machinaos_themes/app/icons.js` (external) | Upstream icon source (ported by Wave 23) |
 | `design_handoff_machinaos_themes/MIGRATION_PLAYBOOK.md` (external) | Upstream recipe — all originally-deferred items now landed (W14–W25) |
+| `design_handoff_theme_system/` (external, 2026-08 — **fully migrated, removed from disk**) | Second handoff drop: its `themes/` CSS was byte-identical to live, `tokens/`/`components/`/`guidelines/` matched the vendored bundle; the new content (handoff brief + 17-panel × 12-theme mockup) was merged as [design-system/HANDOFF.md](./design-system/HANDOFF.md) + [design-system/reference-mockup/](./design-system/reference-mockup/), and the fidelity-pass contracts it specified (step edges, outcome glow, toolbar pinning, font substitutions, reduced-motion coverage) are implemented |

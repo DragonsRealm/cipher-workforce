@@ -136,7 +136,7 @@ Layout contract: fixed 48px toolbar + 24px status bar top/bottom; 280px sidebar 
 
 ## 5. Theming beyond light/dark
 
-The real app ships **12 themes** (light, dark + 10 "skins": Renaissance, Greek, Edo, Steampunk, Atomic, Cyber, Wasteland, Rot, Plague, Surveillance). Only light/dark are encoded as live token scopes here. The architecture, per-theme token tables, and porting recipe are in `guidelines/THEMES.md`; verbatim source for all 13 theme CSS files is in `reference/themes/`. To add a skin: copy its token block into a `[data-theme="X"]` scope, map its accents onto the action/node role triplets, and load its fonts. **Readability rule:** decorative display faces (blackletter, Major Mono, etc.) are documentation specimens only — UI copy always uses a readable body font.
+The real app ships **12 themes** (light, dark + 10 "skins": Renaissance, Greek, Edo, Steampunk, Atomic, Cyber, Wasteland, Rot, Plague, Surveillance). Only light/dark are encoded as live token scopes here. The architecture, per-theme token tables, and porting recipe are in `guidelines/THEMES.md`; the authoritative theme CSS lives in `client/src/themes/` (the `reference/themes/` snapshots were retired — see its README). To add a skin: copy its token block into a `[data-theme="X"]` scope, map its accents onto the action/node role triplets, and load its fonts. **Readability rule:** decorative display faces (blackletter, Major Mono, etc.) are documentation specimens only — UI copy always uses a readable body font; the product ships Space Mono (Cyber) and Cinzel (Plague) as display faces per the HANDOFF.md legibility substitutions.
 
 Visual verification pages (open in a browser): `guidelines/theme-comparison-full.html` (full screen ×12), `guidelines/panels-all-themes.html` (every panel — chrome + overlays — ×12), `guidelines/theme-matrix.html` (token matrix), `guidelines/animations-all-themes.html` (live motion ×12).
 
@@ -160,10 +160,12 @@ Second person, possessive ("your own AI assistant"). Terse declarative fragments
 ## 7. File map
 
 - `styles.css` — global entry (import this). `tokens/` — the seven token files including `animations.css` (ship as-is).
-- `components/<group>/` — 38 components (`.jsx` + `.d.ts` + `.prompt.md`) + one `*.card.html` specimen per group.
+- `components/<group>/` — 34 components (`.jsx` + `.d.ts` + `.prompt.md`; SettingsRow ships inside SettingsSection.jsx) + one `*.card.html` specimen per group.
 - `ui_kits/opencompany/` — interactive full-app recreation (`index.html` + JSX) incl. Settings / Credentials / Node-Config panels.
 - `guidelines/` — foundation specimen cards, `THEMES.md`, `ANIMATIONS.md`, and the theme/panel/animation comparison pages.
-- `reference/themes/` — verbatim repo theme CSS (porting reference; not shipped to consumers).
+- `reference/themes/` — pointer README only; the snapshots went stale (pre-hex-migration) and were retired in favor of the live `client/src/themes/`.
+- `HANDOFF.md` — the merged design-handoff brief (glow ladder + traps, step-edge contract, toolbar layout traps, canvas-layer asymmetries) with recorded product amendments.
+- `reference-mockup/` — the 17-panel × 12-theme fidelity target (`Panel Theme Matrix.dc.html`, open in a browser).
 - `assets/` — product screenshot + official architecture diagrams (SVG).
 - `readme.md` — design guide (voice, visual foundations, iconography). `SKILL.md` — Agent-Skill entry point.
 
