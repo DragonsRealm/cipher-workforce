@@ -68,7 +68,7 @@ const WorkflowCard: React.FC<WorkflowCardProps> = ({
       <h4
         className={cn(
           // Display typography on the workflow name — Cinzel under
-          // Renaissance, Major Mono Display under Cyber.
+          // Renaissance, Space Mono under Cyber.
           'm-0 flex-1 truncate font-display text-sm font-medium tracking-[var(--type-tracking-display)] [text-transform:var(--type-uppercase)]',
           isSelected ? 'text-accent' : 'text-fg-default'
         )}

@@ -49,8 +49,11 @@
   --neon-green: #26d97a;
   --neon-red: #ff2050;
 
-  /* Type — Major Mono Display + JetBrains Mono everywhere */
-  --font-display: 'Major Mono Display', 'Audiowide', monospace;
+  /* Type — Space Mono display + JetBrains Mono everywhere.
+   * Design-handoff legibility substitution: the original Major Mono
+   * Display renders lowercase as sparse scattered fragments at UI sizes
+   * (13px); Space Mono keeps the same machine voice and stays readable. */
+  --font-display: 'Space Mono', 'JetBrains Mono', monospace;
   --font-body: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   --font-mono: 'JetBrains Mono', monospace;
   --type-scale-base: 13px;
