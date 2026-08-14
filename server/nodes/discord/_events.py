@@ -24,6 +24,7 @@ CONNECTION_CLOSED_TYPE = "com.opencompany.discord.connection.closed"
 # Shared across plugins; the frontend routes on envelope.source.
 STATUS_WIRE_KEY = "plugin_connection_status"
 MESSAGE_WIRE_KEY = "discord_message_received"
+INTERACTION_WIRE_KEY = "discord_interaction_created"
 
 
 def discord_message_received(event_data: Mapping[str, Any]) -> WorkflowEvent:
@@ -34,6 +35,22 @@ def discord_message_received(event_data: Mapping[str, Any]) -> WorkflowEvent:
         # Snowflakes are stringified upstream, in _dispatch. The envelope
         # requires a string subject regardless.
         subject=str(event_data.get("channel_id") or ""),
+        data=dict(event_data),
+    )
+
+
+def discord_interaction_created(event_data: Mapping[str, Any]) -> WorkflowEvent:
+    """Envelope for one slash command or component click.
+
+    A separate type from messages, not a flag on one: a canary trigger
+    registers exactly one CloudEvents type, because that string becomes the
+    Search Attribute its listener is found by. One type per trigger node is
+    the only shape the routing supports.
+    """
+    return WorkflowEvent(
+        source=SOURCE,
+        type=INTERACTION_CREATED_TYPE,
+        subject=str(event_data.get("interaction_id") or ""),
         data=dict(event_data),
     )
 
@@ -79,6 +96,12 @@ async def dispatch_discord_message_received(event_data: Mapping[str, Any]) -> No
     await emit(discord_message_received(event_data), wire_routing_key=MESSAGE_WIRE_KEY)
 
 
+async def dispatch_discord_interaction_created(event_data: Mapping[str, Any]) -> None:
+    from services.events.dispatch import emit
+
+    await emit(discord_interaction_created(event_data), wire_routing_key=INTERACTION_WIRE_KEY)
+
+
 __all__ = [
     "CONNECTION_CLOSED_TYPE",
     "CONNECTION_OPENED_TYPE",
@@ -87,6 +110,8 @@ __all__ = [
     "SOURCE",
     "broadcast_discord_status",
     "discord_connection_status",
+    "discord_interaction_created",
     "discord_message_received",
+    "dispatch_discord_interaction_created",
     "dispatch_discord_message_received",
 ]

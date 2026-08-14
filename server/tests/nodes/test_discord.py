@@ -655,3 +655,297 @@ class TestGatewayLifecycle:
         result = _run(DiscordReceiveNode().execute("d1", {}, _ctx()))
         assert result["success"] is False
         assert "not connected" in result["error"].lower()
+
+
+def _keypair():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    private = Ed25519PrivateKey.generate()
+    from cryptography.hazmat.primitives import serialization
+
+    public_hex = private.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    return private, public_hex
+
+
+class TestEd25519Verifier:
+    """The first asymmetric verifier here; the four shipped ones are HMAC."""
+
+    def test_valid_signature_passes(self):
+        from nodes.discord._verifier import DiscordEd25519Verifier
+
+        private, public_hex = _keypair()
+        body = b'{"type":1}'
+        timestamp = "1700000000"
+        signature = private.sign(timestamp.encode() + body).hex()
+
+        DiscordEd25519Verifier.verify(
+            {"X-Signature-Ed25519": signature, "X-Signature-Timestamp": timestamp},
+            body,
+            public_hex,
+        )
+
+    def test_tampered_body_is_rejected(self):
+        from nodes.discord._verifier import DiscordEd25519Verifier
+
+        private, public_hex = _keypair()
+        timestamp = "1700000000"
+        signature = private.sign(timestamp.encode() + b'{"type":1}').hex()
+
+        with pytest.raises(ValueError):
+            DiscordEd25519Verifier.verify(
+                {"X-Signature-Ed25519": signature, "X-Signature-Timestamp": timestamp},
+                b'{"type":2}',
+                public_hex,
+            )
+
+    def test_timestamp_is_part_of_the_signed_payload(self):
+        """Signing the body alone would let a captured request be replayed
+        under a different timestamp."""
+        from nodes.discord._verifier import DiscordEd25519Verifier
+
+        private, public_hex = _keypair()
+        body = b'{"type":1}'
+        signature = private.sign(b"1700000000" + body).hex()
+
+        with pytest.raises(ValueError):
+            DiscordEd25519Verifier.verify(
+                {"X-Signature-Ed25519": signature, "X-Signature-Timestamp": "1700009999"},
+                body,
+                public_hex,
+            )
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {},
+            {"X-Signature-Ed25519": "aa"},
+            {"X-Signature-Timestamp": "1700000000"},
+        ],
+    )
+    def test_missing_headers_are_rejected(self, headers):
+        from nodes.discord._verifier import DiscordEd25519Verifier
+
+        _, public_hex = _keypair()
+        with pytest.raises(ValueError):
+            DiscordEd25519Verifier.verify(headers, b"{}", public_hex)
+
+    def test_non_hex_inputs_are_rejected_not_crashed(self):
+        from nodes.discord._verifier import DiscordEd25519Verifier
+
+        _, public_hex = _keypair()
+        with pytest.raises(ValueError):
+            DiscordEd25519Verifier.verify(
+                {"X-Signature-Ed25519": "zzzz", "X-Signature-Timestamp": "1"},
+                b"{}",
+                public_hex,
+            )
+
+
+class TestInteractionTokenNeverLeaves:
+    """The token is a 15-minute bearer credential and trigger output is
+    persisted, broadcast and replayed into LLM context."""
+
+    def test_shaped_interaction_carries_a_ref_not_the_token(self):
+        from nodes.discord._interactions import resolve_token, shape_interaction
+
+        payload = {
+            "id": "111",
+            "type": 2,
+            "application_id": "999",
+            "token": "SUPER_SECRET_TOKEN",
+            "data": {"name": "ping", "options": [{"name": "who", "value": "world"}]},
+            "member": {"user": {"id": "222", "username": "bob"}},
+        }
+        event = shape_interaction(payload, account_id="default")
+
+        assert "SUPER_SECRET_TOKEN" not in str(event)
+        assert event["interaction_ref"]
+        assert event["command_name"] == "ping"
+        assert event["options"] == {"who": "world"}
+        # The ref is what trades back for the token, server-side only.
+        assert resolve_token(event["interaction_ref"]) == ("999", "SUPER_SECRET_TOKEN")
+
+    def test_unknown_ref_resolves_to_nothing(self):
+        from nodes.discord._interactions import resolve_token
+
+        assert resolve_token("not-a-real-ref") is None
+
+    def test_component_click_defers_as_an_update(self):
+        """Deferring a component as a new message posts an empty one."""
+        from nodes.discord._interactions import (
+            APPLICATION_COMMAND,
+            DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+            DEFERRED_UPDATE_MESSAGE,
+            MESSAGE_COMPONENT,
+            deferred_response_type,
+        )
+
+        assert deferred_response_type(MESSAGE_COMPONENT) == DEFERRED_UPDATE_MESSAGE
+        assert deferred_response_type(APPLICATION_COMMAND) == DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+
+
+class TestInteractionsEndpoint:
+    """Protocol requirements Discord enforces on the endpoint itself."""
+
+    def _app(self):
+        from fastapi import FastAPI
+
+        from nodes.discord._router import router
+
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+
+        return TestClient(self._app())
+
+    def _post(self, body: bytes, headers: dict, public_key: str):
+        auth = SimpleNamespace(get_api_key=AsyncMock(return_value=public_key))
+        with patch("services.plugin.deps.get_auth_service", return_value=auth):
+            return self._client().post(
+                "/api/discord/interactions", content=body, headers=headers
+            )
+
+    def test_ping_is_answered_with_pong(self):
+        private, public_hex = _keypair()
+        body = b'{"type":1}'
+        ts = "1700000000"
+        sig = private.sign(ts.encode() + body).hex()
+
+        response = self._post(
+            body,
+            {"X-Signature-Ed25519": sig, "X-Signature-Timestamp": ts, "Content-Type": "application/json"},
+            public_hex,
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"type": 1}
+
+    def test_bad_signature_is_401_not_400(self):
+        """Discord's endpoint-validation probe sends a deliberately invalid
+        signature and refuses to save the URL unless it gets a 401."""
+        _, public_hex = _keypair()
+        other_private, _ = _keypair()
+        body = b'{"type":1}'
+        ts = "1700000000"
+        sig = other_private.sign(ts.encode() + body).hex()
+
+        response = self._post(
+            body,
+            {"X-Signature-Ed25519": sig, "X-Signature-Timestamp": ts, "Content-Type": "application/json"},
+            public_hex,
+        )
+
+        assert response.status_code == 401
+
+    def test_missing_public_key_fails_closed(self):
+        """Accepting unverified requests would let anyone trigger workflows."""
+        response = self._post(
+            b'{"type":1}',
+            {"X-Signature-Ed25519": "aa", "X-Signature-Timestamp": "1", "Content-Type": "application/json"},
+            "",
+        )
+
+        assert response.status_code == 503
+        assert response.headers.get("Retry-After") == "5"
+
+    def test_command_is_deferred_within_the_deadline(self):
+        """A workflow cannot run in three seconds, so the endpoint must ACK
+        and fan out afterwards."""
+        private, public_hex = _keypair()
+        body = b'{"type":2,"id":"1","application_id":"9","token":"t","data":{"name":"ping"}}'
+        ts = "1700000000"
+        sig = private.sign(ts.encode() + body).hex()
+
+        with patch("nodes.discord._events.dispatch_discord_interaction_created", new=AsyncMock()):
+            response = self._post(
+                body,
+                {"X-Signature-Ed25519": sig, "X-Signature-Timestamp": ts, "Content-Type": "application/json"},
+                public_hex,
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"type": 5}
+
+
+class TestRouterMounting:
+    """Both surfaces must actually mount.
+
+    Building a fresh APIRouter and include_router()-ing the OAuth factory's
+    router into it looks right and is not: on an APIRouter, unlike an app,
+    include_router leaves a pathless placeholder rather than flattening the
+    child's routes. The callback silently did not exist, and the pathless
+    entry read as an ungated route to the public-surface invariant.
+    """
+
+    def _paths(self):
+        from nodes.discord._router import router
+
+        return {getattr(route, "path", None) for route in router.routes}
+
+    def test_all_routes_mount(self):
+        assert {
+            "/api/discord/callback",
+            "/api/discord/interactions",
+            "/api/discord/interactions/{account_id}",
+        } <= self._paths()
+
+    def test_no_pathless_route_entries(self):
+        assert all(path for path in self._paths())
+
+    def test_every_route_is_under_the_gated_api_prefix(self):
+        """AuthMiddleware gates on the prefix; anything outside it would be
+        served unauthenticated."""
+        assert all(path.startswith("/api/discord/") for path in self._paths())
+
+
+class TestInteractionTriggerIsDeployable:
+    def test_registered_for_deployment(self):
+        from constants import EVENT_TRIGGER_TYPES, POLLING_TRIGGER_TYPES, WORKFLOW_TRIGGER_TYPES
+
+        from nodes.discord.discord_interaction import DiscordInteractionNode
+
+        assert DiscordInteractionNode.type in EVENT_TRIGGER_TYPES
+        assert DiscordInteractionNode.type in WORKFLOW_TRIGGER_TYPES
+        assert DiscordInteractionNode.type not in POLLING_TRIGGER_TYPES
+
+    def test_canary_type_matches_the_emitted_envelope(self):
+        from services.deployment.canary_registry import cloudevent_type_for
+
+        from nodes.discord._events import INTERACTION_CREATED_TYPE, discord_interaction_created
+        from nodes.discord.discord_interaction import DiscordInteractionNode
+
+        assert cloudevent_type_for(DiscordInteractionNode.type) == INTERACTION_CREATED_TYPE
+        assert discord_interaction_created({"interaction_id": "1"}).type == INTERACTION_CREATED_TYPE
+
+    def test_message_and_interaction_use_distinct_types(self):
+        """One node maps to one CloudEvents type, so a shared type would make
+        each trigger fire on the other's events."""
+        from nodes.discord._events import INTERACTION_CREATED_TYPE, MESSAGE_RECEIVED_TYPE
+
+        assert INTERACTION_CREATED_TYPE != MESSAGE_RECEIVED_TYPE
+
+    @pytest.mark.parametrize(
+        "params, event, expected",
+        [
+            ({}, {"interaction_type": 2, "command_name": "ping"}, True),
+            ({"interaction_kind": "command"}, {"interaction_type": 3}, False),
+            ({"interaction_kind": "component"}, {"interaction_type": 3}, True),
+            ({"command_name": "ping"}, {"command_name": "ping"}, True),
+            ({"command_name": "/ping"}, {"command_name": "ping"}, True),
+            ({"command_name": "other"}, {"command_name": "ping"}, False),
+            ({"custom_id": "btn"}, {"custom_id": "btn"}, True),
+            ({"guild_id": "g1"}, {"guild_id": "g2"}, False),
+        ],
+    )
+    def test_filter_matrix(self, params, event, expected):
+        from nodes.discord._filters import build_interaction_filter
+
+        base = {"account_id": "default"}
+        base.update(event)
+        assert build_interaction_filter(params)(base) is expected

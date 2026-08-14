@@ -60,4 +60,35 @@ def build_discord_filter(params: Dict[str, Any]) -> Callable[[Dict[str, Any]], b
     return matches
 
 
-__all__ = ["build_discord_filter"]
+_INTERACTION_KINDS = {"command": 2, "component": 3, "modal": 5}
+
+
+def build_interaction_filter(params: Dict[str, Any]) -> Callable[[Dict[str, Any]], bool]:
+    """Predicate for discordInteraction, over _interactions.shape_interaction."""
+    params = params or {}
+
+    account_id = (params.get("account_id") or "").strip()
+    kind = params.get("interaction_kind") or "all"
+    command_name = (params.get("command_name") or "").strip().lstrip("/")
+    custom_id = (params.get("custom_id") or "").strip()
+    guild_id = (params.get("guild_id") or "").strip()
+
+    expected_type = _INTERACTION_KINDS.get(kind)
+
+    def matches(event: Dict[str, Any]) -> bool:
+        if account_id and event.get("account_id") != account_id:
+            return False
+        if expected_type is not None and event.get("interaction_type") != expected_type:
+            return False
+        if command_name and event.get("command_name") != command_name:
+            return False
+        if custom_id and event.get("custom_id") != custom_id:
+            return False
+        if guild_id and event.get("guild_id") != guild_id:
+            return False
+        return True
+
+    return matches
+
+
+__all__ = ["build_discord_filter", "build_interaction_filter"]

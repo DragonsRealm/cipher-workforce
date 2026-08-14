@@ -11,9 +11,11 @@ from typing import Any, Awaitable, Callable, Dict
 from fastapi import WebSocket
 
 from core.logging import get_logger
+from services.events.oauth_lifecycle import make_oauth_lifecycle_handlers
 from services.plugin.ws import ws_response
 
 from ._accounts import DEFAULT_ACCOUNT, list_accounts
+from ._oauth import build_oauth
 
 logger = get_logger(__name__)
 
@@ -90,12 +92,27 @@ async def handle_discord_accounts(data: Dict[str, Any], websocket: WebSocket) ->
     return {"success": True, "accounts": snapshot["accounts"]}
 
 
+def _user_info_to_subject(info: Dict[str, Any]) -> str:
+    username = info.get("username") or ""
+    return f"@{username}" if username else "Unknown"
+
+
+# discord_oauth_login / discord_oauth_status / discord_logout. Without these
+# the callback route exists but nothing can start the flow.
+_OAUTH_HANDLERS = make_oauth_lifecycle_handlers(
+    provider="discord",
+    oauth_factory=build_oauth,
+    user_info_to_subject=_user_info_to_subject,
+)
+
+
 WS_HANDLERS: Dict[str, Callable[[Dict[str, Any], WebSocket], Awaitable[Dict[str, Any]]]] = {
     "discord_connect": handle_discord_connect,
     "discord_disconnect": handle_discord_disconnect,
     "discord_reconnect": handle_discord_reconnect,
     "discord_status": handle_discord_status,
     "discord_accounts": handle_discord_accounts,
+    **_OAUTH_HANDLERS,
 }
 
 

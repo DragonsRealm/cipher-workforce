@@ -95,6 +95,7 @@ _PLUGINS_WITH_HANDLERS = (
 # from its package ``__init__.py``.
 _PLUGINS_WITH_ROUTERS = (
     "android",
+    "discord",
     "google",
     "microsoft",
     "twitter",

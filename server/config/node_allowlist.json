@@ -37,6 +37,7 @@
     "discordSend",
     "discordAction",
     "discordReceive",
+    "discordInteraction",
 
     "whatsappBusinessSend",
     "whatsappBusinessReceive",

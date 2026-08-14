@@ -41,6 +41,7 @@ class DiscordActionParams(BaseModel):
         "add_reaction",
         "pin_message",
         "download_attachments",
+        "interaction_respond",
         "execute_webhook",
         "custom",
     ] = Field(default="list_channels", description="What to do.")
@@ -109,6 +110,17 @@ class DiscordActionParams(BaseModel):
             "and filename."
         ),
         json_schema_extra=_show(operation=["download_attachments"]),
+    )
+
+    interaction_ref: str = Field(
+        default="",
+        description="The interaction_ref from a discordInteraction trigger.",
+        json_schema_extra=_show(operation=["interaction_respond"]),
+    )
+    interaction_message: str = Field(
+        default="",
+        description="Message to send as the interaction response.",
+        json_schema_extra={"rows": 3, **_show(operation=["interaction_respond"])},
     )
 
     webhook_url: str = Field(
@@ -317,6 +329,53 @@ class DiscordActionNode(AccountScopedNode):
             files.append(ref.model_dump(mode="json"))
 
         return DiscordActionOutput(files=files, count=len(files))
+
+    @Operation("interaction_respond", cost={"service": "discord", "action": "interaction", "count": 1})
+    async def interaction_respond(
+        self, ctx: NodeContext, params: DiscordActionParams
+    ) -> DiscordActionOutput:
+        """Finish an interaction the trigger deferred.
+
+        The router already acknowledged within Discord's three-second window,
+        so this edits that deferred response rather than creating one. The
+        token is resolved from the opaque ref here; it never travels through
+        node output.
+        """
+        from ._interactions import resolve_token
+
+        ref = _require(params.interaction_ref, "interaction reference")
+        message = _require(params.interaction_message, "message")
+
+        resolved = resolve_token(ref)
+        if resolved is None:
+            raise NodeUserError(
+                "That interaction reference is unknown or has expired. Discord "
+                "interaction tokens last 15 minutes, and references do not survive "
+                "a server restart."
+            )
+        application_id, token = resolved
+
+        # Webhook-style route: the token authenticates it, so no bot token is
+        # attached and this deliberately bypasses the account path.
+        import httpx
+
+        url = (
+            f"{_base.API_BASE_URL}/{_base.API_VERSION}/webhooks/"
+            f"{application_id}/{token}/messages/@original"
+        )
+        async with httpx.AsyncClient(timeout=_base.REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.patch(
+                url,
+                json={"content": message},
+                headers={"User-Agent": _base.USER_AGENT},
+            )
+        if response.status_code >= 400:
+            # Never echo the URL: it embeds the interaction token.
+            raise NodeUserError(
+                f"Discord rejected the interaction response with HTTP "
+                f"{response.status_code}. The 15-minute window may have closed."
+            )
+        return DiscordActionOutput(result=response.json() if response.content else {"sent": True})
 
     # ---- escape hatches -------------------------------------------------
 

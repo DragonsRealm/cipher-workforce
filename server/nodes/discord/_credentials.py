@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import httpx
 
-from services.plugin.credential import ApiKeyCredential, ProbeResult
+from services.plugin.credential import ApiKeyCredential, OAuth2Credential, ProbeResult
 
 from ._accounts import APPLICATION_ID_KEY, LABEL_KEY, PUBLIC_KEY_KEY
 
@@ -91,4 +91,27 @@ class DiscordBotCredential(ApiKeyCredential):
         )
 
 
-__all__ = ["DiscordBotCredential"]
+class DiscordUserCredential(OAuth2Credential):
+    """Tokens for a user who authorised the app, distinct from the bot.
+
+    A separate credential id so connecting a user never overwrites the bot
+    token, and so a node can state which identity it acts as. Requests carry
+    ``Bearer`` here, unlike the bot's ``Bot`` scheme.
+    """
+
+    id = "discord_oauth"
+    display_name = "Discord (User)"
+    category = "Social"
+    authorization_url = "https://discord.com/oauth2/authorize"
+    token_url = "https://discord.com/api/oauth2/token"
+    client_id_api_key = "discord_client_id"
+    client_secret_api_key = "discord_client_secret"
+    # Deliberately narrow: nothing here needs email, and asking for it widens
+    # both the consent screen and the damage a leaked token can do.
+    scopes = ("identify", "guilds")
+    docs_url = "https://discord.com/developers/docs/topics/oauth2"
+    # The bot's mark; there is no separate user-flow artwork.
+    icon = "/api/schemas/credentials/discord/icon"
+
+
+__all__ = ["DiscordBotCredential", "DiscordUserCredential"]
