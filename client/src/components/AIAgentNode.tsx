@@ -143,8 +143,10 @@ const AIAgentNode: React.FC<NodeProps<NodeData>> = ({ id, type, data, isConnecta
     // structural hooks for per-theme decorations (Renaissance wax seal,
     // Cyber neon underglow + corner LED blink, etc.).
     <div
+      // No data-executing attribute here: the executing pulse binds via the
+      // Dashboard-assigned `.react-flow__node.executing` wrapper class
+      // (base.css); a `.node[data-executing]` rule has never existed.
       className={`node node-agent ${selected ? 'selected' : ''}`}
-      data-executing={isExecuting ? '' : undefined}
       style={{
         '--node-color': accentColor,
         position: 'relative',
