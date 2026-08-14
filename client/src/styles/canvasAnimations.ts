@@ -3,38 +3,32 @@
  * Dashboard. Split into named groups so a new status visual or keyframe
  * can be added without touching Dashboard.tsx.
  *
- *   KEYFRAMES                -- @keyframes definitions for edges
- *   edgeStatusStyles(...)    -- .react-flow__edge.{selected,executing,...}
- *   nodeStatusStyles(...)    -- .react-flow__node.{...} (status-class colors only)
- *   buildCanvasStyles(...)   -- composes the three for Dashboard
+ *   KEYFRAMES              -- @keyframes definitions for edges
+ *   EDGE_STATUS_STYLES     -- .react-flow__edge.{selected,executing,...}
+ *   buildCanvasStyles()    -- composes the groups for Dashboard
  *
- * Per-node inline animations (border pulse, etc.) live in their own
- * components and read theme tokens directly; this module is for
- * canvas-wide rules that need to match React Flow's wrapper classes.
+ * Fully static since the design-handoff edge migration: every color,
+ * width, and dash rhythm is a theme token (var(--edge-*) + semantic
+ * color tokens, declared in themes/base.css), so this module knows
+ * nothing about which theme is active and Dashboard injects it once at
+ * module scope. The old CanvasStatusColors parameter object (per-theme
+ * hex fed from useAppTheme) is gone -- do not reintroduce it; add a
+ * token instead.
  *
- * Node execution glow is owned by `client/src/themes/base.css` — see
+ * Resting edges follow the design-handoff contract: one pale neutral
+ * stroke (--edge-stroke), dashed (--edge-dash), thin
+ * (--edge-stroke-width). Status classes recolor with SEMANTIC tokens so
+ * execution feedback survives in every theme. No !important on the
+ * resting rule (nothing competes once Dashboard stopped inlining a
+ * stroke); status rules keep !important so they beat the resting rule
+ * and ConditionalEdge's inline conditional-accent styling during runs.
+ * The in-progress connection line (.react-flow__connection-path) is
+ * styled here too -- Dashboard passes no connectionLineStyle prop.
+ *
+ * Node execution glow is owned by `client/src/themes/base.css` -- see
  * the `node-pulse` keyframe + `.react-flow__node.executing .node` /
- * `.sq-node[data-executing] .sq-node-box` rules there. This file used
- * to inject a competing `nodeGlow` keyframe targeting the React Flow
- * wrapper; that was dead code (only the inner `.node` child animated)
- * and has been removed in favour of base.css as the single source of
- * truth.
- *
- * The light vs dark distinction is encoded entirely in `colors` (the
- * theme object provides different values per mode), so this file knows
- * nothing about which theme is active.
+ * `.sq-node[data-executing] .sq-node-box` rules there.
  */
-
-export interface CanvasStatusColors {
-  edgeDefault: string;
-  edgeSelected: string;
-  edgeExecuting: string;
-  edgeCompleted: string;
-  edgeError: string;
-  edgePending: string;
-  edgeMemoryActive: string;
-  edgeToolActive: string;
-}
 
 const KEYFRAMES = `
   @keyframes dashFlow {
@@ -43,71 +37,67 @@ const KEYFRAMES = `
   }
 `;
 
-function edgeStatusStyles(colors: CanvasStatusColors): string {
-  return `
-  .react-flow__edge path {
-    stroke: ${colors.edgeDefault} !important;
-    stroke-width: 2px;
+const EDGE_STATUS_STYLES = `
+  .react-flow__edge path,
+  .react-flow__connection-path {
+    stroke: var(--edge-stroke);
+    stroke-width: var(--edge-stroke-width);
+    stroke-dasharray: var(--edge-dash);
+    stroke-linejoin: round;
   }
 
   .react-flow__edge.selected path {
-    stroke: ${colors.edgeSelected} !important;
-    stroke-width: 4px !important;
+    stroke: var(--accent) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
   }
 
   .react-flow__edge.executing path {
-    stroke: ${colors.edgeExecuting} !important;
-    stroke-width: 3px !important;
-    stroke-dasharray: 8 4;
+    stroke: var(--node-pulse-color) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
+    stroke-dasharray: var(--edge-dash-active);
     animation: dashFlow 0.5s linear infinite;
   }
 
   .react-flow__edge.completed path {
-    stroke: ${colors.edgeCompleted} !important;
-    stroke-width: 2px !important;
+    stroke: var(--success) !important;
+    stroke-width: var(--edge-stroke-width-done) !important;
   }
 
   .react-flow__edge.error path {
-    stroke: ${colors.edgeError} !important;
-    stroke-width: 3px !important;
+    stroke: var(--destructive) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
   }
 
   .react-flow__edge.pending path {
-    stroke: ${colors.edgePending} !important;
-    stroke-width: 2px !important;
-    stroke-dasharray: 8 4;
+    stroke: var(--fg-muted) !important;
+    stroke-width: var(--edge-stroke-width-done) !important;
+    stroke-dasharray: var(--edge-dash-active);
     animation: dashFlow 0.5s linear infinite;
   }
 
   .react-flow__edge.memory-active path {
-    stroke: ${colors.edgeMemoryActive} !important;
-    stroke-width: 3px !important;
+    stroke: var(--node-agent) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
   }
 
   .react-flow__edge.tool-active path {
-    stroke: ${colors.edgeToolActive} !important;
-    stroke-width: 3px !important;
+    stroke: var(--node-tool) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
+  }
+
+  .react-flow__edge.skill-active path {
+    stroke: var(--node-skill) !important;
+    stroke-width: var(--edge-stroke-width-active) !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .react-flow__edge.executing path,
+    .react-flow__edge.pending path {
+      animation: none !important;
+    }
   }
 `;
-}
 
-function nodeStatusStyles(_colors: CanvasStatusColors): string {
-  // Node execution animation is owned by base.css (`node-pulse`
-  // keyframe + `.react-flow__node.executing .node` /
-  // `.sq-node[data-executing] .sq-node-box` rules). This function is
-  // retained as a hook for future canvas-wide status-class rules on
-  // the React Flow wrapper that don't fit per-component CSS.
-  //
-  // `_colors` is intentionally unused at the moment; the parameter is
-  // kept on the signature so callers (buildCanvasStyles) and the
-  // CanvasStatusColors contract stay stable for downstream consumers.
-  return '';
-}
-
-export function buildCanvasStyles(colors: CanvasStatusColors): string {
-  return [
-    edgeStatusStyles(colors),
-    nodeStatusStyles(colors),
-    KEYFRAMES,
-  ].join('\n');
+export function buildCanvasStyles(): string {
+  return [EDGE_STATUS_STYLES, KEYFRAMES].join('\n');
 }

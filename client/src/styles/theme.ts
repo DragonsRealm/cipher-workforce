@@ -4,12 +4,16 @@
 // SCOPE (post-Wave-14):
 //   - `lightColors` / `darkColors` are the two BASE PACKS. The 10-way
 //     `THEME_OVERRIDES` map in `client/src/hooks/useAppTheme.ts` merges
-//     a per-theme overlay (primary, focus, action palette, edge stroke
-//     palette) on top of whichever base pack matches the active theme's
-//     dark / light family — see `theme_system.md` for the contract.
+//     a per-theme overlay (primary, focus, action palette) on top of
+//     whichever base pack matches the active theme's dark / light
+//     family — see `theme_system.md` for the contract. Canvas edge
+//     strokes are NOT part of the packs anymore: the design-handoff
+//     edge migration moved them to CSS tokens (--edge-stroke in
+//     themes/base.css + semantic status recolors in
+//     styles/canvasAnimations.ts).
 //   - `dracula` / `solarized` raw palette constants stay for cases a
-//     Tailwind class can't express: SVG `fill=`, React Flow JS edge
-//     styles, prismjs token CSS strings, GoogleMaps SDK JS-side colors.
+//     Tailwind class can't express: SVG `fill=`, prismjs token CSS
+//     strings, GoogleMaps SDK JS-side colors.
 //   - `spacing` / `fontSize` / `fontWeight` / `nodeSize` / `iconSize` /
 //     `buttonSize` / `layout` / `transitions` / `constants` stay too —
 //     these are not color tokens; they back the canvas-animation engine
@@ -125,15 +129,6 @@ export const lightColors = {
   actionPalette: '#7c3aed',       // Violet
   statusSaved: '#059669',         // Emerald-600
   statusModified: '#d97706',      // Amber-600
-  // Edge colors for light mode - MUCH darker for visibility
-  edgeDefault: '#6b7280',         // gray-500 - much more visible
-  edgeSelected: '#7c3aed',        // Violet
-  edgeExecuting: '#2563eb',       // Blue-600 (executing state pop)
-  edgeCompleted: '#16a34a',       // Green-600
-  edgeError: '#dc2626',           // Red-600
-  edgePending: '#6b7280',         // gray-500 (same as default, dashed)
-  edgeMemoryActive: '#db2777',    // Pink-600
-  edgeToolActive: '#ea580c',      // Orange-600
   // Category colors for light mode (darker, more saturated)
   categoryWorkflow: '#ea580c',    // Orange-600
   categoryTrigger: '#db2777',     // Pink-600
@@ -199,15 +194,6 @@ export const darkColors = {
   actionPalette: dracula.purple,   // #bd93f9 - purple
   statusSaved: dracula.green,      // #50fa7b - green
   statusModified: dracula.orange,  // #ffb86c - orange
-  // Edge colors for dark mode
-  edgeDefault: dracula.cyan,       // Cyan
-  edgeSelected: dracula.purple,    // Purple
-  edgeExecuting: dracula.purple,   // Purple (executing state pop)
-  edgeCompleted: dracula.green,    // Green
-  edgeError: dracula.red,          // Red
-  edgePending: dracula.cyan,       // Cyan (same as default, dashed)
-  edgeMemoryActive: dracula.pink,  // Pink
-  edgeToolActive: dracula.orange,  // Orange
   // Category colors for dark mode (Dracula - vibrant)
   categoryWorkflow: dracula.orange,
   categoryTrigger: dracula.pink,
