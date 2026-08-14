@@ -6,9 +6,13 @@ method:
 
 1. :func:`services.plugin.edge_walker.collect_agent_connections` —
    gather memory / skills / tools / input / task data.
-2. Task-context injection + tool-strip when ``task_data.status`` is
-   ``completed`` / ``error`` (so the agent reports results instead of
-   re-delegating).
+2. Task-context injection when a taskTrigger firing carries a
+   completed / errored task. Tools are deliberately KEPT: the injected
+   guidance tells a team lead to ``list_tasks`` / ``accept_task`` /
+   ``reassign_task``, which requires the Task Manager tool. An earlier
+   version stripped every tool here "so the agent reports instead of
+   re-delegating" — that made the lead unable to accept or reassign
+   anything, which read as the lead forgetting its plan.
 3. Auto-prompt fallback when the ``prompt`` field is empty and a
    connected upstream node produced output.
 
@@ -66,7 +70,8 @@ async def prepare_agent_call(
         log_prefix=log_prefix,
     )
 
-    # Step 1: task-context injection + tool-strip.
+    # Step 1: task-context injection. Tools are kept — the injected
+    # guidance requires the Task Manager tool to act on the completion.
     if task_data:
         task_context = format_task_context(task_data)
         original_prompt = parameters.get("prompt", "")
@@ -74,13 +79,6 @@ async def prepare_agent_call(
         logger.info(
             f"{log_prefix} Task context injected for task_id={task_data.get('task_id')}",
         )
-        task_status = task_data.get("status", "")
-        if task_status in ("completed", "error") and tool_data:
-            original_tool_count = len(tool_data)
-            tool_data = []
-            logger.info(
-                f"{log_prefix} Stripped ALL {original_tool_count} tools for " "task completion handling",
-            )
 
     # Step 2: auto-prompt fallback.
     if not parameters.get("prompt") and input_data:

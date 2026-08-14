@@ -128,8 +128,8 @@ class TestGenericSpecializedAgents:
         _, kwargs = harness.ai_service.execute_chat_agent.await_args
         assert kwargs["parameters"]["prompt"] == "upstream prompt"
 
-    async def test_task_completion_strips_tools(self, harness):
-        """When task_data.status is completed, tool_data is stripped to []."""
+    async def test_task_completion_keeps_tools(self, harness):
+        """A completed-task firing must NOT strip the agent's tools."""
         harness.ai_service.execute_chat_agent = AsyncMock(return_value={"success": True, "result": {"response": "done"}})
 
         # Wire a tool and a task trigger to the agent.
@@ -166,8 +166,11 @@ class TestGenericSpecializedAgents:
             )
 
         _, kwargs = harness.ai_service.execute_chat_agent.await_args
-        # Tools should be stripped (kwarg value is None or []).
-        assert not kwargs.get("tool_data")
+        # Tools survive the completion firing.
+        assert kwargs.get("tool_data")
+        assert any(
+            t.get("node_id") == "tool-1" for t in kwargs["tool_data"]
+        )
 
     @pytest.mark.parametrize("node_type", TEAM_LEAD_AGENTS)
     async def test_team_lead_collects_teammates_as_tools(self, harness, node_type):

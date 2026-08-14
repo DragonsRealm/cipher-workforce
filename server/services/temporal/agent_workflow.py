@@ -2113,6 +2113,21 @@ class AgentWorkflow:
                         f"AgentWorkflow compaction failed terminally "
                         f"(iteration {iteration + 1}): {compact_detail}"
                     )
+                    # Same terminal-cleanup contract as the LLM-failure
+                    # path: clear turn-scoped skill badges before the
+                    # error status, or the canvas stays stuck on the last
+                    # capability after the workflow has ended.
+                    await workflow.execute_activity(
+                        "agent.skill.clear",
+                        args=[{
+                            "workflow_id": payload.get("workflow_id"),
+                            "execution_id": task_scope_execution_id,
+                            "agent_node_id": agent_node_id,
+                        }],
+                        activity_id="clear-active-skills-compaction-failed",
+                        start_to_close_timeout=PERSIST_TURN_TIMEOUT,
+                        retry_policy=AGENT_ACTIVITY_RETRY,
+                    )
                     await self._emit_phase(
                         agent_node_id,
                         agent_workflow_id,

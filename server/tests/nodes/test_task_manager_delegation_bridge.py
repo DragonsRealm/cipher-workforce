@@ -87,6 +87,71 @@ async def test_accept_never_guesses_when_multiple_tasks_are_submitted():
 
 
 @pytest.mark.asyncio
+async def test_reassign_returns_delegation_request_for_the_new_assignee():
+    """reassign moves the row to queued, and nothing sweeps queued rows —
+    the scheduling envelope is the ONLY runner. Without it the mutation
+    flipped the DB row and the work silently never re-ran."""
+    service = SimpleNamespace(
+        mutate_durable_task=AsyncMock(return_value={
+            "id": "task-3", "revision": 6, "status": "queued",
+            "assigned_to": "child-1", "mission": "Find evidence",
+            "context": {"topic": "queues"},
+        }),
+    )
+    with patch("services.agent_team.get_agent_team_service", return_value=service):
+        result = await _execute_task_manager({
+            "operation": "reassign_task", "task_id": "task-3",
+            "expected_revision": 5, "assignee_node_id": "child-1",
+        }, _config())
+
+    assert result["task"]["status"] == "queued"
+    envelope = result["delegation_request"]
+    assert envelope["team_task_id"] == "task-3"
+    assert envelope["assignee_node_id"] == "child-1"
+    assert envelope["delegate_name"]
+    assert envelope["task"] == "Find evidence"
+    assert envelope["context"] == {"topic": "queues"}
+
+
+@pytest.mark.asyncio
+async def test_retry_returns_delegation_request_for_the_current_assignee():
+    row = {
+        "id": "task-4", "revision": 2, "status": "failed",
+        "assigned_to": "child-1", "mission": "Find evidence", "context": {},
+    }
+    service = SimpleNamespace(
+        get_durable_task=AsyncMock(return_value=row),
+        mutate_durable_task=AsyncMock(return_value={
+            **row, "revision": 3, "status": "queued",
+        }),
+    )
+    with patch("services.agent_team.get_agent_team_service", return_value=service):
+        result = await _execute_task_manager(
+            {"operation": "retry_task", "task_id": "task-4"}, _config()
+        )
+
+    envelope = result["delegation_request"]
+    assert envelope["team_task_id"] == "task-4"
+    assert envelope["assignee_node_id"] == "child-1"
+    assert envelope["task"] == "Find evidence"
+
+
+@pytest.mark.asyncio
+async def test_accept_returns_no_delegation_request():
+    submitted = {"id": "task-5", "revision": 4, "status": "submitted"}
+    service = SimpleNamespace(
+        list_durable_tasks=AsyncMock(return_value=[submitted]),
+        mutate_durable_task=AsyncMock(
+            return_value={**submitted, "revision": 5, "status": "accepted"}
+        ),
+    )
+    with patch("services.agent_team.get_agent_team_service", return_value=service):
+        result = await _execute_task_manager({"operation": "accept_task"}, _config())
+
+    assert "delegation_request" not in result
+
+
+@pytest.mark.asyncio
 async def test_list_tasks_can_include_prior_executions():
     service = SimpleNamespace(list_durable_task_history=AsyncMock(return_value=[
         {"id": "old-task", "status": "accepted", "team_execution_id": "exec-old"},

@@ -210,11 +210,13 @@ class TestAIAgent:
         assert "shell-skill" not in names
         assert skill_data[0]["parameters"]["instructions"] == "Use python."
 
-    async def test_task_completion_strips_all_tools(self, harness):
-        """When an input-task edge delivers a completed task, tool_data is cleared.
+    async def test_task_completion_keeps_tools(self, harness):
+        """A completed-task firing must NOT strip the agent's tools.
 
-        Documented as a CRITICAL FIX in the handler: binding tools while telling
-        the LLM "do not use tools" confused Gemini.
+        The injected task context tells a team lead to list/accept/reassign
+        via the Task Manager tool — the old strip removed exactly that tool
+        on exactly that firing, so the lead could only answer in prose,
+        which read as "the orchestrator forgot its plan".
         """
         agent_id = "agent-4"
         trigger_id = "task-trig-1"
@@ -257,8 +259,11 @@ class TestAIAgent:
         )
 
         _, kwargs = harness.ai_service.execute_agent.call_args
-        # Tools stripped on task completion
-        assert kwargs["tool_data"] is None
+        # Tools survive the completion firing
+        assert kwargs["tool_data"]
+        assert any(
+            t.get("node_id") == tool_id for t in kwargs["tool_data"]
+        )
 
         # Prompt got the task context prepended
         sent_params = harness.ai_service.execute_agent.call_args.kwargs["parameters"]
@@ -394,8 +399,8 @@ class TestChatAgent:
         # Teammate params come along so delegation knows provider/model
         assert teammate_tool["parameters"]["model"] == "gpt"
 
-    async def test_chat_agent_task_error_strips_tools(self, harness):
-        """Same tool-strip behaviour as aiAgent on task failure."""
+    async def test_chat_agent_task_error_keeps_tools(self, harness):
+        """Same keep-tools behaviour as aiAgent on task failure."""
         chat_id = "chat-4"
         trig_id = "trig-4"
         tool_id = "tool-b"
@@ -426,7 +431,8 @@ class TestChatAgent:
         )
 
         _, kwargs = harness.ai_service.execute_chat_agent.call_args
-        assert kwargs["tool_data"] is None
+        assert kwargs["tool_data"]
+        assert any(t.get("node_id") == tool_id for t in kwargs["tool_data"])
         sent_params = harness.ai_service.execute_chat_agent.call_args.kwargs["parameters"]
         assert "failed" in sent_params["prompt"].lower()
 

@@ -221,6 +221,7 @@ async def _execute_task_manager(args: Dict[str, Any], config: Dict[str, Any]) ->
             )
     if not task_id:
         raise ValueError(f"{operation} requires task_id")
+    current: Optional[Dict[str, Any]] = None
     if revision is None:
         current = await service.get_durable_task(**scope, task_id=task_id)
         revision = current.get("revision")
@@ -228,9 +229,33 @@ async def _execute_task_manager(args: Dict[str, Any], config: Dict[str, Any]) ->
         raise ValueError(f"{operation} requires expected_revision")
     mapped = "accept" if operation in {"accept_task", "mark_done"} else operation.removesuffix("_task")
     payload = {k: args[k] for k in ("title", "mission", "context", "acceptance_criteria", "reason") if k in args}
+    # Resolve the runner BEFORE mutating so a disconnected assignee fails
+    # the operation cleanly instead of flipping the row and then stalling.
+    delegate: Optional[Dict[str, Any]] = None
     if operation == "reassign_task":
-        payload["assignee_node_id"] = _resolve_teammate(config, args)["node_id"]
+        delegate = _resolve_teammate(config, args)
+        payload["assignee_node_id"] = delegate["node_id"]
+    elif operation == "retry_task":
+        if current is None:
+            current = await service.get_durable_task(**scope, task_id=task_id)
+        delegate = _resolve_teammate(
+            config, {"assignee_node_id": current.get("assigned_to")}
+        )
     task = await service.mutate_durable_task(
         **scope, task_id=task_id, revision=int(revision), operation=mapped, **payload,
     )
-    return {"success": True, "operation": operation, "task": task}
+    result: Dict[str, Any] = {"success": True, "operation": operation, "task": task}
+    if delegate is not None:
+        # retry/reassign move the row to "queued", and nothing sweeps queued
+        # rows — the ONLY runner is this scheduling envelope, which the
+        # Temporal AgentWorkflow bridges to a DelegatedTaskWorkflow exactly
+        # like a fresh assign_task. Without it the mutation flipped the DB
+        # row and the work silently never re-ran.
+        result["delegation_request"] = {
+            "team_task_id": task["id"],
+            "assignee_node_id": delegate["node_id"],
+            "delegate_name": delegate["delegate_tool_name"],
+            "task": str(task.get("mission") or task.get("description") or ""),
+            "context": task.get("context") or {},
+        }
+    return result
