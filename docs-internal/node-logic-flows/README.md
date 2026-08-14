@@ -102,6 +102,13 @@ match its doc here, and each doc must still describe what the code does.
 - [Shell (`shell`)](./code_fs_process/shell.md)
 - [TypeScript Executor (`typescriptExecutor`)](./code_fs_process/typescriptExecutor.md)
 
+### discord
+
+- [Discord (`discordAction`)](./discord/discordAction.md)
+- [Discord Interaction (`discordInteraction`)](./discord/discordInteraction.md)
+- [Discord Receive (`discordReceive`)](./discord/discordReceive.md)
+- [Discord Send (`discordSend`)](./discord/discordSend.md)
+
 ### document
 
 - [Document Parser (`documentParser`)](./document/documentParser.md)

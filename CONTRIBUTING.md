@@ -163,6 +163,7 @@ Full setup and scripts reference: [SETUP.md](docs-internal/SETUP.md) - [SCRIPTS.
 | [stripe_service.md](docs-internal/stripe_service.md) | Reference Wave 12 plugin — signed webhooks + CLI-managed auth, file-by-file |
 | [vercel_service.md](docs-internal/vercel_service.md) | CLI-managed auth, device-flow variant |
 | [github_service.md](docs-internal/github_service.md) | gh CLI integration — CLI owns auth entirely |
+| [discord_service.md](docs-internal/discord_service.md) | Discord bot — gateway/REST split, multi-account on the credential `session_id` scope, Ed25519 interactions endpoint |
 | [event_waiter_system.md](docs-internal/event_waiter_system.md) | Push-based trigger waiters *(historical, pre-Wave-11 — canvas-Run path only)* |
 | [status_broadcaster.md](docs-internal/status_broadcaster.md) | WebSocket broadcaster (live handler count via `len(MESSAGE_HANDLERS) + len(get_ws_handlers())`) |
 | [credentials_encryption.md](docs-internal/credentials_encryption.md) | Fernet + PBKDF2 credentials system |
