@@ -78,16 +78,23 @@ QUICK_ACTIVITY_RETRY: RetryPolicy = RetryPolicy(
 )
 
 
-# Wave 17.2: one-shot policy for the LLM step. An LLM API call is NOT
-# idempotent from a cost perspective — every automatic re-attempt after
-# a worker crash / laptop sleep bills the full prompt again (and can
-# double-fire side effects when the first attempt actually completed
-# server-side but the worker died before recording the result). The
-# workflow layer (AgentWorkflow.run) owns the retry decision instead:
-# it catches the ActivityError with the message history intact and
-# surfaces the failure to the canvas rather than silently re-billing.
+# LLM-step policy: retry transient provider failures indefinitely with
+# exponential backoff. A clean provider rejection (429 rate limit, 5xx,
+# network refusal) bills nothing and MUST be retried — the previous
+# one-shot policy (Wave 17.2) killed the whole run on the first 429 and
+# then tripped the deployment circuit breaker. Terminal outcomes still
+# fail fast: ``_as_temporal_llm_error`` marks non-retryable categories
+# (invalid_request, authentication, ...) with ``non_retryable=True``,
+# which overrides this policy, and provider ``retry_after`` hints ride
+# ``ApplicationError.next_retry_delay``. Known trade-off, accepted: an
+# AMBIGUOUS loss (worker crash / timeout where the call may have
+# completed server-side) now also retries and can re-bill a prompt —
+# resilience of long-running deployments wins over billing paranoia.
 LLM_STEP_RETRY: RetryPolicy = RetryPolicy(
-    maximum_attempts=1,
+    initial_interval=timedelta(seconds=5),
+    backoff_coefficient=2.0,
+    maximum_interval=timedelta(minutes=5),
+    maximum_attempts=0,  # unlimited — liveness comes from heartbeats
     non_retryable_error_types=list(NON_RETRYABLE_ERROR_TYPES),
 )
 

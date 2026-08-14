@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+from datetime import timedelta
 import hashlib
 import json
 import logging
@@ -159,11 +160,23 @@ def _as_temporal_llm_error(error: Any):
         "retry_after": getattr(error, "retry_after", None),
         "retry_after_raw": getattr(error, "retry_after_raw", None),
     }
+    # Honor the provider's own pacing: a 429 with Retry-After should wait
+    # exactly that long before the next attempt instead of the policy's
+    # generic backoff.
+    retry_after = details["retry_after"]
+    next_retry_delay = (
+        timedelta(seconds=float(retry_after))
+        if details["retryable"]
+        and isinstance(retry_after, (int, float))
+        and retry_after > 0
+        else None
+    )
     return ApplicationError(
         safe_message,
         details,
         type=f"LLMError.{category}",
         non_retryable=not details["retryable"],
+        next_retry_delay=next_retry_delay,
     )
 
 
@@ -2058,17 +2071,14 @@ async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     activity.heartbeat("Compacting agent context")
     svc = get_compaction_service()
     if svc is None:
-        # Singleton wired by the FastAPI lifespan (main.py). A worker
-        # bootstrap race must not kill the run — the workflow checks
-        # ``success`` and keeps its existing messages on False.
-        return {
-            "success": False,
-            "error": (
-                "CompactionService not initialized (worker bootstrap race)"
-            ),
-            "summary": "",
-            "usage": {},
-        }
+        # Singleton wired by the FastAPI lifespan (main.py). Retryable:
+        # a worker bootstrap race resolves itself within the retry
+        # policy's backoff window.
+        raise ApplicationError(
+            "CompactionService not initialized (worker bootstrap race)",
+            type="CompactionFailed",
+            non_retryable=False,
+        )
 
     lines: List[str] = []
     for wire in payload.get("messages") or []:
@@ -2094,7 +2104,7 @@ async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         lines.append(line)
 
-    return await svc.compact_context(
+    result = await svc.compact_context(
         session_id=str(payload.get("session_id") or "default"),
         node_id=payload["node_id"],
         memory_content="\n\n".join(lines),
@@ -2105,5 +2115,16 @@ async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         # request inside the activity or SDK.
         explicit_max_retries=0,
     )
+    if not result.get("success") or not result.get("summary"):
+        # Compaction is the run's pressure-relief valve. Raising (retryable)
+        # gives transient summarizer failures the activity policy's retry
+        # budget; if it still cannot compact, the workflow fails the run
+        # loudly rather than letting the transcript grow unbounded.
+        raise ApplicationError(
+            f"Compaction failed: {result.get('error') or 'empty summary'}",
+            type="CompactionFailed",
+            non_retryable=False,
+        )
+    return result
 
 

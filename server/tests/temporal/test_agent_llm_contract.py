@@ -141,7 +141,68 @@ class TestWorkflowLoopContract:
         ]
         assert all("version" not in m for m in llm_payload["messages"])
         assert options["heartbeat_timeout"] == timedelta(minutes=1)
-        assert options["retry_policy"].maximum_attempts == 1
+        # Transient provider failures (429/5xx/network) retry indefinitely
+        # with backoff; terminal categories fail fast via the
+        # ApplicationError non_retryable marker, not this policy.
+        policy = options["retry_policy"]
+        assert policy.maximum_attempts == 0
+        assert policy.initial_interval == timedelta(seconds=5)
+        assert policy.maximum_interval == timedelta(minutes=5)
+
+    @pytest.mark.asyncio
+    async def test_compaction_failure_is_terminal_for_the_run(
+        self,
+        monkeypatch,
+        patched_workflow,
+    ):
+        """The pressure-relief valve failing must fail the run loudly.
+
+        Continuing with an ever-growing uncompacted transcript only defers
+        the failure to a confusing provider context-overflow error later.
+        """
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        prepared = _payload()
+        prepared["compaction_threshold"] = 5
+
+        async def fake_execute_activity(name, *, args, **_kwargs):
+            if name == "agent.prepare_payload":
+                return prepared
+            if name == "agent.broadcast_progress":
+                return {"emitted": True}
+            if name == "agent.execute_llm_step":
+                return {
+                    "kind": "tool_calls",
+                    "calls": [
+                        {"id": "missing-1", "name": "not_connected", "args": {}}
+                    ],
+                    "usage": {
+                        "input_tokens": 7,
+                        "output_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                }
+            if name == "agent.compact_context":
+                raise RuntimeError("Compaction failed: summarizer down")
+            if name == "agent.store_output":
+                return {"stored": True}
+            if name == "agent.skill.clear":
+                return {"cleared": True}
+            raise AssertionError(f"Unexpected activity {name}")
+
+        monkeypatch.setattr(
+            patched_workflow,
+            "execute_activity",
+            fake_execute_activity,
+        )
+
+        result = await AgentWorkflow().run(
+            {"node_id": "agent-1", "execution_id": "root-run-1"}
+        )
+
+        assert result["success"] is False
+        assert result["error_type"] == "CompactionError"
+        assert "Compaction failed" in result["error"]
 
     @pytest.mark.asyncio
     async def test_compaction_summarizes_live_messages_without_memory(
@@ -300,6 +361,8 @@ class TestLlmStepActivity:
         assert "raw body" not in str(temporal_error)
         assert temporal_error.type == "LLMError.rate_limit"
         assert temporal_error.non_retryable is False
+        # The provider's Retry-After hint paces the next Temporal attempt.
+        assert temporal_error.next_retry_delay == timedelta(seconds=1.5)
         assert temporal_error.details == (
             {
                 "provider": "openai",

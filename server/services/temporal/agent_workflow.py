@@ -851,12 +851,12 @@ class AgentWorkflow:
                 "include_finish_reason": True,
             }
 
-            # Wave 17.2: one-shot retry. The LLM call is not idempotent —
-            # a worker crash mid-call must not silently re-bill the full
-            # prompt (3x under the shared policy). The workflow owns the
-            # failure instead: message history is intact here, so a
-            # future enhancement can re-ask with context; today we
-            # surface the error to the canvas and stop the loop.
+            # Transient provider failures (429 rate limit, 5xx, network)
+            # retry inside the activity under LLM_STEP_RETRY (unlimited,
+            # exponential backoff, provider retry_after honored via
+            # next_retry_delay). Only non-retryable classifications
+            # (invalid_request, authentication, ...) reach this except
+            # block, and those are genuinely terminal for the run.
             try:
                 step_result = await workflow.execute_activity(
                     "agent.execute_llm_step",
@@ -893,8 +893,8 @@ class AgentWorkflow:
                         "Retry the run or check server logs."
                     )
                 workflow.logger.error(
-                    f"AgentWorkflow LLM step failed (iteration {iteration + 1}, "
-                    f"no auto-retry): {raw_detail}"
+                    f"AgentWorkflow LLM step failed terminally "
+                    f"(iteration {iteration + 1}): {raw_detail}"
                 )
                 # A failed model step is terminal for this run.  Clear any
                 # turn-scoped skill badges and publish an error status before
@@ -2090,16 +2090,49 @@ class AgentWorkflow:
                     "model": payload["model"],
                 }
                 await self._wait_until_resumed()
-                compact_result = await workflow.execute_activity(
-                    "agent.compact_context",
-                    args=[compact_payload],
-                    activity_id=f"compact-context-{iteration + 1}",
-                    start_to_close_timeout=COMPACT_MEMORY_TIMEOUT,
-                    retry_policy=AGENT_ACTIVITY_RETRY,
-                )
+                try:
+                    compact_result = await workflow.execute_activity(
+                        "agent.compact_context",
+                        args=[compact_payload],
+                        activity_id=f"compact-context-{iteration + 1}",
+                        start_to_close_timeout=COMPACT_MEMORY_TIMEOUT,
+                        retry_policy=AGENT_ACTIVITY_RETRY,
+                    )
+                except Exception as compact_error:
+                    # Compaction is the run's pressure-relief valve. If it
+                    # fails even after the activity policy's retries, the
+                    # transcript can only grow until the provider rejects
+                    # it — fail the run loudly NOW, at the moment the
+                    # cause is clear, instead of later with a confusing
+                    # context-overflow error.
+                    cause = getattr(compact_error, "cause", None)
+                    compact_detail = str(
+                        getattr(cause, "message", "") or cause or compact_error
+                    )
+                    workflow.logger.error(
+                        f"AgentWorkflow compaction failed terminally "
+                        f"(iteration {iteration + 1}): {compact_detail}"
+                    )
+                    await self._emit_phase(
+                        agent_node_id,
+                        agent_workflow_id,
+                        iteration,
+                        max_iterations,
+                        phase="failed",
+                        status="error",
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Compaction failed: {compact_detail}",
+                        "error_type": "CompactionError",
+                        "result": {
+                            "iterations": iteration + 1,
+                            "usage": usage_total,
+                        },
+                    }
                 # The summarizer is another billed model call. Include it in
-                # execution-wide usage whether persistence after the call
-                # succeeds or fails, but never in the active-context counter.
+                # execution-wide usage, but never in the active-context
+                # counter.
                 for key, value in (
                     compact_result.get("usage") or {}
                 ).items():
@@ -2107,38 +2140,28 @@ class AgentWorkflow:
                         usage_total[key] = (
                             usage_total.get(key, 0) + value
                         )
-                # Compaction is best-effort. When the service errors or
-                # was not initialized (worker bootstrap race), keep the
-                # existing messages and let the loop continue — masking
-                # the failure would surface as a confused LLM, not a
-                # workflow crash.
-                if not compact_result.get("success"):
-                    workflow.logger.warning(
-                        "AgentWorkflow compaction failed (%s); continuing " "with un-compacted history",
-                        compact_result.get("error", "no error reported"),
-                    )
-                else:
-                    summary = compact_result.get("summary", "")
-                    if summary:
-                        # Replace the running messages with the summary
-                        # plus the last user prompt — same pattern
-                        # ``CompactionService`` uses today in services/ai.py.
-                        compacted_content = f"## Compacted summary:\n{summary}"
-                        messages = [
-                            _native_message(
-                                role="system",
-                                content=system,
-                            ),
-                            _native_message(
-                                role="system",
-                                content=compacted_content,
-                            ),
-                            _native_message(
-                                role="user",
-                                content=user_prompt,
-                            ),
-                        ]
-                        context_usage_total = {}
+                # The activity raises on any failure, so a result here
+                # always carries a non-empty summary.
+                summary = compact_result.get("summary", "")
+                # Replace the running messages with the summary plus the
+                # last user prompt — same pattern ``CompactionService``
+                # uses today in services/ai.py.
+                compacted_content = f"## Compacted summary:\n{summary}"
+                messages = [
+                    _native_message(
+                        role="system",
+                        content=system,
+                    ),
+                    _native_message(
+                        role="system",
+                        content=compacted_content,
+                    ),
+                    _native_message(
+                        role="user",
+                        content=user_prompt,
+                    ),
+                ]
+                context_usage_total = {}
 
             # ---- Continue-as-new -------------------------------------
             # Only at a clean turn boundary, and never while a delegation
