@@ -517,12 +517,11 @@ async def test_workflow_delete_archives_context_before_graph(
         )
     )
     database.delete_workflow = AsyncMock(return_value=True)
-    store = SimpleNamespace(archive_context=AsyncMock(return_value=[]))
+    import services.agent_context as agent_context
+
+    clear = AsyncMock(return_value=0)
     monkeypatch.setattr(handlers.container, "database", lambda: database)
-    monkeypatch.setattr(
-        "services.agent_context.AgentContextStore",
-        lambda _: store,
-    )
+    monkeypatch.setattr(agent_context, "clear_conversation", clear)
 
     result = await handlers.handle_delete_workflow(
         {"workflow_id": "12"},
@@ -535,12 +534,7 @@ async def test_workflow_delete_archives_context_before_graph(
         "contexts_archived": 1,
         "context_archives_pending": 0,
     }
-    store.archive_context.assert_awaited_once_with(
-        workflow_id="12",
-        context_node_id="ctx",
-        generation=None,
-        operation_id="workflow-deleted:12:ctx",
-    )
+    clear.assert_awaited_once_with(database, workflow_id="12")
     database.delete_workflow.assert_awaited_once_with("12")
 
 

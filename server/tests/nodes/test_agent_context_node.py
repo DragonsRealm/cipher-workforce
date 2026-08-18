@@ -15,14 +15,9 @@ from services.plugin.edge_walker import collect_agent_connections
 from services.ws_handler_registry import get_ws_handlers
 
 
-def test_context_node_declares_only_policy_and_dedicated_handle():
+def test_context_node_declares_no_parameters_and_a_dedicated_handle():
     schema = AgentContextParams.model_json_schema()
-    assert set(schema["properties"]) == {
-        "compaction_mode",
-        "trigger_ratio",
-        "context_window_override",
-        "exact_tail_retention_count",
-    }
+    assert set(schema.get("properties", {})) == set()
     forbidden = {
         "journal",
         "messages",
@@ -32,7 +27,7 @@ def test_context_node_declares_only_policy_and_dedicated_handle():
         "epoch",
         "revision",
     }
-    assert forbidden.isdisjoint(schema["properties"])
+    assert forbidden.isdisjoint(schema.get("properties", {}))
     assert AgentContextNode.handles == (
         {
             "name": "output-context",
@@ -66,7 +61,6 @@ def test_context_policy_rejects_runtime_payloads():
     with pytest.raises(ValidationError):
         AgentContextParams.model_validate(
             {
-                "compaction_mode": "auto",
                 "journal": [{"role": "user", "content": "secret"}],
             }
         )
@@ -77,24 +71,20 @@ def test_context_panel_handlers_self_register():
     assert {
         "get_agent_context",
         "clear_agent_context",
-        "fork_agent_context",
-        "export_agent_context",
     }.issubset(handlers)
+    # The journal-era handlers are gone with the journal itself.
+    assert "fork_agent_context" not in handlers
+    assert "export_agent_context" not in handlers
 
 
 @pytest.mark.asyncio
-async def test_context_node_operation_is_policy_only_and_metadata_only():
+async def test_context_node_operation_is_metadata_only():
     assert set(AgentContextNode._operations) == {"policy"}
     result = await AgentContextNode().policy(
         NodeContext(node_id="context-1", node_type="context"),
         AgentContextParams(),
     )
-    assert result.model_dump() == {
-        "configured": True,
-        "compaction_mode": "auto",
-        "trigger_ratio": 0.8,
-        "exact_tail_retention_count": 8,
-    }
+    assert result.model_dump() == {"configured": True}
 
 
 @pytest.mark.asyncio
@@ -196,4 +186,7 @@ class TestContextPluginOwnsItsDescriptor:
         # one thread; the delegated task is the isolation boundary.
         assert got["session_id"] is None
         assert got["delegated_task_id"] == "task-9"
-        assert got["policy"] == {"compaction_mode": "auto"}
+        # Only DECLARED params travel in the descriptor; the node declares
+        # none, so stored legacy keys (compaction_mode, memory_content)
+        # never leak into the runtime.
+        assert got["policy"] == {}

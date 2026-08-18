@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.agent_context import AgentContextStore
+import services.agent_context as agent_context
+from services.agent_context import (
+    list_conversations,
+    load_conversation,
+    save_conversation,
+)
 
 
 @pytest.fixture
@@ -185,12 +190,12 @@ async def test_pending_archive_recovers_on_workflow_read(
         "workflow",
         _graph(with_context=True),
     )
-    store = AgentContextStore(database)
-    await store.resolve_thread(
+    await save_conversation(
+        database,
         workflow_id="1",
-        context_node_id="ctx",
         generation=1,
-        session_id="session",
+        agent_node_id="agent",
+        messages=[{"role": "user", "content": "hello"}],
     )
 
     # Simulate a process crash after graph commit and before the outbox drain.
@@ -202,19 +207,12 @@ async def test_pending_archive_recovers_on_workflow_read(
     )
     assert len(await database.list_workflow_context_archive_outbox("1")) == 1
 
-    real_store = AgentContextStore
+    real_clear = agent_context.clear_conversation
 
-    class _FailingStore:
-        def __init__(self, database):
-            self.database = database
+    async def failing_clear(*args, **kwargs):
+        raise RuntimeError("simulated_archive_crash")
 
-        async def archive_context(self, **kwargs):
-            raise RuntimeError("simulated_archive_crash")
-
-    monkeypatch.setattr(
-        "services.agent_context.AgentContextStore",
-        _FailingStore,
-    )
+    monkeypatch.setattr(agent_context, "clear_conversation", failing_clear)
     monkeypatch.setattr(handlers.container, "database", lambda: database)
     first = await handlers.handle_get_workflow(
         {"workflow_id": "1"},
@@ -222,17 +220,16 @@ async def test_pending_archive_recovers_on_workflow_read(
     )
     assert first["context_archives_pending"] == 1
     assert (
-        await store.list_threads(
+        await load_conversation(
+            database,
             workflow_id="1",
-            context_node_id="ctx",
-            include_archived=True,
+            generation=1,
+            agent_node_id="agent",
         )
-    )[0].status == "active"
-
-    monkeypatch.setattr(
-        "services.agent_context.AgentContextStore",
-        real_store,
+        != []
     )
+
+    monkeypatch.setattr(agent_context, "clear_conversation", real_clear)
     recovered = await handlers.handle_get_workflow(
         {"workflow_id": "1"},
         websocket=None,
@@ -240,13 +237,7 @@ async def test_pending_archive_recovers_on_workflow_read(
     assert recovered["context_archives_completed"] == 1
     assert recovered["context_archives_pending"] == 0
     assert await database.list_workflow_context_archive_outbox("1") == []
-    assert (
-        await store.list_threads(
-            workflow_id="1",
-            context_node_id="ctx",
-            include_archived=True,
-        )
-    )[0].status == "archived"
+    assert await list_conversations(database, workflow_id="1") == []
 
 
 @pytest.mark.asyncio
@@ -264,12 +255,12 @@ async def test_workflow_delete_commits_tombstone_then_archives(
         "workflow",
         _graph(with_context=True),
     )
-    store = AgentContextStore(database)
-    await store.resolve_thread(
+    await save_conversation(
+        database,
         workflow_id="1",
-        context_node_id="ctx",
         generation=1,
-        session_id="session",
+        agent_node_id="agent",
+        messages=[{"role": "user", "content": "hello"}],
     )
 
     result = await delete_workflow_with_context_archival(
@@ -288,13 +279,7 @@ async def test_workflow_delete_commits_tombstone_then_archives(
         await database.list_workflow_context_archive_outbox("1")
         == []
     )
-    assert (
-        await store.list_threads(
-            workflow_id="1",
-            context_node_id="ctx",
-            include_archived=True,
-        )
-    )[0].status == "archived"
+    assert await list_conversations(database, workflow_id="1") == []
 
 
 @pytest.mark.asyncio
@@ -330,12 +315,12 @@ async def test_failed_workflow_delete_rolls_back_archive_tombstone(
         "second",
         _graph(with_context=True),
     )
-    store = AgentContextStore(database)
-    await store.resolve_thread(
+    await save_conversation(
+        database,
         workflow_id="2",
-        context_node_id="ctx",
         generation=1,
-        session_id="session",
+        agent_node_id="agent",
+        messages=[{"role": "user", "content": "hello"}],
     )
 
     # Enqueuing workflow 2's archive collides with the existing outbox ID.
@@ -349,9 +334,11 @@ async def test_failed_workflow_delete_rolls_back_archive_tombstone(
         == []
     )
     assert (
-        await store.list_threads(
+        await load_conversation(
+            database,
             workflow_id="2",
-            context_node_id="ctx",
-            include_archived=True,
+            generation=1,
+            agent_node_id="agent",
         )
-    )[0].status == "active"
+        != []
+    )

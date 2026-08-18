@@ -293,9 +293,8 @@ async def _drain_context_archive_outbox(
     if not pending:
         return 0, 0
 
-    from services.agent_context import AgentContextStore
+    from services.agent_context import clear_conversation
 
-    store = AgentContextStore(database)
     completed = 0
     for receipt in pending:
         outbox_id = str(receipt.get("id") or "")
@@ -307,12 +306,9 @@ async def _drain_context_archive_outbox(
             )
             continue
         try:
-            await store.archive_context(
-                workflow_id=workflow_id,
-                context_node_id=context_node_id,
-                generation=None,
-                operation_id=f"context-archive-outbox:{outbox_id}",
-            )
+            # Plain store: deleting the workflow deletes its conversations.
+            # Idempotent per receipt — a second pass finds nothing to clear.
+            await clear_conversation(database, workflow_id=workflow_id)
             acknowledged = await database.complete_workflow_context_archive_outbox(
                 outbox_id=outbox_id,
                 workflow_id=workflow_id,
@@ -683,16 +679,9 @@ async def _archive_workflow_contexts(database: Any, workflow_id: str) -> int:
     if not context_ids:
         return 0
 
-    from services.agent_context import AgentContextStore
+    from services.agent_context import clear_conversation
 
-    store = AgentContextStore(database)
-    for context_id in context_ids:
-        await store.archive_context(
-            workflow_id=workflow_id,
-            context_node_id=context_id,
-            generation=None,
-            operation_id=f"workflow-deleted:{workflow_id}:{context_id}",
-        )
+    await clear_conversation(database, workflow_id=workflow_id)
     return len(context_ids)
 
 

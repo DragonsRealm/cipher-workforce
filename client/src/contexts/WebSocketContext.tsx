@@ -1063,12 +1063,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           break;
         }
 
-        case 'context.updated':
-        case 'context.compacted':
-        case 'context.epoch.started': {
-          // CloudEvents-typed Context journal lifecycle from
-          // server/nodes/context/_events.py, emitted by the store after every
-          // durable commit. The payload is identity + revision only, so the
+        case 'context.updated': {
+          // CloudEvents-typed conversation lifecycle from
+          // server/nodes/context/_events.py, emitted after every durable
+          // conversation save. The payload is identity + count only, so the
           // panel refetches through the authorized `get_agent_context` handler
           // rather than reading transcript content off a broadcast that
           // reaches every connected client. Prefix invalidation: only a

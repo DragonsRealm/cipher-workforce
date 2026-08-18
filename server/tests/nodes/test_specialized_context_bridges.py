@@ -161,18 +161,13 @@ async def test_codex_node_routes_observable_context_without_resume(harness):
 
 
 @pytest.mark.asyncio
-async def test_vertex_uses_context_binding_and_redacts_ids_from_output(harness):
+async def test_vertex_records_context_turn_and_redacts_ids_from_output(harness):
     nodes, edges = _context_graph("vertex-1", "vertex_managed_agent")
     bridge = MagicMock()
-    bridge.load_binding = AsyncMock(
-        return_value={
-            "interaction_id": "ix-prev",
-            "environment_id": "env-prev",
-        }
+    bridge.record_turn = AsyncMock()
+    bridge.augment_prompt = MagicMock(
+        side_effect=lambda prompt: f"prior\n{prompt}"
     )
-    bridge.append_observable = AsyncMock()
-    bridge.bind_provider = AsyncMock()
-    bridge.augment_prompt = MagicMock(side_effect=lambda prompt: prompt)
     interaction = SimpleNamespace(
         id="ix-next",
         status="completed",
@@ -218,11 +213,13 @@ async def test_vertex_uses_context_binding_and_redacts_ids_from_output(harness):
 
     harness.assert_envelope(result, success=True)
     _, kwargs = stream.call_args
-    assert kwargs["previous_interaction_id"] == "ix-prev"
-    assert kwargs["environment"] == "env-prev"
+    # Context-bound runs never chain remote interactions: continuity comes
+    # from the stored conversation rendered into the prompt.
+    assert "previous_interaction_id" not in kwargs
+    assert kwargs["environment"] == "remote"
+    assert kwargs["input"] == "prior\ncontinue"
     assert result["result"]["interaction_id"] is None
     assert result["result"]["environment_id"] is None
-    bridge.bind_provider.assert_awaited_once()
-    binding = bridge.bind_provider.await_args.args[1]
-    assert binding["interaction_id"] == "ix-next"
-    assert binding["environment_id"] == "env-next"
+    # The exchange is recorded with the ORIGINAL prompt, never the
+    # augmented one, so a later save cannot nest the transcript.
+    bridge.record_turn.assert_awaited_once_with("continue", "answer")

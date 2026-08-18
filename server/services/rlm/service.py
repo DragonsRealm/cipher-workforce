@@ -55,12 +55,7 @@ class RLMService:
                 database,
                 context_data,
                 provider="rlm",
-                fidelity="observable_only",
-                resumable=False,
-                operation_prefix=(
-                    f"rlm-context:"
-                    f"{(context or {}).get('execution_id') or 'run'}:{node_id}"
-                ),
+                agent_node_id=node_id,
             )
 
         async def broadcast_status(phase: str, details: Dict[str, Any] = None):
@@ -161,15 +156,6 @@ class RLMService:
                     )
                 effective_tool_data = canonical_tool_data
 
-            async def record_ambiguous_tool_outcome(
-                payload: Dict[str, Any],
-            ) -> None:
-                if context_bridge is not None:
-                    await context_bridge.append_observable(
-                        "tool.ambiguous_outcome",
-                        payload,
-                    )
-
             custom_tools = ToolBridgeAdapter.bridge(
                 effective_tool_data,
                 context,
@@ -178,11 +164,7 @@ class RLMService:
                 parent_node_id=node_id,
                 workflow_id=workflow_id,
                 provider=provider,
-                ambiguous_outcome_sink=(
-                    record_ambiguous_tool_outcome
-                    if context_bridge is not None
-                    else None
-                ),
+                ambiguous_outcome_sink=None,
             )
 
             # === RLM-specific parameters ===
@@ -222,27 +204,6 @@ class RLMService:
                     augmented_prompt
                 )
 
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "provider.request",
-                    {
-                        "provider": provider,
-                        "model": model,
-                        "prompt": augmented_prompt,
-                        "max_iterations": max_iterations,
-                        "max_depth": max_depth,
-                        "max_budget": max_budget,
-                        "max_timeout": max_timeout,
-                        "max_tokens": max_tokens,
-                        "tool_node_ids": [
-                            item.get("node_id")
-                            for item in effective_tool_data
-                            if isinstance(item, dict)
-                        ],
-                    },
-                    operation_suffix="request",
-                )
-
             def _run_rlm():
                 from rlm import RLM
                 from rlm.logger import RLMLogger
@@ -266,16 +227,15 @@ class RLMService:
 
             result = await asyncio.to_thread(_run_rlm)
 
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "provider.result",
-                    {
-                        "response": result.response,
-                        "metadata": result.metadata,
-                        "usage_summary": result.usage_summary,
-                    },
-                    operation_suffix="result",
-                )
+            if context_bridge is not None and result.response:
+                # Best-effort: the provider already ran and billed, so a
+                # save failure must not fail the run.
+                try:
+                    await context_bridge.record_turn(prompt, result.response)
+                except Exception as exc:
+                    logger.warning(
+                        "[RLM] conversation save failed; continuing: %s", exc
+                    )
 
             # === Memory save (same pattern as execute_chat_agent) ===
             if memory_data and memory_data.get("node_id"):
@@ -314,26 +274,13 @@ class RLMService:
             }
 
         except Exception as e:
-            public_error = (
-                str(e)
-                if context_bridge is None
-                else f"{type(e).__name__}: RLM execution failed"
-            )
+            public_error = str(e)
             logger.error(
                 "[RLM] Execution failed type=%s",
                 type(e).__name__,
-                exc_info=context_bridge is None,
+                exc_info=True,
             )
             execution_time = time.time() - start_time
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "provider.error",
-                    {
-                        "error_type": type(e).__name__,
-                        "error": str(e),
-                    },
-                    operation_suffix="error",
-                )
             await broadcast_status("error", {"message": public_error})
             return {
                 "success": False,

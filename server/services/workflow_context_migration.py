@@ -1,9 +1,13 @@
-"""Durable second phase for Context V2 workflow normalization.
+"""Second phase for Context workflow normalization.
 
-The pure graph migration returns state-import receipts after canonical IDs are
-known.  This module commits those receipts before the normalized graph replaces
-its legacy topology, so a failed import never silently discards the only copy
-of legacy conversation state.
+The pure graph migration (``services/workflow_migrations.py``) returns
+state-import receipts after canonical IDs are known. With the plain
+conversation store (``key → messages JSON``) there is no journal to import
+legacy markdown into: a migrated graph simply starts its next generation
+with an empty conversation, and the legacy markdown remains inert on the
+old node parameters (``SimpleMemoryParams`` declares ``extra="ignore"``).
+The receipt-processing entry points are kept so callers need no changes,
+but they are deliberate no-ops now.
 """
 
 from __future__ import annotations
@@ -11,7 +15,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Iterable, Mapping
 
-from services.agent_context import AgentContextStore
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def load_node_parameters(
@@ -42,77 +48,20 @@ async def import_legacy_context_receipts(
     database: Any,
     receipts: Iterable[Mapping[str, Any]],
 ) -> int:
-    """Idempotently preserve Markdown and provider bindings as artifacts."""
+    """No-op under the plain conversation store.
 
-    store = AgentContextStore(database)
-    imported = 0
-    for receipt in receipts:
-        workflow_id = str(receipt.get("workflow_id") or "")
-        context_node_id = str(receipt.get("context_node_id") or "")
-        operation_id = str(receipt.get("operation_id") or "")
-        if not workflow_id or not context_node_id or not operation_id:
-            raise ValueError("invalid_context_import_receipt")
+    Legacy markdown/provider-binding receipts were journal imports; the
+    plain store starts migrated conversations fresh. Logged so a migration
+    that produced receipts is still visible in the operator log.
+    """
 
-        # Generation zero is the immutable migration epoch. A new execution
-        # imports it as a portable handoff into its own generation/thread.
-        ref = await store.resolve_thread(
-            workflow_id=workflow_id,
-            context_node_id=context_node_id,
-            generation=0,
-            session_id=str(
-                receipt.get("legacy_session_id")
-                or receipt.get("agent_node_id")
-                or "legacy"
-            ),
+    count = sum(1 for _ in receipts)
+    if count:
+        logger.info(
+            f"[migration] {count} legacy context receipt(s) skipped — the "
+            "plain conversation store starts migrated conversations fresh"
         )
-        markdown = receipt.get("markdown")
-        payload_ref = None
-        if markdown:
-            payload_ref = await store.put_blob(
-                {
-                    "format": "legacy_markdown",
-                    "fidelity": "legacy_partial",
-                    "content": str(markdown),
-                    "source_memory_node_id": receipt.get(
-                        "legacy_memory_node_id"
-                    ),
-                }
-            )
-        await store.append_transition(
-            ref,
-            event_type="legacy_partial",
-            operation_id=operation_id,
-            payload_ref=payload_ref,
-            provider="legacy",
-        )
-
-        bindings = dict(receipt.get("provider_bindings") or {})
-        claude_session = bindings.get("last_session_id")
-        if claude_session:
-            await store.bind_provider(
-                ref,
-                provider="claude_code",
-                binding_type="session_uuid",
-                binding={"session_uuid": str(claude_session)},
-                operation_id=f"{operation_id}:claude-session",
-                fidelity="provider_bound",
-            )
-        vertex_interaction = bindings.get("vertex_interaction_id")
-        vertex_environment = bindings.get("vertex_environment_id")
-        if vertex_interaction or vertex_environment:
-            await store.bind_provider(
-                ref,
-                provider="vertex",
-                binding_type="interaction_environment",
-                binding={
-                    "interaction_id": vertex_interaction,
-                    "environment_id": vertex_environment,
-                },
-                operation_id=f"{operation_id}:vertex-binding",
-                fidelity="provider_bound",
-            )
-        imported += 1
-    return imported
+    return 0
 
 
 async def persist_parameter_aliases(
@@ -155,38 +104,15 @@ async def archive_removed_contexts(
     normalized_nodes: Iterable[Mapping[str, Any]],
     aliases: Mapping[str, str],
 ) -> int:
-    """Archive journals whose system Context node left the saved graph."""
+    """No-op under the plain conversation store.
 
-    previous = {
-        str(node.get("id") or "")
-        for node in previous_nodes
-        if node.get("type") == "context" and node.get("id")
-    }
-    current = {
-        str(node.get("id") or "")
-        for node in normalized_nodes
-        if node.get("type") == "context" and node.get("id")
-    }
-    # Canonicalization is a rename, not deletion.
-    removed = {
-        context_id
-        for context_id in previous
-        if context_id not in current
-        and aliases.get(context_id) not in current
-    }
-    if not removed:
-        return 0
-    store = AgentContextStore(database)
-    for context_id in sorted(removed):
-        await store.archive_context(
-            workflow_id=workflow_id,
-            context_node_id=context_id,
-            generation=None,
-            operation_id=(
-                f"context-node-removed:{workflow_id}:{context_id}"
-            ),
-        )
-    return len(removed)
+    Conversations are keyed by agent node, not Context node; removing a
+    Context node merely opts the agent out of persistence going forward.
+    Stored rows stay until the workflow is deleted (or cleared from the
+    panel) — harmless, and cheaper than guessing which agent they served.
+    """
+
+    return 0
 
 
 __all__ = [

@@ -46,12 +46,7 @@ from models.database import (
     WorkflowContextArchiveOutbox,
 )
 from models.agent_context import (  # noqa: F401 - registers SQLModel tables
-    AgentContextBlobRecord,
-    AgentContextCheckpointRecord,
-    AgentContextCompactionAttemptRecord,
-    AgentContextEventRecord,
-    AgentContextProviderBindingRecord,
-    AgentContextThreadRecord,
+    AgentConversation,
 )
 from models.cache import CacheEntry  # SQLite-backed cache for Redis alternative
 from core.logging import get_logger

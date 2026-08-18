@@ -1,4 +1,10 @@
-"""Focused contracts for Context-backed Temporal agent orchestration."""
+"""Focused contracts for Context-backed Temporal agent orchestration.
+
+The retired ``_thread_inputs`` session-routing tests are gone with the
+journal: the plain conversation store keys on
+``(workflow_id, generation, agent_node_id)`` and deliberately ignores
+session identity, so every firing of an agent continues one conversation.
+"""
 
 from __future__ import annotations
 
@@ -44,56 +50,3 @@ def test_new_generation_routes_to_v2_but_missing_metadata_stays_v1():
     }
     assert missing_generation["name"] == "AgentWorkflow"
     assert missing_version["name"] == "AgentWorkflow"
-
-
-def test_delegated_thread_identity_does_not_inherit_parent_session():
-    from services.temporal.agent_activities import _thread_inputs
-
-    value = _thread_inputs(
-        {
-            "session_id": "parent-chat",
-            "team_task_id": "task-42",
-            "execution_id": "run-1",
-        }
-    )
-    assert value == {
-        "session_id": None,
-        "delegated_task_id": "task-42",
-        "execution_id": "run-1",
-    }
-
-
-def test_control_data_scope_is_not_treated_as_explicit_chat_session():
-    from services.temporal.agent_activities import _thread_inputs
-
-    value = _thread_inputs(
-        {
-            "session_id": "scope-1",
-            "data_scope_id": "scope-1",
-            "execution_id": "generation-1",
-            "context_execution_id": "firing-42",
-        }
-    )
-    assert value == {
-        "session_id": None,
-        "delegated_task_id": None,
-        "execution_id": "firing-42",
-    }
-
-
-def test_explicit_event_session_beats_execution_thread():
-    from services.temporal.agent_activities import _thread_inputs
-
-    value = _thread_inputs(
-        {
-            "session_id": "scope-1",
-            "data_scope_id": "scope-1",
-            "context_session_id": "chat-7",
-            "context_execution_id": "firing-42",
-        }
-    )
-    assert value == {
-        "session_id": "chat-7",
-        "delegated_task_id": None,
-        "execution_id": "firing-42",
-    }

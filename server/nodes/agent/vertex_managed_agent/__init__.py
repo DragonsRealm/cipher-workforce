@@ -249,11 +249,7 @@ class VertexManagedAgentNode(ActionNode):
                 database,
                 context_data,
                 provider="vertex",
-                fidelity="provider_bound",
-                resumable=True,
-                operation_prefix=(
-                    f"vertex-context:{ctx.execution_id or 'run'}:{node_id}"
-                ),
+                agent_node_id=node_id,
             )
 
         prompt = params.prompt or self._prompt_from_input(input_data)
@@ -262,6 +258,7 @@ class VertexManagedAgentNode(ActionNode):
                 "vertex_managed_agent: provide a prompt or connect an "
                 "input node that produced a message."
             )
+        original_prompt = prompt
         if context_bridge is not None:
             prompt = context_bridge.augment_prompt(prompt)
 
@@ -287,18 +284,6 @@ class VertexManagedAgentNode(ActionNode):
             )
 
         on_event = visibility_handler
-        if context_bridge is not None:
-            async def context_on_event(event: Any) -> None:
-                # Persist the complete provider event before the UI-oriented
-                # live handler shapes/pulses it.
-                await context_bridge.append_observable(
-                    "provider.stream",
-                    self._jsonable(event),
-                )
-                if visibility_handler is not None:
-                    await visibility_handler(event)
-
-            on_event = context_on_event
 
         # ---- memory bridge: interaction/environment chain ids
         prev_interaction_id: Optional[str] = None
@@ -309,15 +294,9 @@ class VertexManagedAgentNode(ActionNode):
             mem_params = await database.get_node_parameters(memory_node_id) or {}
             prev_interaction_id = mem_params.get("vertex_interaction_id") or None
             environment = mem_params.get("vertex_environment_id") or "remote"
-        elif context_bridge is not None:
-            await phase("loading_context")
-            binding = await context_bridge.load_binding(
-                "interaction_environment"
-            )
-            prev_interaction_id = (
-                str((binding or {}).get("interaction_id") or "") or None
-            )
-            environment = (binding or {}).get("environment_id") or "remote"
+        # Context-bound runs start a fresh remote interaction every firing:
+        # continuity comes from the stored conversation rendered into the
+        # prompt, not from chained provider interaction ids.
 
         create_kwargs: Dict[str, Any] = {
             "agent": params.agent,
@@ -350,40 +329,11 @@ class VertexManagedAgentNode(ActionNode):
             create_kwargs["tools"] = declared_tools
 
         async def run_turn(**kw: Any) -> Any:
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "provider.request",
-                    {
-                        "agent": params.agent,
-                        "request": kw,
-                        "has_system_instruction": bool(system_instruction),
-                        "declared_tools": declared_tools,
-                    },
-                )
             try:
-                result = await stream_interaction(
+                return await stream_interaction(
                     client, on_event=on_event, **create_kwargs, **kw
                 )
-                if context_bridge is not None:
-                    await context_bridge.append_observable(
-                        "provider.response",
-                        self._jsonable(result),
-                    )
-                return result
             except Exception as exc:  # noqa: BLE001 — mapped below
-                if context_bridge is not None:
-                    await context_bridge.append_observable(
-                        "provider.ambiguous_outcome",
-                        {
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
-                        },
-                    )
-                    raise NodeUserError(
-                        "Vertex managed agent interaction failed "
-                        f"({type(exc).__name__}); inspect the authorized "
-                        "Context journal for provider details."
-                    ) from exc
                 raise_as_user_error(exc, what="Vertex managed agent interaction")
 
         # ---- turn 1 (with one stale-chain retry)
@@ -414,11 +364,7 @@ class VertexManagedAgentNode(ActionNode):
                 logger.warning(
                     "[Vertex Agent] unresumable interaction chain for %s (%s) — retrying fresh",
                     node_id,
-                    (
-                        type(cause).__name__
-                        if context_bridge is not None
-                        else str(cause).replace("\n", " ")[:120]
-                    ),
+                    str(cause).replace("\n", " ")[:120],
                 )
                 if memory_node_id:
                     await self._save_chain_ids(
@@ -432,16 +378,6 @@ class VertexManagedAgentNode(ActionNode):
                             if ctx.execution_id
                             else None
                         ),
-                    )
-                elif context_bridge is not None:
-                    await context_bridge.bind_provider(
-                        "interaction_environment",
-                        {
-                            "interaction_id": None,
-                            "environment_id": None,
-                            "reset_reason": "unresumable_chain",
-                        },
-                        operation_suffix="binding-reset",
                     )
                 prev_interaction_id = None
                 environment = "remote"
@@ -476,11 +412,6 @@ class VertexManagedAgentNode(ActionNode):
                 function_result = await self._execute_bridged_call(
                     call, tool_configs, ctx, delegation_wait_seconds=wait
                 )
-                if context_bridge is not None:
-                    await context_bridge.append_observable(
-                        "tool.result",
-                        function_result,
-                    )
                 function_results.append(function_result)
             turn += 1
             await broadcaster.broadcast_agent_progress(
@@ -558,29 +489,20 @@ class VertexManagedAgentNode(ActionNode):
                     else None
                 ),
             )
-        elif context_bridge is not None:
+        elif context_bridge is not None and response_text:
             await phase("saving_context")
-            if status in _RESUMABLE_STATUSES:
-                await context_bridge.bind_provider(
-                    "interaction_environment",
-                    {
-                        "interaction_id": getattr(interaction, "id", None),
-                        "environment_id": environment_id,
-                        "status": status,
-                    },
-                    operation_suffix="interaction-binding",
+            # Best-effort: the provider already ran and billed, so a save
+            # failure must not fail the run.
+            try:
+                await context_bridge.record_turn(
+                    original_prompt,
+                    response_text,
                 )
-            await context_bridge.append_observable(
-                "provider.final",
-                {
-                    "status": status,
-                    "turns": turn,
-                    "response": response_text,
-                    "usage": usage,
-                    "warnings": run_warnings,
-                },
-                operation_suffix="final",
-            )
+            except Exception as exc:  # noqa: BLE001 — best-effort persist
+                logger.warning(
+                    "[Vertex Agent] conversation save failed; continuing: %s",
+                    exc,
+                )
 
         # ---- usage bookkeeping (tokens billed by Google; recorded for stats)
         try:

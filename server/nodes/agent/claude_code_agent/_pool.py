@@ -116,8 +116,8 @@ class PooledClaudeSession:
     stream-json mode, NOT to the JSONL file.
     """
 
-    # V1 uses a Simple Memory node id. Context V2 uses the exact
-    # (context_node_id, thread_id, epoch) tuple.
+    # V1 uses a Simple Memory node id. Context-bound runs use the exact
+    # (workflow_id, agent_node_id, generation) conversation key.
     memory_node_id: ClaudePoolKey
     process: asyncio.subprocess.Process
     cwd: Path
@@ -282,7 +282,7 @@ class ClaudeSessionPool:
                     for stale_key in stale_keys:
                         await self._terminate_locked(
                             stale_key,
-                            reason="epoch_changed",
+                            reason="generation_changed",
                         )
                 existing = self._pool.get(memory_node_id)
                 crashed_uuid = ""
@@ -512,19 +512,19 @@ class ClaudeSessionPool:
         async with self._pool_lock:
             await self._terminate_locked(memory_node_id)
 
-    async def terminate_context(
+    async def terminate_conversations(
         self,
-        context_node_id: str,
+        workflow_id: str,
         *,
-        thread_id: Optional[str] = None,
-        keep_epoch: Optional[int] = None,
+        agent_node_id: Optional[str] = None,
+        keep_generation: Optional[int] = None,
     ) -> int:
-        """Terminate warm processes fenced by a Context lifecycle change.
+        """Terminate warm processes whose stored conversation was cleared.
 
-        Context clear/reset handlers can call this immediately after
-        ``start_epoch``.  ``acquire`` independently performs the same fence,
-        so a missed best-effort lifecycle notification cannot reuse an old
-        epoch later.
+        A generation bump is fenced independently by ``acquire`` (the
+        conversation key carries the generation), but a same-generation
+        clear from the Context panel must also drop the warm subprocess —
+        it still holds the wiped conversation in memory.
         """
 
         async with self._pool_lock:
@@ -532,14 +532,14 @@ class ClaudeSessionPool:
                 key
                 for key in self._pool
                 if isinstance(key, tuple)
-                and key[0] == context_node_id
-                and (thread_id is None or key[1] == thread_id)
-                and (keep_epoch is None or key[2] != keep_epoch)
+                and key[0] == workflow_id
+                and (agent_node_id is None or key[1] == agent_node_id)
+                and (keep_generation is None or key[2] != keep_generation)
             ]
             for key in keys:
                 await self._terminate_locked(
                     key,
-                    reason="context_epoch_changed",
+                    reason="conversation_cleared",
                 )
             return len(keys)
 

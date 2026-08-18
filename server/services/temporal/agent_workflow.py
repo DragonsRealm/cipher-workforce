@@ -633,16 +633,6 @@ class AgentWorkflow:
         task_scope_execution_id = str(
             payload.get("team_execution_id") or execution_id
         )
-        # Journal operation ids must be unique per FIRING, not per generation.
-        # ``execution_id`` is generation-scoped (``1:execution:10``), so every
-        # chat message within one generation minted identical operation ids
-        # and the store's idempotency guard discarded turns 2..N as replays —
-        # only the first message a generation ever saw was recorded. The
-        # trigger listener already plumbs a per-firing ``context_execution_id``
-        # (the child workflow id) for exactly this purpose.
-        journal_operation_id = (
-            str(context.get("context_execution_id") or "") or execution_id
-        )
         # Needed by every terminal result, including agents that never make a
         # tool call (for example downstream taskTrigger automation).  It was
         # previously initialized only inside the tool-call branch.
@@ -694,36 +684,20 @@ class AgentWorkflow:
                 "result": {"iterations": 0, "usage": {}},
             }
 
-        # ---- Context journal (view-only) --------------------------------
-        # A Context node makes the backend journal every turn the agent sends,
-        # for the Context panel. It never steers the request: the LLM activity
-        # always builds from ``messages``, and ``context_ref`` only says where
-        # to record. The rollover does NOT read the journal back — the live
-        # transcript itself crosses the continue-as-new boundary.
-        context_ref: Optional[Dict[str, Any]] = None
-        if payload.get("context_descriptor"):
-            await self._wait_until_resumed()
-            prepared_context = await workflow.execute_activity(
-                "agent.prepare_context",
-                args=[
-                    {
-                        "context": context,
-                        "operation_id": f"{journal_operation_id}:prepare",
-                    }
-                ],
-                activity_id="prepare-context",
-                start_to_close_timeout=PERSIST_TURN_TIMEOUT * 2,
-                retry_policy=AGENT_ACTIVITY_RETRY,
-            )
-            context_ref = prepared_context.get("context_ref")
-        if resume:
-            context_ref = resume.get("context_ref") or context_ref
+        # ---- Conversation persistence -----------------------------------
+        # A connected Context node opts the agent into the plain conversation
+        # store: ``prepare_payload`` loaded the stored transcript (and the
+        # key), and the LLM-step activity saves each turn. Persistence never
+        # steers the request — the activity always builds from ``messages``;
+        # the key only says where to save.
+        conversation_key = payload.get("conversation_key")
 
         # ---- Build the message list -------------------------------------
-        # A resumed run continues from the exact transcript the previous run
-        # carried across continue_as_new. Only a fresh run builds the
-        # system + memory + prompt opening.
+        # Precedence: carried rollover transcript (a resumed run continues
+        # mid-flight) > stored conversation (a fresh firing continues the
+        # conversation, with this firing's prompt appended) > bare opening.
         carried_transcript = list(resume.get("transcript") or [])
+        stored_conversation = list(payload.get("conversation") or [])
         messages: List[Dict[str, Any]] = []
         user_prompt = payload.get("user_prompt") or ""
         memory_markdown = payload.get("memory_content") or ""
@@ -731,6 +705,21 @@ class AgentWorkflow:
         system = payload.get("system_message") or ""
         if carried_transcript:
             messages = [dict(message) for message in carried_transcript]
+        elif stored_conversation:
+            # This firing's system message stays authoritative; stored
+            # system messages are dropped so policy/skill changes take
+            # effect. The new prompt arrives as the latest user message.
+            if system:
+                messages.append(_native_message(role="system", content=system))
+            messages.extend(
+                dict(wire)
+                for wire in stored_conversation
+                if isinstance(wire, dict) and wire.get("role") != "system"
+            )
+            if user_prompt:
+                messages.append(
+                    _native_message(role="user", content=user_prompt)
+                )
         else:
             if system:
                 messages.append(_native_message(role="system", content=system))
@@ -823,25 +812,13 @@ class AgentWorkflow:
                 "temperature": payload.get("temperature", 0.7),
                 "max_tokens": payload.get("max_tokens", 4096),
                 "thinking_config": payload.get("thinking_config"),
-                # Journalling only. The activity always builds its request
-                # from ``messages`` above; these just tell it where to
-                # record the turn it actually sent. A Context node observes
+                # Persistence only. The activity always builds its request
+                # from ``messages`` above; the key just tells it where to
+                # save the turn it actually sent. A Context node observes
                 # the agent, it never steers it.
                 **(
-                    {
-                        "context_ref": context_ref,
-                        # Scoped by agent node as well as firing: two
-                        # agents wired to one Context node resolve to the
-                        # same thread, so a firing-only id made them mint
-                        # identical operation ids, collide on
-                        # (thread, operation_id), and have their turns
-                        # discarded by the store's idempotency guard.
-                        "journal_operation_id": (
-                            f"{journal_operation_id}:{agent_node_id}"
-                            f":iter:{iteration}"
-                        ),
-                    }
-                    if context_ref
+                    {"conversation_key": conversation_key}
+                    if conversation_key
                     else {}
                 ),
                 # A provider may stop a turn to compact rather than to
@@ -2221,7 +2198,6 @@ class AgentWorkflow:
                             {
                                 **context,
                                 _RESUME_MARKER: {
-                                    "context_ref": context_ref,
                                     "iteration": iteration + 1,
                                     "execution_id": execution_id,
                                     "transcript": carried,

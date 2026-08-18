@@ -17,26 +17,27 @@ beforeEach(() => {
 });
 
 describe('ContextPanel', () => {
-  it('loads authorized journal content through get_agent_context', async () => {
+  it('loads the stored conversation through get_agent_context', async () => {
     sendRequest.mockImplementation(async (operation: string) => {
       if (operation === 'get_agent_context') {
         return {
           context: {
-            thread_id: 'session:abc',
-            epoch: 3,
-            revision: 9,
-            provider: 'openai',
-            fidelity: 'provider_replayable',
-            resumable: true,
-            active_token_count: 800,
-            context_window: 10_000,
-            provider_binding_status: 'bound',
-            events: [
+            conversations: [
               {
-                sequence: 7,
-                event_type: 'assistant_message',
-                message_wire_v2: { role: 'assistant', blocks: [{ type: 'text', text: 'hello' }] },
+                workflow_id: 'wf-1',
+                generation: 2,
+                agent_node_id: 'agent-1',
+                message_count: 2,
+                updated_at: '2026-08-18T00:00:00Z',
               },
+            ],
+            generation: 2,
+            agent_node_id: 'agent-1',
+            updated_at: '2026-08-18T00:00:00Z',
+            message_count: 2,
+            messages: [
+              { role: 'user', content: 'hello agent' },
+              { role: 'assistant', content: 'hello operator' },
             ],
           },
         };
@@ -46,37 +47,71 @@ describe('ContextPanel', () => {
 
     render(<ContextPanel nodeId="ctx-1" workflowId="wf-1" />);
 
-    expect(await screen.findByText('session:abc / 3')).toBeInTheDocument();
-    expect(screen.getByText('assistant_message')).toBeInTheDocument();
+    expect(await screen.findByText('hello agent')).toBeInTheDocument();
+    expect(screen.getByText('hello operator')).toBeInTheDocument();
+    expect(screen.getByText('Generation 2')).toBeInTheDocument();
     expect(sendRequest).toHaveBeenCalledWith(
       'get_agent_context',
       expect.objectContaining({
         workflow_id: 'wf-1',
         context_node_id: 'ctx-1',
-        view: 'journal',
-        limit: 50,
       }),
     );
   });
 
-  it('invokes backend epoch clearing without synthesizing local Context', async () => {
+  it('invokes backend clearing without synthesizing local Context', async () => {
     sendRequest.mockImplementation(async (operation: string) => {
-      if (operation === 'get_agent_context') return { context: { events: [] } };
+      if (operation === 'get_agent_context') {
+        return {
+          context: {
+            conversations: [
+              {
+                workflow_id: 'wf-1',
+                generation: 2,
+                agent_node_id: 'agent-1',
+                message_count: 1,
+                updated_at: null,
+              },
+            ],
+            generation: 2,
+            agent_node_id: 'agent-1',
+            updated_at: null,
+            message_count: 1,
+            messages: [{ role: 'user', content: 'hello' }],
+          },
+        };
+      }
       if (operation === 'clear_agent_context') return { success: true };
       return {};
     });
     const user = userEvent.setup();
     render(<ContextPanel nodeId="ctx-1" workflowId="wf-1" />);
 
-    await screen.findByText('No committed Context events yet.');
-    await user.click(screen.getByRole('button', { name: /Clear epoch/i }));
+    await screen.findByText('hello');
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
 
     await waitFor(() =>
       expect(sendRequest).toHaveBeenCalledWith('clear_agent_context', {
         workflow_id: 'wf-1',
         context_node_id: 'ctx-1',
+        generation: 2,
+        agent_node_id: 'agent-1',
       }),
     );
+  });
+
+  it('shows the empty state when nothing is stored', async () => {
+    sendRequest.mockImplementation(async (operation: string) => {
+      if (operation === 'get_agent_context') {
+        return { context: { conversations: [], messages: [] } };
+      }
+      return {};
+    });
+    render(<ContextPanel nodeId="ctx-1" workflowId="wf-1" />);
+
+    expect(
+      await screen.findByText('No stored conversation yet.'),
+    ).toBeInTheDocument();
   });
 });
 

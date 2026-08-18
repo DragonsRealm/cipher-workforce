@@ -1,4 +1,4 @@
-"""RLM's honest observable-only Context V2 boundary."""
+"""RLM's plain-conversation Context boundary."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from services.rlm.service import RLMService
 
 
 @pytest.mark.asyncio
-async def test_rlm_records_request_and_result_as_non_resumable_context():
+async def test_rlm_loads_context_into_prompt_and_records_the_turn():
     bridge = MagicMock()
-    bridge.append_observable = AsyncMock()
+    bridge.record_turn = AsyncMock()
     bridge.augment_prompt = MagicMock(
         side_effect=lambda prompt: f"portable-history\n{prompt}"
     )
@@ -99,19 +99,17 @@ async def test_rlm_records_request_and_result_as_non_resumable_context():
 
     assert result["success"] is True
     resolve_kwargs = resolve.await_args.kwargs
-    assert resolve_kwargs["fidelity"] == "observable_only"
-    assert resolve_kwargs["resumable"] is False
-    event_types = [
-        call.args[0] for call in bridge.append_observable.await_args_list
-    ]
-    assert event_types == ["provider.request", "provider.result"]
+    assert resolve_kwargs["provider"] == "rlm"
+    assert resolve_kwargs["agent_node_id"] == "rlm-1"
+    # The stored conversation was rendered into the prompt sent to RLM.
     assert prompts == ["portable-history\nsolve"]
-    sink = tool_bridge.call_args.kwargs["ambiguous_outcome_sink"]
-    assert sink is not None
-    await sink({"outcome": "ambiguous", "reason": "tool_timeout"})
-    last = bridge.append_observable.await_args
-    assert last.args[0] == "tool.ambiguous_outcome"
-    assert last.args[1]["reason"] == "tool_timeout"
+    # The exchange was recorded with the ORIGINAL prompt, never the
+    # augmented one — otherwise every save would nest the rendered
+    # transcript inside itself.
+    bridge.record_turn.assert_awaited_once_with(
+        "solve", "answer:portable-history\nsolve"
+    )
+    assert tool_bridge.call_args.kwargs["ambiguous_outcome_sink"] is None
     assert "session_id" not in result["result"]
     assert "resume" not in result["result"]
 

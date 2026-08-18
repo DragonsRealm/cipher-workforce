@@ -1,56 +1,29 @@
-"""Durable Context V2 storage.
+"""Durable agent conversation storage — plain messages JSON under a key.
 
-The store is intentionally independent of agent/provider implementations.
-Runtimes append exact transitions and receive bounded references; provider
-adapters own rendering and replay validation.
+``(workflow_id, generation, agent_node_id) → messages`` — loaded at run
+start, saved per turn. See docs-internal/agent_context_flow.md for the
+flow and invariants. The former hash-chained journal (store / runtime /
+compaction / legacy / lifecycle) was retired in favor of this module.
 """
 
-from services.agent_context.store import (
-    AgentContextError,
-    AgentContextStore,
-    CompactionConflictError,
-    ContextArchivedError,
-    ContextNotFoundError,
-    RevisionConflictError,
-    StaleEpochError,
+from services.agent_context.conversation import (
+    clear_conversation,
+    list_conversations,
+    load_conversation,
+    save_conversation,
 )
-from services.agent_context.runtime import (
-    AgentContextTransitionWriter,
-    OpaqueCheckpointError,
-    reconstruct_transcript,
-    reconstruct_messages,
+from services.agent_context.listeners import (
+    ConversationListener,
+    notify_conversation_saved,
+    register_conversation_listener,
 )
-from services.agent_context.compaction import (
-    AgentContextCompactionService,
-    ContextCompactionCandidate,
-    ContextCompactionPolicy,
-    ContextCompactionResult,
-    ProviderContextAdapter,
-    ProviderContextCapabilities,
-    get_provider_context_adapter,
-    provider_context_request_options,
-)
-from services.agent_context.legacy import import_generation_zero_handoff
 
 __all__ = [
-    "AgentContextError",
-    "AgentContextCompactionService",
-    "AgentContextStore",
-    "AgentContextTransitionWriter",
-    "CompactionConflictError",
-    "ContextCompactionCandidate",
-    "ContextCompactionPolicy",
-    "ContextCompactionResult",
-    "ContextArchivedError",
-    "ContextNotFoundError",
-    "OpaqueCheckpointError",
-    "RevisionConflictError",
-    "ProviderContextAdapter",
-    "ProviderContextCapabilities",
-    "StaleEpochError",
-    "get_provider_context_adapter",
-    "import_generation_zero_handoff",
-    "provider_context_request_options",
-    "reconstruct_transcript",
-    "reconstruct_messages",
+    "ConversationListener",
+    "clear_conversation",
+    "list_conversations",
+    "load_conversation",
+    "notify_conversation_saved",
+    "register_conversation_listener",
+    "save_conversation",
 ]

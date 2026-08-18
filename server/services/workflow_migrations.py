@@ -414,7 +414,7 @@ def normalize_workflow_graph(
         )
 
     # Persist the ownership marker for backend edge repair/cascade semantics.
-    # It is UI metadata only; runtime state remains in AgentContextStore.
+    # It is UI metadata only; runtime state lives in the conversation store.
     agents_for_context: Dict[str, List[str]] = {}
     for agent_id, sources in existing_contexts.items():
         for source_id in dict.fromkeys(sources):

@@ -102,6 +102,7 @@ class AICliService:
         task_list: List[BaseAICliTaskSpec] = list(tasks)
         connected_tools = list(connected_tools or [])
         context_bridge: Optional[SpecializedAgentContextBridge] = None
+        context_original_prompts: List[str] = []
         if is_context(connected_context):
             from services.plugin.deps import get_database
 
@@ -112,18 +113,13 @@ class AICliService:
                 get_database(),
                 connected_context,
                 provider=provider_id,
-                fidelity=(
-                    "provider_bound"
-                    if provider_name == "claude"
-                    else "observable_only"
-                ),
-                resumable=provider_name == "claude",
-                operation_prefix=(
-                    f"cli-context:{provider_id}:"
-                    f"{execution_id or connected_context.get('execution_id') or 'run'}:"
-                    f"{node_id}"
-                ),
+                agent_node_id=node_id,
             )
+            # The stored conversation is the continuity mechanism; provider
+            # native resume only survives within a warm pool subprocess.
+            # Keep the original prompts so the recorded turn never nests a
+            # rendered transcript inside itself.
+            context_original_prompts = [task.prompt for task in task_list]
             task_list = [
                 task.model_copy(
                     update={
@@ -135,40 +131,12 @@ class AICliService:
                 for task in task_list
             ]
 
-            # Claude's opaque UUID is the only supported CLI continuation
-            # identity.  Resume it explicitly; never use --continue, whose
-            # cwd-wide "latest" lookup can cross Context threads.
-            if provider_name == "claude":
-                if len(task_list) != 1:
-                    raise ValueError(
-                        "Context-bound Claude batches require exactly one "
-                        "task so one thread maps to one provider session."
-                    )
-                binding = await context_bridge.load_binding("session_uuid")
-                resume_uuid = str((binding or {}).get("session_uuid") or "")
-                if resume_uuid:
-                    task = task_list[0]
-                    task_list[0] = task.model_copy(
-                        update={
-                            "resume_session_id": resume_uuid,
-                            "continue_session": False,
-                        }
-                    )
-
-            await context_bridge.append_observable(
-                "provider.request",
-                {
-                    "node_id": node_id,
-                    "workflow_id": workflow_id,
-                    "provider": provider_name,
-                    "tasks": task_list,
-                    "tool_node_ids": [
-                        tool.get("node_id") for tool in (connected_tools or [])
-                    ],
-                    "skill_names": list(connected_skill_names or []),
-                },
-                operation_suffix="request",
-            )
+            # One conversation maps to one provider session.
+            if provider_name == "claude" and len(task_list) != 1:
+                raise ValueError(
+                    "Context-bound Claude batches require exactly one "
+                    "task so one conversation maps to one provider session."
+                )
 
         # Pass the per-workflow workspace dir
         # (``data/workspaces/<workflow_id>/`` — injected into ctx by
@@ -227,21 +195,10 @@ class AICliService:
                 "an existing repo).",
                 workspace_dir,
             )
-            aborted = self._abort_not_git_repo(
+            return self._abort_not_git_repo(
                 provider_name=provider_name,
                 tasks=task_list,
             )
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "runtime.error",
-                    {
-                        "error": "working_directory_not_git_repo",
-                        "workspace_dir": str(workspace_dir),
-                        "tasks": aborted.tasks,
-                    },
-                    operation_suffix="result",
-                )
-            return aborted
         logger.info(
             "[CC-Agent run_batch] resolved repo_root=%s for workspace=%s",
             resolved_repo_root,
@@ -349,11 +306,6 @@ class AICliService:
                     memory_bound=bool(connected_memory) or (
                         context_bridge is not None and provider_name == "claude"
                     ),
-                    context_event_sink=(
-                        context_bridge.capture_provider_event
-                        if context_bridge is not None
-                        else None
-                    ),
                 )
                 async with self._lock:
                     self._active_sessions[key].append(session)
@@ -412,11 +364,6 @@ class AICliService:
                         connected_tools=connected_tools or [],
                         connected_skill_names=list(connected_skill_names or []),
                         workflow_id=workflow_id,
-                        context_event_sink=(
-                            context_bridge.capture_provider_event
-                            if context_bridge is not None
-                            else None
-                        ),
                     )
                 ]
             else:
@@ -424,17 +371,6 @@ class AICliService:
                     *(run_one(t) for t in task_list),
                     return_exceptions=False,
                 )
-        except BaseException as exc:
-            if context_bridge is not None:
-                await context_bridge.append_observable(
-                    "provider.ambiguous_outcome",
-                    {
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    },
-                    operation_suffix="result",
-                )
-            raise
         finally:
             async with self._lock:
                 self._active_sessions.pop(key, None)
@@ -484,58 +420,25 @@ class AICliService:
                 )
 
         if context_bridge is not None:
-            await context_bridge.append_observable(
-                "provider.result",
-                {
-                    "provider": provider_name,
-                    "tasks": results,
-                },
-                operation_suffix="result",
-            )
-            if provider_name == "claude":
-                stale_binding = any(
-                    item.error
-                    and "No conversation found with session ID"
-                    in item.error
-                    for item in results
-                )
-                if stale_binding:
-                    await context_bridge.bind_provider(
-                        "session_uuid",
-                        {
-                            "session_uuid": None,
-                            "stale": True,
-                            "context_node_id": context_bridge.ref.context_node_id,
-                            "thread_id": context_bridge.ref.thread_id,
-                            "epoch": context_bridge.ref.epoch,
-                        },
-                        operation_suffix="session-binding-stale",
+            # Persist each completed exchange into the plain conversation
+            # store. Best-effort: the provider already ran and billed, so a
+            # save failure must not fail the batch.
+            for original_prompt, item in zip(
+                context_original_prompts, results
+            ):
+                if not (item.success and item.response):
+                    continue
+                try:
+                    await context_bridge.record_turn(
+                        original_prompt,
+                        item.response,
                     )
-                    from services.cli_agent.factory import get_session_pool
-
-                    pool = get_session_pool("claude")
-                    if pool is not None:
-                        await pool.terminate(context_bridge.pool_key)
-                else:
-                    resumed = next(
-                        (
-                            item
-                            for item in reversed(results)
-                            if item.success and item.session_id
-                        ),
-                        None,
+                except Exception as exc:
+                    logger.warning(
+                        "[CC-Agent run_batch] conversation save failed; "
+                        "continuing: %s",
+                        exc,
                     )
-                    if resumed is not None:
-                        await context_bridge.bind_provider(
-                            "session_uuid",
-                            {
-                                "session_uuid": resumed.session_id,
-                                "context_node_id": context_bridge.ref.context_node_id,
-                                "thread_id": context_bridge.ref.thread_id,
-                                "epoch": context_bridge.ref.epoch,
-                            },
-                            operation_suffix="session-binding",
-                        )
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
         n_succeeded = sum(1 for r in results if r.success)

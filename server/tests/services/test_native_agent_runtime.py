@@ -264,7 +264,7 @@ async def test_compaction_pause_can_replace_replay_before_next_request():
 
 
 @pytest.mark.asyncio
-async def test_native_loop_persists_context_transitions_before_tool_execution():
+async def test_native_loop_saves_the_conversation_before_tool_execution():
     first_message = Message(
         role="assistant",
         tool_calls=[ToolCall(id="call-1", name="one", args={"value": 3})],
@@ -283,22 +283,17 @@ async def test_native_loop_persists_context_transitions_before_tool_execution():
             ),
         ]
     )
-    observed: list[tuple[str, str]] = []
+    observed: list[tuple[str, object]] = []
     tool = _tool("one")
 
-    class _Sink:
-        async def append_transition(self, **kwargs):
-            observed.append(("context", kwargs["event_type"]))
-            if kwargs.get("message_wire"):
-                assert "version" not in kwargs["message_wire"]
-                assert kwargs["message_wire"].get("role")
-            assert kwargs["operation_id"].startswith("execution-9:")
+    async def save(messages):
+        observed.append(("save", [message.role for message in messages]))
 
     async def execute(_name, args):
         assert tool.execution["tool_call_id"] == "call-1"
         assert (
             tool.execution["operation_id"]
-            == "execution-9:iteration:1:tool:1:call-1"
+            == "openai:iteration:1:tool:1:call-1"
         )
         observed.append(("tool", str(args["value"])))
         return {"ok": True}
@@ -313,20 +308,39 @@ async def test_native_loop_persists_context_transitions_before_tool_execution():
         initial_messages=[Message(role="system", content="resolved"), Message(role="user", content="go")],
         tools=[tool],
         tool_executor=execute,
-        context_transition_sink=_Sink(),
-        context_operation_id="execution-9",
+        conversation_saver=save,
     )
 
-    event_names = [value for kind, value in observed if kind == "context"]
-    assert event_names == [
-        "request.snapshot",
-        "message.assistant",
-        "message.tool_result",
-        "request.snapshot",
-        "message.assistant",
-        "response.final",
+    saves = [value for kind, value in observed if kind == "save"]
+    # Saved after the assistant append (billing already happened), again
+    # after the tool results, and once more for the final answer.
+    assert saves == [
+        ["system", "user", "assistant"],
+        ["system", "user", "assistant", "tool"],
+        ["system", "user", "assistant", "tool", "assistant"],
     ]
-    assert observed.index(("context", "message.assistant")) < observed.index(("tool", "3"))
+    # The assistant turn is durable BEFORE its tool executes.
+    assert observed.index(("save", saves[0])) < observed.index(("tool", "3"))
+
+
+@pytest.mark.asyncio
+async def test_native_loop_save_failure_cannot_fail_the_run():
+    unifier = _FakeUnifier([LLMResponse(content="done")])
+
+    async def broken_save(messages):
+        raise RuntimeError("save exploded")
+
+    result = await run_native_agent_loop(
+        unifier,
+        provider="openai",
+        api_key="test",
+        model="gpt-test",
+        temperature=0,
+        max_tokens=100,
+        initial_messages=[Message(role="user", content="go")],
+        conversation_saver=broken_save,
+    )
+    assert result["response"].content == "done"
 
 
 @pytest.mark.asyncio

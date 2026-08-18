@@ -94,45 +94,26 @@ class TestDurableTeamDelegationContract:
         assert '"execution_id": context.get("execution_id")' in source
 
 
-class TestContextJournalIdentity:
-    """Every firing must journal, and journal each turn exactly once."""
+class TestConversationIdentity:
+    """Every firing continues one conversation and saves each turn once."""
 
-    def test_journal_operation_ids_are_per_firing_not_per_generation(self):
-        """``execution_id`` is generation-scoped, so reusing it for journal
-        operation ids made every chat message in a generation mint identical
-        ids. The store's idempotency guard then discarded turns 2..N as
-        replays and only the generation's first message was ever recorded.
+    def test_conversation_key_is_workflow_generation_agent(self):
+        """The conversation key is (workflow_id, generation, agent_node_id).
+
+        The journal design keyed threads per firing/session, so a taskTrigger
+        review resolved a different thread from the chat that started the
+        work and the lead came back amnesiac (messages=2). One key per agent
+        per generation makes every firing continue the same conversation.
         """
         import inspect
 
-        from services.temporal.agent_workflow import AgentWorkflow
+        from services.temporal import agent_activities
 
-        source = inspect.getsource(AgentWorkflow.run)
-        assert 'context.get("context_execution_id")' in source, (
-            "journal operation ids must derive from the per-firing "
-            "context_execution_id"
-        )
-        for suffix in (":prepare", ":append", ":llm"):
-            assert f"{{journal_operation_id}}" in source
-            assert f"{{execution_id}}:iter" not in source
-            assert f'f"{{execution_id}}{suffix}"' not in source
-
-    def test_journal_operation_ids_are_scoped_per_agent_node(self):
-        """Two agents on one Context node resolve to the same thread.
-
-        With a firing-scoped id alone they minted identical operation ids,
-        collided on (thread, operation_id) and had their turns discarded as
-        replays -- so one of the two agents was simply absent from the journal.
-        """
-        import inspect
-
-        from services.temporal.agent_workflow import AgentWorkflow
-
-        source = inspect.getsource(AgentWorkflow.run)
-        assert 'f"{journal_operation_id}:{agent_node_id}"' in source, (
-            "journal operation ids must include the agent node id, or "
-            "sibling agents sharing a Context node overwrite each other"
-        )
+        source = inspect.getsource(agent_activities.prepare_agent_payload)
+        assert '"workflow_id"' in source
+        assert '"generation"' in source
+        assert '"agent_node_id"' in source
+        assert "conversation_key" in source
 
     def test_resumed_run_continues_from_the_carried_transcript(self):
         """continue_as_new carries the live transcript itself.
@@ -227,13 +208,12 @@ class TestContextJournalIdentity:
         step = inspect.getsource(agent_activities.execute_llm_step)
         assert "if payload.get(\"context_ref\")" not in step
 
-    def test_journal_failure_cannot_fail_the_run(self):
-        """Observation must never break execution.
+    def test_save_failure_cannot_fail_the_run(self):
+        """Persistence must never break execution.
 
-        The journal write happens after the provider has been called and
+        The conversation save happens after the provider has been called and
         billed, so raising there fails the turn over a bookkeeping write — and
-        for a team lead, stalls its next delegation. A thread fenced by Reset
-        or an archived epoch is an expected condition, not an error.
+        for a team lead, stalls its next delegation.
         """
         import ast
         import inspect
@@ -241,7 +221,7 @@ class TestContextJournalIdentity:
         from services.temporal import agent_activities
 
         fn = ast.parse(
-            inspect.getsource(agent_activities._journal_llm_turn)
+            inspect.getsource(agent_activities._save_conversation)
         ).body[0]
         handlers = [
             handler
@@ -249,39 +229,38 @@ class TestContextJournalIdentity:
             if isinstance(node, ast.Try)
             for handler in node.handlers
         ]
-        assert handlers, "_journal_llm_turn must not let a write failure escape"
+        assert handlers, (
+            "_save_conversation must not let a write failure escape"
+        )
         assert any(
             h.type is None
             or (isinstance(h.type, ast.Name) and h.type.id == "Exception")
             for h in handlers
         )
 
-    def test_journal_records_the_exact_request_never_a_reconstruction(self):
-        """The journal must record what was sent, not rebuild it.
+    def test_conversation_records_the_exact_request_never_a_reconstruction(
+        self,
+    ):
+        """The store must record what was sent, not rebuild it.
 
-        ``prepare_context`` runs before the request exists, so anything it
-        wrote was assembled from configuration — that is how the journal came
-        to hold a fabricated request, the system prompt typed as a tool
-        result, and the user's prompt twice. The turn is journalled from the
-        exact list handed to ``ChatUnifier.chat``.
+        The retired ``prepare_context`` activity wrote journal entries
+        assembled from configuration before the request existed — that is
+        how the journal came to hold a fabricated request. The turn is saved
+        from the exact list handed to ``ChatUnifier.chat``, after the call.
         """
         import inspect
 
         from services.temporal import agent_activities
 
-        prepare = inspect.getsource(agent_activities.prepare_context)
-        assert "_append_event" not in prepare, (
-            "prepare_context must not journal; it has no request yet"
+        assert not hasattr(agent_activities, "prepare_context"), (
+            "prepare_context journalled configuration before a request "
+            "existed; the plain store saves only what was sent"
         )
 
         native = inspect.getsource(agent_activities._execute_native_llm_step)
-        sent = native.index("_journal_llm_turn")
+        sent = native.index("_save_conversation")
         called = native.index("run_native_llm_step(")
-        assert called < sent, "journal the request only after it was sent"
-        assert "for message in messages" in native, (
-            "the journalled request must be the same `messages` object passed "
-            "to the unifier"
-        )
+        assert called < sent, "save the request only after it was sent"
 
     def test_root_execution_identity_is_initialized_before_agent_loop(self):
         import inspect
@@ -467,7 +446,6 @@ class TestAgentActivities:
             "agent.finalize_team",
             "agent.finish_delegation",
             "agent.persist_turn",
-            "agent.prepare_context",
             "agent.prepare_payload",
             "agent.queue_delegation",
             "agent.refresh_tools",
@@ -1183,13 +1161,15 @@ class TestAgentContinueAsNew:
         # test_rollover_guards_transcript_size) so the CAN argument stays
         # under Temporal's payload error limit.
         carried = source[source.index("_RESUME_MARKER:") :][:700]
+        # The conversation key is deliberately NOT carried: prepare_payload
+        # recomputes it deterministically from the descriptor on every run,
+        # resumed or fresh.
         for required in (
             '"transcript"',
             '"usage"',
             '"context_usage"',
             '"iteration"',
             '"execution_id"',
-            '"context_ref"',
         ):
             assert required in carried, f"{required} must cross the rollover"
 

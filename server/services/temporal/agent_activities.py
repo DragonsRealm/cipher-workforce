@@ -47,9 +47,15 @@ from typing import Any, Dict, List, Mapping, Optional
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from models.agent_context import AgentContextRef
 
 logger = logging.getLogger(__name__)
+
+# Byte ceiling for the stored conversation returned by ``prepare_agent_payload``
+# as a fresh-run seed. Conversations are compaction-bounded in tokens but not
+# in bytes, and Temporal's payload error limit is 2 MiB for the whole activity
+# result — over the cap the run degrades to its opening prompt with a warning
+# instead of dying. Mirrors ``_CAN_TRANSCRIPT_MAX_BYTES`` on the rollover path.
+_SEED_TRANSCRIPT_MAX_BYTES = 1_000_000
 
 # Activity result shapes — keep these in sync with AgentWorkflow's
 # expectations. Pydantic was considered but plain dicts keep the
@@ -309,11 +315,12 @@ async def _execute_native_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     assistant_wire = message_to_wire(assistant)
     usage = asdict(response.usage)
 
-    # Record the turn exactly as it happened: the message list this activity
-    # just sent to the provider, and the reply it got back. ``messages`` above
-    # IS the argument handed to ``ChatUnifier.chat`` — nothing is rebuilt,
-    # inferred, or re-typed, so the journal cannot drift from the request.
-    await _journal_llm_turn(
+    # Persist the conversation exactly as it happened: the message list this
+    # activity just sent to the provider plus the reply it got back.
+    # ``messages`` above IS the argument handed to ``ChatUnifier.chat`` —
+    # nothing is rebuilt, inferred, or re-typed, so the stored conversation
+    # cannot drift from the request.
+    await _save_conversation(
         payload,
         sent=[dict(message_to_wire(message)) for message in messages],
         assistant_wire=dict(assistant_wire),
@@ -356,52 +363,41 @@ async def _execute_native_llm_step(payload: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def _journal_llm_turn(
+async def _save_conversation(
     payload: Dict[str, Any],
     *,
     sent: List[Dict[str, Any]],
     assistant_wire: Dict[str, Any],
 ) -> None:
-    """Append this turn to the Context journal, when one is attached.
+    """Persist the full transcript for this turn, when a key is attached.
 
-    Observation only: it never influences the request. ``request.snapshot``
-    carries the exact list sent, which is what
-    :func:`services.agent_context.runtime.reconstruct_transcript`
-    documents that event to be — the render boundary that later assistant and
-    tool transitions are applied on top of.
+    Persistence only: it never influences the request. ``sent`` is the
+    exact list handed to the provider; ``sent + [assistant]`` IS the
+    conversation after this turn, saved whole (last-write-wins upsert per
+    key). Living inside the LLM activity means per-turn durability with
+    zero extra activities and zero Temporal-history payload.
     """
-    ref_data = payload.get("context_ref")
-    operation_id = str(payload.get("journal_operation_id") or "")
-    if not ref_data or not operation_id:
+    key = payload.get("conversation_key")
+    if not isinstance(key, dict):
         return
     try:
-        store = _context_store()
-        ref = _context_ref(ref_data)
-        provider = str(payload.get("provider") or "")
-        ref = await _append_event(
-            store,
-            ref,
-            event_type="request.snapshot",
-            operation_id=f"{operation_id}:request",
-            provider=provider,
-            payload_ref=await store.put_blob({"messages": sent}),
-        )
-        await _append_event(
-            store,
-            ref,
-            event_type="message.assistant",
-            operation_id=f"{operation_id}:assistant",
-            provider=provider,
-            message_wire=assistant_wire,
+        from core.container import container
+        from services.agent_context import save_conversation
+
+        await save_conversation(
+            container.database(),
+            workflow_id=str(key.get("workflow_id") or ""),
+            generation=int(key.get("generation") or 0),
+            agent_node_id=str(key.get("agent_node_id") or ""),
+            messages=[*sent, assistant_wire],
         )
     except Exception:
-        # Observation must never fail the run. The provider has already been
-        # called and billed by this point, so raising here would fail the turn
-        # — and, for a team lead, stall its next delegation — over a bookkeeping
-        # write. A thread fenced by Reset or an archived epoch is exactly the
-        # expected case: the agent keeps going, the journal just misses a turn.
+        # Persistence must never fail the run. The provider has already
+        # been called and billed by this point, so raising here would fail
+        # the turn — and, for a team lead, stall its next delegation —
+        # over a bookkeeping write.
         activity.logger.warning(
-            "Context journal write failed; execution continues",
+            "Conversation save failed; execution continues",
             exc_info=True,
         )
 
@@ -997,6 +993,59 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
         memory_content = memory_data.get("memory_content") or ""
         memory_window_size = int(memory_data.get("window_size") or 10)
 
+    # ---- Conversation (plain JSON transcript) ---------------------------
+    # A connected Context node opts the agent into durable conversation
+    # persistence: key (workflow_id, generation, agent_node_id), loaded here
+    # as the fresh-run seed and saved per turn inside the LLM step. Every
+    # firing — chat messages AND task-completion reviews — continues the
+    # same conversation; Reset admits a new generation, which is a new key.
+    # Load failures are LOUD: running the agent with its memory silently
+    # missing wastes billed tokens on a run that has forgotten everything.
+    # A transient DB error gets the activity retry budget; an over-sized
+    # transcript is user-actionable (clear or compact) and fails fast.
+    # See docs-internal/agent_context_flow.md.
+    conversation: List[Dict[str, Any]] = []
+    conversation_key: Optional[Dict[str, Any]] = None
+    generation = int(context.get("generation") or 0)
+    if (
+        context_descriptor.get("kind") == "context"
+        and workflow_id
+        and generation > 0
+    ):
+        conversation_key = {
+            "workflow_id": str(workflow_id),
+            "generation": generation,
+            "agent_node_id": node_id,
+        }
+        try:
+            from services.agent_context import load_conversation
+
+            conversation = await load_conversation(
+                database,
+                **conversation_key,
+            )
+        except Exception as exc:
+            raise ApplicationError(
+                f"Conversation load failed for agent {node_id!r} "
+                f"(generation {generation}): {type(exc).__name__}",
+                type="ConversationLoadFailed",
+                non_retryable=False,
+            ) from exc
+        if conversation:
+            seed_bytes = len(
+                json.dumps(conversation, default=str).encode("utf-8")
+            )
+            if seed_bytes > _SEED_TRANSCRIPT_MAX_BYTES:
+                raise ApplicationError(
+                    f"Stored conversation for agent {node_id!r} is "
+                    f"{seed_bytes} bytes (limit "
+                    f"{_SEED_TRANSCRIPT_MAX_BYTES}). Clear the conversation "
+                    "from the Context panel or lower the compaction "
+                    "threshold, then run again.",
+                    type="ConversationTooLarge",
+                    non_retryable=True,
+                )
+
     # ---- Tools ----------------------------------------------------------
     # We call ``ai_service._build_tool_from_node`` once here ONLY to
     # extract the LLM-visible tool name (the workflow needs it to map
@@ -1182,6 +1231,8 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
         "memory_content": memory_content,
         "memory_window_size": memory_window_size,
         "context_descriptor": context_descriptor,
+        "conversation": conversation,
+        "conversation_key": conversation_key,
         "max_iterations": effective_recursion_limit,
         "thinking_config": thinking_config_dict,
         "compaction_threshold": compaction_threshold,
@@ -1835,20 +1886,20 @@ def collect_agent_activities() -> List[Any]:
         register_task_execution,
         finish_agent_delegation,
         finalize_agent_team,
-        # Context journal surface: thread resolution for the view-only
-        # journal, plus the conversation summarizer.
-        prepare_context,
+        # Conversation persistence is inside execute_llm_step (save) and
+        # prepare_agent_payload (load); the summarizer is the one extra
+        # activity this surface needs.
         compact_context,
     ]
 
 
 # ---------------------------------------------------------------------------
-# Agent Context journal surface (view-only).
+# Conversation persistence surface.
 #
-# The journal observes the agent; it never feeds the request and is never
-# read back on rollover — continue_as_new carries the live transcript.
-# ``_journal_llm_turn`` records each turn, ``prepare_context`` resolves the
-# thread, and ``compact_context`` summarizes the live conversation.
+# Persistence observes the agent; it never feeds the request directly.
+# ``prepare_agent_payload`` loads the stored conversation as a fresh-run
+# seed, ``_save_conversation`` (inside the LLM step) persists each turn,
+# and ``compact_context`` summarizes the live conversation.
 # ---------------------------------------------------------------------------
 
 _SENSITIVE_GRAPH_KEYS = frozenset(
@@ -1878,94 +1929,12 @@ def _strip_credentials(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_strip_credentials(item) for item in value]
     return value
-def _context_ref(value: Mapping[str, Any]) -> AgentContextRef:
-    return AgentContextRef.model_validate(dict(value))
-def _ref_dict(ref: AgentContextRef) -> Dict[str, Any]:
-    return ref.model_dump(mode="json")
-def _hash_from_ref(payload_ref: str) -> str:
-    return str(payload_ref).removeprefix("sha256:")
-def _context_store():
-    from core.container import container
-    from services.agent_context import AgentContextStore
-
-    return AgentContextStore(container.database())
 def _non_retryable(message: str, error_type: str) -> ApplicationError:
     return ApplicationError(
         message,
         type=error_type,
         non_retryable=True,
     )
-def _context_node_id(context: Mapping[str, Any]) -> str:
-    """Return the exactly-one Context companion wired to this agent."""
-
-    node_id = str(context.get("node_id") or "")
-    nodes = {
-        str(node.get("id")): node
-        for node in context.get("nodes") or []
-        if isinstance(node, dict) and node.get("id")
-    }
-    candidates: list[str] = []
-    for edge in context.get("edges") or []:
-        if not isinstance(edge, dict) or str(edge.get("target") or "") != node_id:
-            continue
-        handle = edge.get("targetHandle") or edge.get("target_handle")
-        if handle != "input-context":
-            continue
-        source_id = str(edge.get("source") or "")
-        if (nodes.get(source_id) or {}).get("type") == "context":
-            candidates.append(source_id)
-    unique = sorted(set(candidates))
-    if len(unique) != 1:
-        raise _non_retryable(
-            (
-                f"Context V2 agent {node_id!r} requires exactly one Context "
-                f"companion; found {len(unique)}."
-            ),
-            "InvalidAgentContextTopology",
-        )
-    return unique[0]
-def _thread_inputs(context: Mapping[str, Any]) -> Dict[str, Optional[str]]:
-    """Resolve a delegated-task, explicit-session, or execution thread.
-
-    Delegation always gets an isolated task thread even when the parent
-    propagates its chat session id into the child context.
-    """
-
-    raw_session = str(
-        context.get("context_session_id")
-        or context.get("session_id")
-        or ""
-    ).strip()
-    # ``default`` is the UI placeholder, not an explicit chat identity.
-    session_id = raw_session if raw_session and raw_session != "default" else None
-    # Controlled deployments deliberately replace the caller's session with
-    # their generation-scoped data namespace.  That namespace is not an
-    # explicit conversation and must not collapse independent trigger
-    # firings into one persistent session thread.
-    data_scope_id = str(context.get("data_scope_id") or "").strip()
-    if session_id and data_scope_id and session_id == data_scope_id:
-        session_id = None
-    delegated_task_id = str(
-        context.get("delegated_task_id")
-        or context.get("task_id")
-        or context.get("parent_task_id")
-        or context.get("team_task_id")
-        or (context.get("invocation") or {}).get("task_id")
-        or ""
-    ).strip() or None
-    if delegated_task_id is not None:
-        session_id = None
-    execution_id = str(
-        context.get("context_execution_id")
-        or context.get("execution_id")
-        or context.get("data_scope_id")
-        or ""
-    ).strip() or None
-    return {
-        "session_id": session_id,
-        "delegated_task_id": delegated_task_id,
-        "execution_id": execution_id,
-    }
 def _tool_identity(tool: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "name": str(tool.get("name") or ""),
@@ -1974,72 +1943,6 @@ def _tool_identity(tool: Mapping[str, Any]) -> Dict[str, Any]:
         "version": int(tool.get("version") or 1),
         "task_queue": str(tool.get("dispatch_task_queue") or ""),
     }
-async def _append_event(
-    store: Any,
-    ref: AgentContextRef,
-    *,
-    event_type: str,
-    operation_id: str,
-    provider: Optional[str] = None,
-    message_wire: Optional[Dict[str, Any]] = None,
-    payload_ref: Optional[str] = None,
-) -> AgentContextRef:
-    result = await store.append_transition(
-        ref,
-        event_type=event_type,
-        operation_id=operation_id,
-        provider=provider,
-        message_wire=message_wire,
-        payload_ref=payload_ref,
-    )
-    return result.ref
-@activity.defn(name="agent.prepare_context")
-async def prepare_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Resolve the Context thread this agent journals into. Read-only."""
-
-    context = dict(payload.get("context") or payload)
-    workflow_id = str(context.get("workflow_id") or "")
-    generation = int(context.get("generation") or 0)
-    graph_version = int(
-        context.get("graphVersion")
-        or context.get("graph_version")
-        or 0
-    )
-    if not workflow_id or generation <= 0 or graph_version < 2:
-        raise _non_retryable(
-            "Context V2 requires a normalized graph and a positive workflow generation.",
-            "InvalidAgentContextGeneration",
-        )
-
-    context_node_id = _context_node_id(context)
-    context["generation"] = generation
-    context["graphVersion"] = graph_version
-
-    # This activity resolves a thread and nothing else.
-    #
-    # It used to call ``prepare_agent_payload`` a second time to build a
-    # runtime snapshot. That function is NOT a pure read — for a team lead it
-    # calls ``get_or_create_execution_team``, so attaching a Context node made
-    # the whole team-creation path run twice per turn and interfered with
-    # multi-agent delegation. Nothing consumed the snapshot either: the LLM
-    # step builds its request from ``messages``, and the workflow reads only
-    # ``context_ref`` from this result.
-    store = _context_store()
-    thread = await store.resolve_thread(
-        workflow_id=workflow_id,
-        context_node_id=context_node_id,
-        generation=generation,
-        **_thread_inputs(context),
-    )
-    # Nothing is journalled here either. This runs BEFORE the request exists,
-    # so anything written would be assembled from configuration rather than
-    # recorded from what was sent — which is how the journal came to hold a
-    # fabricated request, the system prompt typed as a tool result, and the
-    # user's prompt twice. ``agent.execute_llm_step`` journals each turn from
-    # the exact message list it hands to ``ChatUnifier.chat``.
-    return {"context_ref": _ref_dict(thread)}
-
-
 @activity.defn(name="agent.compact_context")
 async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Summarize the live conversation into a compact replacement.

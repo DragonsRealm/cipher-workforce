@@ -1,10 +1,10 @@
 """Context descriptor construction.
 
-The ``context`` node is a declarative UI and policy surface onto an agent's
-context scope — it never owns the journal itself (RFC-0002 section 3). What
-it *does* own is the shape of the descriptor handed to the agent runtime:
-which thread the agent resolves, and the policy the operator configured on
-this node.
+The ``context`` node is a declarative opt-in surface onto an agent's
+conversation scope — it never owns the conversation itself (that lives in
+the plain conversation store, keyed by workflow/generation/agent node).
+What it *does* own is the shape of the descriptor handed to the agent
+runtime.
 
 That shape lives here rather than in ``services/plugin/edge_walker.py`` so
 the framework carries no knowledge of this plugin's parameters or its
