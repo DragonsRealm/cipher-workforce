@@ -152,8 +152,34 @@ folder — both the folder and the workflow are gone.
 | `.github/workflows/predeploy.yml` | Reusable validation (build/lint + backend tests + CLI tests + OS matrix build/start) |
 | `.github/workflows/release.yml` | Tag / manual release: predeploy gate → publish npm + GitHub Packages |
 | `.github/actions/setup/action.yml` | Composite: pnpm + Node + Python + uv + editable CLI install |
-| `.github/dependabot.yml` | Weekly npm, Python, and GitHub Actions update coverage |
+| `.github/dependabot.yml` | **Security updates only** — version-update PRs disabled; see below |
 | `.python-version` | Toolchain pin (`3.12`) — single source of truth |
+
+---
+
+## Dependency update policy (security-only)
+
+Dependabot raises **security PRs only**; routine version bumps are disabled
+(`open-pull-requests-limit: 0` on every entry — the limit affects version
+updates only; security PRs are exempt from both the limit and the schedule
+and are grouped per ecosystem via `applies-to: security-updates`).
+
+Three entries cover the real surfaces: `npm /` (pnpm workspace spans root +
+`client/` + `server/nodejs/`), `pip /server` (authoritative
+`server/pyproject.toml`; the committed `requirements.txt` export is the
+transitive-pin surface security fixes patch), `github-actions /`. A former
+`pip: /` entry (duplicate churn against `server/requirements.txt`) and a
+dead `npm: /server` entry were removed.
+
+Repo-level alerts + security updates must stay enabled — verify with
+`gh api repos/zeenie-ai/OpenCompany/vulnerability-alerts` (204 = enabled).
+
+Re-enable version updates deliberately, never by just deleting the limits:
+raise `open-pull-requests-limit`, set `schedule.interval: monthly`, add
+`groups` with `patterns: ["*"]` + `update-types: [minor, patch]`, and
+`cooldown: {semver-major-days: 30}`. Stored comment-ignores (`mcp` 2.x,
+`websockets` 17.x) are inspectable via `@dependabot show <dep> ignore
+conditions`.
 
 ---
 
