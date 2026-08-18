@@ -1166,8 +1166,6 @@ async def prepare_agent_payload(context: Dict[str, Any]) -> Dict[str, Any]:
                 prompt = str(out[field])
                 break
         if not prompt and isinstance(out, dict) and out:
-            import json
-
             prompt = json.dumps(out, ensure_ascii=False, default=str)
 
     # Read user-overridable globals once at prep time.

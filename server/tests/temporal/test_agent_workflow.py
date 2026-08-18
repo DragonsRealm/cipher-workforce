@@ -115,6 +115,51 @@ class TestConversationIdentity:
         assert '"agent_node_id"' in source
         assert "conversation_key" in source
 
+    def test_no_local_import_shadows_a_name_after_use(self):
+        """A function-local import makes its name local for the WHOLE
+        function, so any use above the import raises UnboundLocalError at
+        runtime — invisible to py_compile. A mid-function ``import json``
+        below the conversation size guard failed every Context-connected
+        run at ``prepare_agent_payload`` (attempt 3, ConversationLoadFailed
+        never even reached: the crash was the guard itself).
+        """
+        import ast
+        import inspect
+
+        from services.temporal import agent_activities
+
+        tree = ast.parse(inspect.getsource(agent_activities))
+        offenders: list[str] = []
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            imported_at: dict[str, int] = {}
+            used_at: dict[str, int] = {}
+            for node in ast.walk(func):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    for alias in node.names:
+                        name = alias.asname or alias.name.split(".")[0]
+                        line = imported_at.get(name)
+                        imported_at[name] = (
+                            node.lineno if line is None else min(line, node.lineno)
+                        )
+                elif isinstance(node, ast.Name) and isinstance(
+                    node.ctx, ast.Load
+                ):
+                    if node.id not in used_at:
+                        used_at[node.id] = node.lineno
+            for name, import_line in imported_at.items():
+                use_line = used_at.get(name)
+                if use_line is not None and use_line < import_line:
+                    offenders.append(
+                        f"{func.name}: '{name}' used at line {use_line} "
+                        f"but locally imported at line {import_line}"
+                    )
+        assert not offenders, (
+            "local imports shadowing an earlier use (UnboundLocalError at "
+            f"runtime): {offenders}"
+        )
+
     def test_resumed_run_continues_from_the_carried_transcript(self):
         """continue_as_new carries the live transcript itself.
 
