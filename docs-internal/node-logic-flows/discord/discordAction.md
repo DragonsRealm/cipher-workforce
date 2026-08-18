@@ -1,4 +1,4 @@
-# Discord (`discordAction`)
+# Discord API (`discordAction`)
 
 | Field | Value |
 |------|-------|

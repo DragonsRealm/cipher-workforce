@@ -104,7 +104,7 @@ match its doc here, and each doc must still describe what the code does.
 
 ### discord
 
-- [Discord (`discordAction`)](./discord/discordAction.md)
+- [Discord API (`discordAction`)](./discord/discordAction.md)
 - [Discord Interaction (`discordInteraction`)](./discord/discordInteraction.md)
 - [Discord Receive (`discordReceive`)](./discord/discordReceive.md)
 - [Discord Send (`discordSend`)](./discord/discordSend.md)

@@ -167,8 +167,13 @@ class DiscordActionOutput(BaseModel):
 
 class DiscordActionNode(AccountScopedNode):
     type = "discordAction"
-    display_name = "Discord"
-    subtitle = "Discord API"
+    # "Discord API", not the bare product name the other *Action nodes use
+    # (GitHub / Vercel / Stripe): those palettes carry one or two nodes, so
+    # the bare name is unambiguous. Discord ships four, and "Discord" next
+    # to "Discord Send / Receive / Interaction" said nothing about what
+    # this one does. The name states the role: the general REST surface.
+    display_name = "Discord API"
+    subtitle = "Manage server"
     group = ("discord",)
     description = "Read and manage Discord servers, channels, messages and attachments"
     component_kind = "square"
