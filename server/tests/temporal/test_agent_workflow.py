@@ -160,6 +160,43 @@ class TestConversationIdentity:
             f"runtime): {offenders}"
         )
 
+    def test_compaction_preserves_the_system_prompt_and_summary_survival(
+        self,
+    ):
+        """Compaction rebuilds as [original system, user(summary+request)].
+
+        Two rules are locked. (1) The system prompt is never modified or
+        duplicated: it is the agent's contract and must stay byte-stable
+        (provider prompt caching, behavioral consistency). (2) The summary
+        must NOT ride ``role="system"`` — the next firing's seeding drops
+        stored system messages so policy changes take effect, which once
+        made the summary vanish on the next chat message while the noisy
+        tool tail (non-system) survived it. As a user message, the
+        compacted knowledge crosses firings with the conversation.
+        """
+        import inspect
+
+        from services.temporal.agent_workflow import AgentWorkflow
+
+        source = inspect.getsource(AgentWorkflow.run)
+        assert "## Compacted summary:" not in source, (
+            "the old system-role summary marker is retired"
+        )
+        start = source.index('summary = compact_result.get("summary"')
+        end = source.index("context_usage_total = {}", start)
+        rebuild = source[start:end]
+        assert rebuild.count('role="system"') == 1, (
+            "compaction must keep exactly ONE system message — the "
+            "original, verbatim"
+        )
+        assert 'role="user"' in rebuild, (
+            "the summary must ride a user message so it survives the next "
+            "firing's stored-system filter"
+        )
+        # Observability: both the trigger and the applied swap are logged.
+        assert "compaction triggered at iteration" in source
+        assert "compaction applied at iteration" in source
+
     def test_resumed_run_continues_from_the_carried_transcript(self):
         """continue_as_new carries the live transcript itself.
 

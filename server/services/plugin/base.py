@@ -417,6 +417,23 @@ class BaseNode:
                 context=context,
                 connection_factory=_make_connection_factory(cls, context),
             )
+            # An LLM-invoked tool call carries its unmerged model arguments
+            # in ``context["tool_args"]`` (Temporal per-type activity path).
+            # ToolNodes must take execute_as_tool so a split ToolInput schema
+            # validates the model's arguments — plain execute validates
+            # against Params, whose extra="ignore" silently drops them (a
+            # Simple Memory remember degraded to a no-op list this way).
+            # Dual-purpose ActionNodes keep their documented merged-params
+            # contract unchanged.
+            from services.plugin.tool import ToolNode
+
+            tool_args = context.get("tool_args")
+            if isinstance(tool_args, dict) and isinstance(instance, ToolNode):
+                return await instance.execute_as_tool(
+                    tool_args,
+                    parameters,
+                    ctx,
+                )
             return await instance.execute(node_id, parameters, ctx)
 
         _legacy.__node_class__ = cls  # type: ignore[attr-defined]
@@ -1030,6 +1047,11 @@ class BaseNode:
                     "parent_node_id",
                     "team_lead_node_id",
                     "root_execution_id",
+                    # The model's unmerged arguments for an LLM-invoked tool
+                    # call; routes ToolNodes through execute_as_tool in the
+                    # legacy handler so split-schema ToolInput validation
+                    # applies on the Temporal path too.
+                    "tool_args",
                 ):
                     if key in context:
                         extras[key] = context[key]

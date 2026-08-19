@@ -2005,10 +2005,16 @@ async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
         lines.append(line)
 
+    rendered = "\n\n".join(lines)
+    activity.logger.info(
+        f"Compacting agent context: {len(lines)} messages "
+        f"({len(rendered)} rendered chars) via "
+        f"{payload['provider']}/{payload['model']}"
+    )
     result = await svc.compact_context(
         session_id=str(payload.get("session_id") or "default"),
         node_id=payload["node_id"],
-        memory_content="\n\n".join(lines),
+        memory_content=rendered,
         provider=payload["provider"],
         api_key=await _resolve_activity_api_key(payload),
         model=payload["model"],
@@ -2016,6 +2022,14 @@ async def compact_context(payload: Dict[str, Any]) -> Dict[str, Any]:
         # request inside the activity or SDK.
         explicit_max_retries=0,
     )
+    if result.get("success") and result.get("summary"):
+        usage = result.get("usage") or {}
+        activity.logger.info(
+            f"Agent context compacted: summary {len(result['summary'])} "
+            f"chars (summarizer usage: "
+            f"in={usage.get('input_tokens', 0)} "
+            f"out={usage.get('output_tokens', 0)})"
+        )
     if not result.get("success") or not result.get("summary"):
         # Compaction is the run's pressure-relief valve. Raising (retryable)
         # gives transient summarizer failures the activity policy's retry

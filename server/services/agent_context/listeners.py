@@ -66,7 +66,11 @@ async def notify_conversation_saved(
                 message_count=message_count,
             )
         except Exception:  # noqa: BLE001 — a notification may never fail a save
-            logger.debug(
+            # WARNING, not debug: a silently failing listener is exactly how
+            # "the panel never updates live" becomes undiagnosable — the save
+            # succeeds, the run continues, and nothing in the operator log
+            # hints that the broadcast chain is broken.
+            logger.warning(
                 "Conversation listener failed",
                 listener=getattr(listener, "__qualname__", repr(listener)),
                 exc_info=True,

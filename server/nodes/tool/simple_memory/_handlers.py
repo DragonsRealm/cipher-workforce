@@ -23,6 +23,7 @@ from services.plugin.deps import get_database
 from services.plugin.ws import ws_response
 
 from . import SimpleMemoryToolInput
+from ._events import dispatch_memory_updated
 
 
 def _authenticated_owner(websocket: WebSocket) -> str:
@@ -194,6 +195,11 @@ async def handle_remember_memory(
         expires_at=args.expires_at,
         operation_id=_operation_id(data, "remember"),
     )
+    await dispatch_memory_updated(
+        workflow_id=scope.workflow_id,
+        memory_node_id=scope.memory_node_id,
+        operation="remember",
+    )
     return {"success": True, **result}
 
 
@@ -214,6 +220,11 @@ async def handle_update_memory_item(
         )
     except MemoryStoreError as exc:
         raise NodeUserError(str(exc)) from exc
+    await dispatch_memory_updated(
+        workflow_id=scope.workflow_id,
+        memory_node_id=scope.memory_node_id,
+        operation="update",
+    )
     return {"success": True, **result}
 
 
@@ -232,6 +243,11 @@ async def handle_forget_memory_item(
         )
     except MemoryStoreError as exc:
         raise NodeUserError(str(exc)) from exc
+    await dispatch_memory_updated(
+        workflow_id=scope.workflow_id,
+        memory_node_id=scope.memory_node_id,
+        operation="forget",
+    )
     return {"success": True, **result}
 
 
@@ -244,6 +260,11 @@ async def handle_clear_memory_items(
     result = await store.clear_namespace(
         scope,
         operation_id=_operation_id(data, "clear"),
+    )
+    await dispatch_memory_updated(
+        workflow_id=scope.workflow_id,
+        memory_node_id=scope.memory_node_id,
+        operation="clear",
     )
     return {"success": True, **result}
 

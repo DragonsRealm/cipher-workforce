@@ -1662,6 +1662,13 @@ class AgentWorkflow:
                     "node_id": tool_info["tool_node_id"],
                     "node_type": tool_info["node_type"],
                     "node_data": tool_node_data,
+                    # The model's arguments, unmerged. ToolNodes with a split
+                    # ToolInput schema must validate these on their own — the
+                    # merged node_data above validates against Params
+                    # (extra="ignore"), which silently DROPS model arguments
+                    # like Simple Memory's operation/content and degrades the
+                    # call to a no-op.
+                    "tool_args": call_args,
                     "inputs": {},
                     "workflow_id": payload.get("workflow_id"),
                     "session_id": payload.get("session_id", "default"),
@@ -2058,7 +2065,11 @@ class AgentWorkflow:
                     )
                 )
             if compaction_threshold and token_total >= compaction_threshold:
-                workflow.logger.info(f"AgentWorkflow compaction triggered: {token_total} tokens")
+                workflow.logger.info(
+                    f"AgentWorkflow compaction triggered at iteration "
+                    f"{iteration + 1}: {token_total} tokens >= threshold "
+                    f"{compaction_threshold} ({len(messages)} live messages)"
+                )
                 compact_payload = {
                     "session_id": payload.get("session_id", "default"),
                     "node_id": payload["node_id"],
@@ -2135,25 +2146,54 @@ class AgentWorkflow:
                 # The activity raises on any failure, so a result here
                 # always carries a non-empty summary.
                 summary = compact_result.get("summary", "")
-                # Replace the running messages with the summary plus the
-                # last user prompt — same pattern ``CompactionService``
-                # uses today in services/ai.py.
-                compacted_content = f"## Compacted summary:\n{summary}"
+                dropped_count = len(messages)
+                # Rebuild as: the ORIGINAL system prompt, verbatim, plus ONE
+                # user message carrying the summary and the live request.
+                #
+                # The system prompt must never be modified or duplicated by
+                # compaction: (1) it is the agent's contract (personality +
+                # tool/delegation guidance) and must stay byte-stable for
+                # provider prompt caching and behavioral consistency; (2) the
+                # next firing's seeding drops stored system messages so
+                # policy changes take effect — anything compaction stores
+                # under the system role silently vanishes on the next
+                # firing, which is how a summary once survived only until
+                # the next chat message while the noisy tool tail outlived
+                # it.
+                #
+                # The summary rides a USER message for the same reason: user
+                # wires persist through seeding, so the compacted knowledge
+                # crosses firings with the conversation it summarizes.
+                compacted_content = (
+                    "## Compacted conversation summary\n"
+                    "The conversation so far was compacted to stay within "
+                    "the model's context window. Treat this summary as the "
+                    "authoritative record of prior work; do not repeat "
+                    "completed steps.\n\n"
+                    f"{summary}"
+                )
+                if user_prompt:
+                    compacted_content += (
+                        f"\n\n## Current request\n{user_prompt}"
+                    )
                 messages = [
                     _native_message(
                         role="system",
                         content=system,
                     ),
                     _native_message(
-                        role="system",
-                        content=compacted_content,
-                    ),
-                    _native_message(
                         role="user",
-                        content=user_prompt,
+                        content=compacted_content,
                     ),
                 ]
                 context_usage_total = {}
+                workflow.logger.info(
+                    f"AgentWorkflow compaction applied at iteration "
+                    f"{iteration + 1}: {dropped_count} messages -> "
+                    f"{len(messages)} (summary {len(summary)} chars; prior "
+                    "tool calls/results now live only inside the summary; "
+                    "system prompt preserved verbatim)"
+                )
 
             # ---- Continue-as-new -------------------------------------
             # Only at a clean turn boundary, and never while a delegation

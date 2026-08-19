@@ -89,13 +89,51 @@ class AgentContextNode(ActionNode):
         graph: dict,
         database,
     ) -> dict:
-        """Nothing to rotate: a Reset admits a new generation, and the
-        generation is part of the conversation key, so the next run starts
-        an empty conversation automatically. Prior-generation rows stay as
-        readable history until the workflow is deleted or cleared."""
+        """Workflow Reset wipes this workflow's stored conversations.
 
-        del node_id, workflow_id, execution_id, generation, graph, database
-        return {"reset": False, "rotated_threads": 0}
+        The next Start admits a new generation (a new key) anyway, but the
+        panel shows the newest STORED generation — so surviving rows would
+        keep rendering the pre-Reset conversation as the live context and
+        Reset would look like it did nothing. Warm claude subprocesses
+        still holding the wiped conversation are terminated (the
+        generation fence in ``acquire`` covers the next Start
+        independently), and a ``context.updated`` broadcast refreshes any
+        open panel.
+        """
+
+        del graph
+        if generation <= 0:
+            return {"reset": False, "cleared_conversations": 0}
+        from services.agent_context import clear_conversation
+
+        cleared = await clear_conversation(
+            database, workflow_id=str(workflow_id)
+        )
+        try:
+            from services.cli_agent.factory import get_session_pool
+
+            pool = get_session_pool("claude")
+            terminate = getattr(pool, "terminate_conversations", None)
+            if callable(terminate):
+                await terminate(str(workflow_id))
+        except Exception:
+            # Best-effort: the acquire-time generation fence still protects
+            # the next Start from reusing a stale warm process.
+            pass
+        try:
+            from ._events import dispatch_context_updated
+
+            await dispatch_context_updated(
+                workflow_id=str(workflow_id),
+                generation=generation,
+                agent_node_id=str(node_id),
+                message_count=0,
+            )
+        except Exception:
+            # Lifecycle state is authoritative; the broadcast is a UI
+            # notification and may be retried by a manual panel refresh.
+            pass
+        return {"reset": True, "cleared_conversations": cleared}
 
 
 __all__ = [

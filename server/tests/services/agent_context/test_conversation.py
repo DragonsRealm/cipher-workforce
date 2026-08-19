@@ -95,6 +95,10 @@ _KEY = {
 }
 
 
+def _sans_ts(messages: list[dict]) -> list[dict]:
+    return [{k: v for k, v in m.items() if k != "ts"} for m in messages]
+
+
 @pytest.mark.asyncio
 async def test_load_returns_exactly_what_save_committed(
     conversation_database, isolated_listeners
@@ -103,7 +107,10 @@ async def test_load_returns_exactly_what_save_committed(
     await save_conversation(
         conversation_database, **_KEY, messages=messages
     )
-    assert await load_conversation(conversation_database, **_KEY) == messages
+    stored = await load_conversation(conversation_database, **_KEY)
+    # Content round-trips exactly; the store adds a view-only `ts` stamp.
+    assert _sans_ts(stored) == messages
+    assert all(m.get("ts") for m in stored)
 
 
 @pytest.mark.asyncio
@@ -126,12 +133,42 @@ async def test_save_is_an_upsert_replacing_the_whole_list(
     await save_conversation(
         conversation_database, **_KEY, messages=replacement
     )
-    assert await load_conversation(conversation_database, **_KEY) == replacement
+    assert (
+        _sans_ts(await load_conversation(conversation_database, **_KEY))
+        == replacement
+    )
     rows = await list_conversations(
         conversation_database, workflow_id=_KEY["workflow_id"]
     )
     assert len(rows) == 1
     assert rows[0]["message_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_timestamps_stamp_new_messages_and_preserve_old_ones(
+    conversation_database, isolated_listeners
+):
+    """Callers regenerate wires each turn (no stamps of their own), so the
+    store keeps the original ``ts`` for the unchanged prefix and stamps
+    only the appended turn — a message's time is when it first persisted,
+    not when the conversation last saved."""
+
+    first_turn = [_wire("user", "one"), _wire("assistant", "two")]
+    await save_conversation(
+        conversation_database, **_KEY, messages=first_turn
+    )
+    first_stored = await load_conversation(conversation_database, **_KEY)
+    original_stamps = [m["ts"] for m in first_stored]
+
+    # Next turn re-sends the SAME prefix (fresh wires, no ts) + new tail.
+    second_turn = [*first_turn, _wire("user", "three")]
+    await save_conversation(
+        conversation_database, **_KEY, messages=second_turn
+    )
+    second_stored = await load_conversation(conversation_database, **_KEY)
+    assert [m["ts"] for m in second_stored[:2]] == original_stamps
+    assert second_stored[2]["ts"]
+    assert _sans_ts(second_stored) == second_turn
 
 
 @pytest.mark.asyncio

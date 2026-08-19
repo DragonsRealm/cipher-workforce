@@ -111,12 +111,15 @@ async def handle_get_agent_context(
     data: Dict[str, Any],
     websocket: WebSocket,
 ) -> Dict[str, Any]:
-    """Return the stored conversations for one workflow's Context node.
+    """Return the live conversation for one workflow's Context node.
 
-    ``conversations`` lists every stored row (newest generation first) so
-    the panel can offer a selector; ``messages`` is the transcript of the
-    selected row — the requested ``generation``/``agent_node_id`` when
-    given, else the newest one.
+    The panel shows the agent's CURRENT context only: rows from the newest
+    stored generation. Prior generations stay in the store as inert history
+    (cleared with the workflow) but are deliberately not browsable here.
+    ``conversations`` lists the live generation's agents so the panel can
+    offer a selector when several agents share the Context node;
+    ``messages`` is the transcript of the requested ``agent_node_id``, else
+    the newest row.
     """
 
     workflow_id = str(data.get("workflow_id") or "")
@@ -126,20 +129,21 @@ async def handle_get_agent_context(
         workflow_id=workflow_id,
         context_node_id=context_node_id,
     )
-    generation = _optional_generation(data)
     agent_node_id = str(data.get("agent_node_id") or "") or None
 
     database = _database()
-    conversations = await list_conversations(database, workflow_id=workflow_id)
+    rows = await list_conversations(database, workflow_id=workflow_id)
+    # list_conversations orders newest generation first; the live context
+    # is that generation only.
+    live_generation = rows[0]["generation"] if rows else None
+    conversations = [
+        row for row in rows if row["generation"] == live_generation
+    ]
     selected = next(
         (
             row
             for row in conversations
-            if (generation is None or row["generation"] == generation)
-            and (
-                agent_node_id is None
-                or row["agent_node_id"] == agent_node_id
-            )
+            if agent_node_id is None or row["agent_node_id"] == agent_node_id
         ),
         None,
     )

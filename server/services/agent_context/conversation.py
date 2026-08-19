@@ -62,6 +62,42 @@ async def load_conversation(
         return list(row.messages or []) if row else []
 
 
+def _without_ts(message: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in message.items() if key != "ts"}
+
+
+def _stamp_messages(
+    incoming: List[Dict[str, Any]],
+    existing: List[Any],
+    now_iso: str,
+) -> List[Dict[str, Any]]:
+    """Attach a ``ts`` to every stored message.
+
+    Callers regenerate wires from live ``Message`` objects each turn, so an
+    incoming list never carries stamps of its own. The conversation is
+    append-only per turn: an incoming entry that matches the stored entry
+    at the same index (ignoring ``ts``) keeps its original stamp; anything
+    new or changed is stamped now. ``ts`` is a stored-view field only —
+    ``message_from_wire`` ignores it, so it never reaches a provider.
+    """
+
+    stamped: List[Dict[str, Any]] = []
+    for index, message in enumerate(incoming):
+        entry = dict(message)
+        previous = existing[index] if index < len(existing) else None
+        if (
+            not entry.get("ts")
+            and isinstance(previous, dict)
+            and previous.get("ts")
+            and _without_ts(previous) == _without_ts(entry)
+        ):
+            entry["ts"] = previous["ts"]
+        elif not entry.get("ts"):
+            entry["ts"] = now_iso
+        stamped.append(entry)
+    return stamped
+
+
 async def save_conversation(
     database: Any,
     *,
@@ -88,7 +124,11 @@ async def save_conversation(
                     generation=generation,
                     agent_node_id=agent_node_id,
                 )
-            row.messages = [dict(m) for m in messages if isinstance(m, dict)]
+            row.messages = _stamp_messages(
+                [dict(m) for m in messages if isinstance(m, dict)],
+                list(row.messages or []),
+                datetime.now(timezone.utc).isoformat(),
+            )
             row.updated_at = datetime.now(timezone.utc)
             session.add(row)
             await session.commit()

@@ -155,18 +155,31 @@ class SimpleMemoryOutput(BaseModel):
 
 class SimpleMemoryNode(ToolNode):
     type = "simpleMemory"
-    display_name = "Simple Memory"
-    subtitle = "Explicit Durable Memory"
+    # Wire type stays "simpleMemory" (stored verbatim in graphs, pool keys
+    # and migrations — renaming it is a breaking graph change); only the
+    # human-facing name is "Memory".
+    display_name = "Memory"
+    subtitle = "Durable Agent Memory"
     group = ("tool", "memory")
     description = (
         "Explicitly remember, recall, list, update, and forget durable facts"
     )
     component_kind = "tool"
     tool_name = "memory"
+    # The LLM-facing contract. The imperative "check before claiming
+    # ignorance" clause is load-bearing: with the earlier passive wording
+    # ("store and retrieve when useful"), models answered "I don't know who
+    # you are" from priors while the user's name sat one recall away.
     tool_description = (
-        "Store and retrieve durable memories only when useful. Use remember "
-        "for stable facts or decisions; use recall/list/get to retrieve them; "
-        "use update/forget with the item's expected_version."
+        "Durable long-term memory that persists across conversations and "
+        "may already hold facts about the user (name, preferences, "
+        "decisions, prior work). ALWAYS check it first — recall with a "
+        "search query, or list — before answering anything about the user, "
+        "their preferences, or earlier decisions; never say you don't know "
+        "or lack access to such information without checking memory. Use "
+        "remember to store new stable facts the user shares; use "
+        "update/forget with the item's expected_version to correct or "
+        "remove them."
     )
     handles = (
         {
@@ -284,6 +297,14 @@ class SimpleMemoryNode(ToolNode):
                 )
         except MemoryStoreError as exc:
             raise NodeUserError(str(exc)) from exc
+        if args.operation in ("remember", "update", "forget"):
+            from ._events import dispatch_memory_updated
+
+            await dispatch_memory_updated(
+                workflow_id=scope.workflow_id,
+                memory_node_id=scope.memory_node_id,
+                operation=args.operation,
+            )
         return SimpleMemoryOutput.model_validate(result)
 
     @classmethod
