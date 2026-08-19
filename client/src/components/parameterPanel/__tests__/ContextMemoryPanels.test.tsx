@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 describe('ContextPanel', () => {
-  it('loads the stored conversation through get_agent_context', async () => {
+  it('loads the live conversation through get_agent_context', async () => {
     sendRequest.mockImplementation(async (operation: string) => {
       if (operation === 'get_agent_context') {
         return {
@@ -27,17 +27,33 @@ describe('ContextPanel', () => {
                 workflow_id: 'wf-1',
                 generation: 2,
                 agent_node_id: 'agent-1',
-                message_count: 2,
+                message_count: 3,
                 updated_at: '2026-08-18T00:00:00Z',
               },
             ],
             generation: 2,
             agent_node_id: 'agent-1',
             updated_at: '2026-08-18T00:00:00Z',
-            message_count: 2,
+            message_count: 3,
             messages: [
               { role: 'user', content: 'hello agent' },
-              { role: 'assistant', content: 'hello operator' },
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    name: 'memory',
+                    args: { operation: 'remember', content: 'launch Tuesday' },
+                  },
+                ],
+              },
+              {
+                role: 'tool',
+                name: 'memory',
+                tool_call_id: 'call-1',
+                content: '{"operation": "remember", "memory": {"id": "m1"}}',
+              },
             ],
           },
         };
@@ -48,8 +64,16 @@ describe('ContextPanel', () => {
     render(<ContextPanel nodeId="ctx-1" workflowId="wf-1" />);
 
     expect(await screen.findByText('hello agent')).toBeInTheDocument();
-    expect(screen.getByText('hello operator')).toBeInTheDocument();
-    expect(screen.getByText('Generation 2')).toBeInTheDocument();
+    // The panel shows the live context only — no generation selector or
+    // generation label anywhere.
+    expect(screen.queryByText(/Generation/)).not.toBeInTheDocument();
+    // Tool calls render as structured entries, not raw dumped text.
+    expect(screen.getAllByText('memory').length).toBeGreaterThan(0);
+    // The JSON-string tool result routes through the tree viewer: its keys
+    // render as tree nodes rather than one messy serialized string.
+    expect(
+      screen.queryByText('{"operation": "remember", "memory": {"id": "m1"}}'),
+    ).not.toBeInTheDocument();
     expect(sendRequest).toHaveBeenCalledWith(
       'get_agent_context',
       expect.objectContaining({
@@ -98,6 +122,48 @@ describe('ContextPanel', () => {
         agent_node_id: 'agent-1',
       }),
     );
+  });
+
+  it('offers a raw view of the stored wire messages', async () => {
+    sendRequest.mockImplementation(async (operation: string) => {
+      if (operation === 'get_agent_context') {
+        return {
+          context: {
+            conversations: [
+              {
+                workflow_id: 'wf-1',
+                generation: 2,
+                agent_node_id: 'agent-1',
+                message_count: 1,
+                updated_at: null,
+              },
+            ],
+            generation: 2,
+            agent_node_id: 'agent-1',
+            updated_at: null,
+            message_count: 1,
+            messages: [{ role: 'user', content: 'plain prose message' }],
+          },
+        };
+      }
+      return {};
+    });
+    const user = userEvent.setup();
+    render(<ContextPanel nodeId="ctx-1" workflowId="wf-1" />);
+
+    await screen.findByText('plain prose message');
+    // Formatted view renders role cards (the chat-token surface class).
+    expect(document.querySelector('.bg-node-agent-soft')).not.toBeNull();
+
+    await user.click(screen.getByRole('tab', { name: 'Raw' }));
+
+    // The formatted cards are gone; the stored wire dicts render verbatim
+    // in the themed JSON tree (the message content becomes a tree value).
+    expect(document.querySelector('.bg-node-agent-soft')).toBeNull();
+    const treeValues = Array.from(
+      document.querySelectorAll('.w-rjv-value'),
+    ).map((node) => node.textContent);
+    expect(treeValues).toContain('plain prose message');
   });
 
   it('shows the empty state when nothing is stored', async () => {

@@ -1076,6 +1076,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           break;
         }
 
+        case 'memory.updated': {
+          // CloudEvents-typed memory mutation from
+          // server/nodes/tool/simple_memory/_events.py — fired after a
+          // durable remember/update/forget/clear from either writer (agent
+          // tool call or panel action). Identity-only payload; the panel
+          // refetches through the authorized `list_memory_items` handler.
+          void queryClient.invalidateQueries({ queryKey: ['memoryItems'] });
+          void queryClient.invalidateQueries({ queryKey: ['memoryItem'] });
+          break;
+        }
+
         case 'todos_updated': {
           // CloudEvents-typed todo-list change from
           // server/nodes/tool/write_todos/_events.py, emitted via the

@@ -456,13 +456,30 @@ html[data-page-hidden] *::after {
  * selectors when they want a material-specific outcome glow.
  * ============================================================================ */
 
+/* Success is a moment, not a state. Terminal statuses persist in the
+ * nodeStatusStore until the next run, so a static ring here left every
+ * agent/tool node glowing success-green indefinitely after completion.
+ * The one-shot fade (keyframes in animations.css) confirms the outcome,
+ * then returns the node to its normal border. Errors below stay painted —
+ * a failure must remain visible until acted on. */
 .sq-node[data-status="success"] .sq-node-box,
 .react-flow__node[data-status="success"] .node,
 .react-flow__node.completed .sq-node-box,
 .react-flow__node.completed .node {
-  box-shadow:
-    0 0 0 1px var(--success),
-    0 0 14px color-mix(in srgb, var(--success) var(--tint-glow), transparent);
+  animation: node-completed-fade 2.8s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sq-node[data-status="success"] .sq-node-box,
+  .react-flow__node[data-status="success"] .node,
+  .react-flow__node.completed .sq-node-box,
+  .react-flow__node.completed .node {
+    /* No fade motion: keep the static ring so the outcome stays legible. */
+    animation: none;
+    box-shadow:
+      0 0 0 1px var(--success),
+      0 0 14px color-mix(in srgb, var(--success) var(--tint-glow), transparent);
+  }
 }
 
 .sq-node[data-status="error"] .sq-node-box,

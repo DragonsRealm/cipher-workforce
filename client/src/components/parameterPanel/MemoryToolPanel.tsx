@@ -122,6 +122,11 @@ const MemoryToolPanel: React.FC<MemoryToolPanelProps> = ({
         limit: PAGE_SIZE,
       }),
     enabled: !!workflowId && !!nodeId,
+    // Same contract as ContextPanel: the agent mutates memory while this
+    // panel is CLOSED, so the `memory.updated` invalidation has no active
+    // observer then — a remount must always fetch fresh.
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
   const itemQuery = useQuery<MemoryItemResponse, Error>({
     queryKey: ['memoryItem', workflowId ?? '', nodeId, selectedId ?? 'new'],
@@ -132,6 +137,8 @@ const MemoryToolPanel: React.FC<MemoryToolPanelProps> = ({
         memory_id: selectedId,
       }),
     enabled: !!workflowId && !!selectedId,
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 
   const selected = itemQuery.data?.item ?? itemQuery.data?.memory;

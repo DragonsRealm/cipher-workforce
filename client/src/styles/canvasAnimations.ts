@@ -35,6 +35,15 @@ const KEYFRAMES = `
     0% { stroke-dashoffset: 24; }
     100% { stroke-dashoffset: 0; }
   }
+
+  /* One-shot success confirmation, mirroring the node-completed-fade in
+     themes/animations.css: terminal statuses persist in the store, so a
+     static success stroke left every traversed edge green until the next
+     run. Hold briefly, then settle back to the resting stroke. */
+  @keyframes edgeCompletedFade {
+    0%, 45% { stroke: var(--success); }
+    100% { stroke: var(--edge-stroke); }
+  }
 `;
 
 const EDGE_STATUS_STYLES = `
@@ -59,8 +68,15 @@ const EDGE_STATUS_STYLES = `
   }
 
   .react-flow__edge.completed path {
-    stroke: var(--success) !important;
     stroke-width: var(--edge-stroke-width-done) !important;
+    animation: edgeCompletedFade 2.8s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .react-flow__edge.completed path {
+      animation: none;
+      stroke: var(--success) !important;
+    }
   }
 
   .react-flow__edge.error path {

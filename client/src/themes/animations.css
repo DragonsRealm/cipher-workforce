@@ -124,6 +124,23 @@
  * a gentle, slower heartbeat distinct from the one-shot execution pulse. Uses
  * --node-pulse-color so it reads on any theme background.
  * ========================================================================== */
+/* One-shot success confirmation for canvas nodes (base.css `.completed`
+   rule). Holds the success ring briefly, then fades to nothing — terminal
+   statuses persist in the store, so without the fade every completed
+   agent/tool node kept its green ring until the next run. */
+@keyframes node-completed-fade {
+  0%, 45% {
+    box-shadow:
+      0 0 0 1px var(--success),
+      0 0 14px color-mix(in srgb, var(--success) var(--tint-glow), transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px transparent,
+      0 0 14px transparent;
+  }
+}
+
 @keyframes trigger-listening {
   0%, 100% {
     box-shadow:

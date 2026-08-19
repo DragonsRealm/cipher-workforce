@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import JsonView from '@uiw/react-json-view';
-import { Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Loader2, RefreshCw, ShieldCheck, Trash2, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,14 +14,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWebSocket } from '@/contexts/WebSocketContext';
+import { cn } from '@/lib/utils';
+import { formatTimestamp, tryParseJson } from '@/utils/formatters';
+
+interface ToolCallView {
+  id?: string;
+  name?: string;
+  args?: unknown;
+  raw_arguments?: string;
+  parse_error?: string;
+}
 
 interface ConversationMessage {
   role?: string;
   content?: unknown;
-  tool_calls?: unknown[];
+  tool_calls?: ToolCallView[];
   tool_call_id?: string;
   name?: string;
+  /** Stamped by the store when the message first persisted. */
+  ts?: string;
 }
 
 interface ConversationMeta {
@@ -52,45 +65,107 @@ interface ContextPanelProps {
   workflowId?: string;
 }
 
-const conversationValue = (meta: {
-  generation?: number | null;
-  agent_node_id?: string | null;
-}) => `${meta.generation ?? ''}:${meta.agent_node_id ?? ''}`;
-
 const contextQueryKey = (
   workflowId: string | undefined,
   nodeId: string,
-  selected: string,
-) => ['agentContext', workflowId ?? '', nodeId, selected] as const;
+  agent: string,
+) => ['agentContext', workflowId ?? '', nodeId, agent] as const;
 
-/** Authorized, query-backed viewer for the plain conversation store.
+/** Per-role card treatment — same tokens the chat surface uses
+ * (ConsolePanel: user bubbles on `bg-node-agent-soft`, bot bubbles on
+ * `bg-bg-elevated`), so every theme's palette carries over. */
+const ROLE_CARD: Record<string, string> = {
+  user: 'bg-node-agent-soft border-border',
+  assistant: 'bg-bg-elevated border-border-default',
+  tool: 'bg-card border-border',
+  system: 'bg-card border-border',
+};
+
+/** Route a value to the themed JSON tree when it is (or parses to) an
+ * object; fall back to readable text. Tool payloads arrive as serialized
+ * JSON strings, which read as noise without the tree. The tree paints on
+ * the per-theme `--code-*` surface via the global `--w-rjv-*` mapping. */
+const JsonOrText: React.FC<{
+  value: unknown;
+  collapsed?: number;
+  mono?: boolean;
+}> = ({ value, collapsed = 2, mono = false }) => {
+  if (typeof value === 'string') {
+    const parsed = tryParseJson(value);
+    if (parsed) {
+      return (
+        <div className="overflow-x-auto rounded-md border border-[var(--code-border)] bg-[var(--code-bg)] p-2">
+          <JsonView value={parsed} collapsed={collapsed} displayDataTypes={false} />
+        </div>
+      );
+    }
+    return (
+      <div
+        className={cn(
+          'text-sm whitespace-pre-wrap',
+          mono
+            ? 'font-mono rounded-md border border-[var(--code-border)] bg-[var(--code-bg)] p-2 text-[var(--code-text)]'
+            : 'text-foreground',
+        )}
+      >
+        {value}
+      </div>
+    );
+  }
+  if (value != null && typeof value === 'object') {
+    return (
+      <div className="overflow-x-auto rounded-md border border-[var(--code-border)] bg-[var(--code-bg)] p-2">
+        <JsonView
+          value={value as object}
+          collapsed={collapsed}
+          displayDataTypes={false}
+        />
+      </div>
+    );
+  }
+  if (value == null) return null;
+  return (
+    <div className="text-sm whitespace-pre-wrap text-foreground">
+      {String(value)}
+    </div>
+  );
+};
+
+/** Authorized, query-backed viewer for the agent's live conversation.
  *
- * One conversation per (workflow, generation, agent node); this panel lists
- * the stored conversations and renders the selected transcript. It never
- * reads transcript data from workflow params, node status, or websocket
- * broadcasts — `context.updated` broadcasts only trigger a refetch through
- * the authorized `get_agent_context` handler.
+ * Shows the CURRENT context only — the newest workflow generation, exactly
+ * what the agent loads on its next firing. It never reads transcript data
+ * from workflow params, node status, or websocket broadcasts —
+ * `context.updated` broadcasts only trigger a refetch through the
+ * authorized `get_agent_context` handler.
  */
 const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
   const { sendRequest } = useWebSocket();
   const queryClient = useQueryClient();
-  // '' = server default (the newest stored conversation).
-  const [selected, setSelected] = useState<string>('');
-  const [selectedGeneration, selectedAgent] = selected
-    ? selected.split(/:(.*)/s, 2)
-    : ['', ''];
+  // '' = server default (the newest stored conversation). Only meaningful
+  // when several agents share this Context node.
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  // 'formatted' renders role cards; 'raw' shows the stored wire messages
+  // verbatim — the exact JSON the agent's next firing loads.
+  const [view, setView] = useState<'formatted' | 'raw'>('formatted');
 
-  const queryKey = contextQueryKey(workflowId, nodeId, selected);
+  const queryKey = contextQueryKey(workflowId, nodeId, selectedAgent);
   const contextQuery = useQuery<ContextResponse, Error>({
     queryKey,
     queryFn: () =>
       sendRequest<ContextResponse>('get_agent_context', {
         workflow_id: workflowId,
         context_node_id: nodeId,
-        ...(selectedGeneration ? { generation: Number(selectedGeneration) } : {}),
         ...(selectedAgent ? { agent_node_id: selectedAgent } : {}),
       }),
     enabled: !!workflowId && !!nodeId,
+    // The global default is refetchOnMount: false ("trust the cache; the
+    // broadcast bridge keeps it in sync"), but a conversation grows while
+    // this panel is CLOSED — the `context.updated` invalidation has no
+    // active observer then, so a remount must always fetch fresh or the
+    // panel opens on stale data until a manual Refresh.
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
   const snapshot = contextQuery.data?.context ?? {};
   const conversations = snapshot.conversations ?? [];
@@ -110,7 +185,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
         ...(snapshot.agent_node_id ? { agent_node_id: snapshot.agent_node_id } : {}),
       }),
     onSuccess: async () => {
-      setSelected('');
+      setSelectedAgent('');
       await invalidateContext();
       toast.success('Conversation cleared');
     },
@@ -133,12 +208,23 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-foreground">Agent Conversation</h3>
+          <h3 className="font-display tracking-[var(--type-tracking-display)] [text-transform:var(--type-uppercase)] text-base font-semibold text-fg-default">
+            Agent Conversation
+          </h3>
           <p className="text-xs text-muted-foreground">
-            Stored conversation for each connected agent, one per workflow generation.
+            The connected agent's live context — exactly what it loads on its next turn.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs
+            value={view}
+            onValueChange={(next) => setView(next as 'formatted' | 'raw')}
+          >
+            <TabsList>
+              <TabsTrigger value="formatted">Formatted</TabsTrigger>
+              <TabsTrigger value="raw">Raw</TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Button
             variant="outline"
             size="sm"
@@ -162,17 +248,17 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
 
       {conversations.length > 1 && (
         <Select
-          value={selected || conversationValue(snapshot)}
-          onValueChange={setSelected}
+          value={selectedAgent || (snapshot.agent_node_id ?? '')}
+          onValueChange={setSelectedAgent}
         >
           <SelectTrigger className="w-full max-w-md">
-            <SelectValue placeholder="Select a conversation" />
+            <SelectValue placeholder="Select an agent" />
           </SelectTrigger>
           <SelectContent>
             {conversations.map((meta) => (
-              <SelectItem key={conversationValue(meta)} value={conversationValue(meta)}>
-                Generation {meta.generation} · {meta.agent_node_id} ·{' '}
-                {meta.message_count} message{meta.message_count === 1 ? '' : 's'}
+              <SelectItem key={meta.agent_node_id} value={meta.agent_node_id}>
+                {meta.agent_node_id} · {meta.message_count} message
+                {meta.message_count === 1 ? '' : 's'}
               </SelectItem>
             ))}
           </SelectContent>
@@ -181,13 +267,16 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
 
       {snapshot.agent_node_id && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">Generation {snapshot.generation ?? '—'}</Badge>
           <Badge variant="outline">{snapshot.agent_node_id}</Badge>
           <span>
             {snapshot.message_count ?? 0} message
             {(snapshot.message_count ?? 0) === 1 ? '' : 's'}
           </span>
-          {snapshot.updated_at && <span>updated {snapshot.updated_at}</span>}
+          {snapshot.updated_at && (
+            <span className="font-mono text-[11px] tabular-nums">
+              updated {formatTimestamp(snapshot.updated_at)}
+            </span>
+          )}
         </div>
       )}
 
@@ -202,12 +291,21 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
         <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           No stored conversation yet.
         </div>
+      ) : view === 'raw' ? (
+        // The stored wire messages verbatim, on the per-theme code surface —
+        // the exact JSON the agent's next firing loads.
+        <div className="overflow-x-auto rounded-md border border-[var(--code-border)] bg-[var(--code-bg)] p-2">
+          <JsonView value={messages} collapsed={2} displayDataTypes={false} />
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           {messages.map((message, index) => (
             <div
               key={index}
-              className="rounded-md border border-border bg-card p-3"
+              className={cn(
+                'rounded-md border p-3',
+                ROLE_CARD[message.role || ''] || 'bg-card border-border',
+              )}
             >
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{message.role || 'message'}</Badge>
@@ -216,26 +314,40 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ nodeId, workflowId }) => {
                     {message.name}
                   </span>
                 )}
+                {message.ts && (
+                  <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {formatTimestamp(message.ts)}
+                  </span>
+                )}
               </div>
-              {typeof message.content === 'string' && message.content ? (
-                <div className="whitespace-pre-wrap text-sm text-foreground">
-                  {message.content}
-                </div>
-              ) : message.content != null ? (
-                <JsonView
-                  value={message.content as object}
-                  collapsed={2}
-                  displayDataTypes={false}
-                />
-              ) : null}
+              <JsonOrText value={message.content} mono={message.role === 'tool'} />
               {(message.tool_calls?.length ?? 0) > 0 && (
-                <div className="mt-2">
-                  <div className="mb-1 text-xs text-muted-foreground">Tool calls</div>
-                  <JsonView
-                    value={message.tool_calls as object}
-                    collapsed={1}
-                    displayDataTypes={false}
-                  />
+                <div className="mt-2 flex flex-col gap-2">
+                  {message.tool_calls!.map((call, callIndex) => (
+                    <div
+                      key={call.id || callIndex}
+                      className="rounded-md border border-[var(--code-border)] bg-[var(--code-bg)] p-2"
+                    >
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <Wrench className="h-3.5 w-3.5 text-[var(--code-comment)]" />
+                        <span className="font-mono text-xs font-medium text-[var(--code-text)]">
+                          {call.name || 'tool call'}
+                        </span>
+                        {call.parse_error && (
+                          <Badge variant="warning">invalid arguments</Badge>
+                        )}
+                      </div>
+                      <JsonOrText
+                        value={
+                          call.args && Object.keys(call.args as object).length > 0
+                            ? call.args
+                            : call.raw_arguments
+                        }
+                        collapsed={1}
+                        mono
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
