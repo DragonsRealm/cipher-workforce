@@ -269,6 +269,7 @@ class NodeExecutor:
             "webhookResponse",
             "console",
             "socialReceive",
+            "canvas",
         }
     )
 

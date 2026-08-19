@@ -26,6 +26,7 @@
     "calculatorTool",
     "currentTimeTool",
     "writeTodos",
+    "canvas",
 
     "httpRequest",
     "timer",

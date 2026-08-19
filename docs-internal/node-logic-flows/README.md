@@ -56,6 +56,7 @@ match its doc here, and each doc must still describe what the code does.
 
 - [Agent Builder (`agentBuilder`)](./ai_tools/agentBuilder.md)
 - [Calculator Tool (`calculatorTool`)](./ai_tools/calculatorTool.md)
+- [Canvas (`canvas`)](./ai_tools/canvas.md)
 - [Current Time Tool (`currentTimeTool`)](./ai_tools/currentTimeTool.md)
 - [DuckDuckGo Search (`duckduckgoSearch`)](./ai_tools/duckduckgoSearch.md)
 - [Task Manager (`taskManager`)](./ai_tools/taskManager.md)

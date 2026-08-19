@@ -210,15 +210,27 @@ would mean a second auth path and a second error envelope for no gain.
   `preview_kind(mime)` (gated on `serves_inline` first) gives the gallery
   listing each row's `preview` verdict. **Two consumers, one function** — if
   they ever disagreed, the panel would open a player for a file the route forces
-  to download, and the user would see a dead frame with no explanation. Only
-  `audio/ image/ video/` render inline; `NEVER_INLINE` is the full set
+  to download, and the user would see a dead frame with no explanation. The
+  `audio/ image/ video/` prefixes render inline, plus the exact-match set
+  `INLINE_EXACT = {application/pdf}` (added for the Canvas node's PDF surface —
+  the browser's built-in viewer renders isolated from the page, so the exposure
+  class is images, not markup; exact-match so no other `application/*` type
+  gains inline serving as a side effect). `NEVER_INLINE` is the full set
   `{image/svg+xml, text/html, text/xml, application/xhtml+xml}`. Everything else
   gets `Content-Disposition: attachment`, plus `X-Content-Type-Options: nosniff`.
 
   This is load-bearing. `shell`, `fileDownloader` and `fileModify` can all
   write arbitrary files into a workspace, so serving attacker-authored markup
   inline **from the app origin** would be stored XSS with session-cookie
-  access. Both excluded types are script-bearing.
+  access. Both excluded types are script-bearing. The Canvas node displays
+  workspace HTML anyway — but through a `srcDoc` iframe with
+  `sandbox="allow-scripts"` and no `allow-same-origin` (opaque origin, no
+  cookies), i.e. by respecting this rule, not weakening it
+  (see [canvas_node.md](./canvas_node.md)). Two adjacent notes: attachment
+  disposition does NOT block `fetch()` reading a body — the Canvas text
+  renderers fetch markdown/code over this same route with a client-side
+  512 KB cap (`client/src/hooks/useWorkspaceText.ts`) — and `PreviewKind`
+  now includes `"pdf"` on both sides of the wire.
 - No immutable caching: workspace files are mutable. `AudioRef.sha256` is a
   natural `ETag`.
 

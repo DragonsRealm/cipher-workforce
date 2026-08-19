@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Download } from 'lucide-react';
+import { AlertCircle, Download, PanelRight } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { buildApiUrl } from '@/config/api';
+import type { CanvasItem } from '../../../lib/canvasBoard';
+import { useAppStore } from '../../../store/useAppStore';
+import { useCanvasDockStore } from '../../../stores/canvasDockStore';
 import type { WorkspaceEntry } from '@/types/workspaceFiles';
 
 import FileGlyph from './FileGlyph';
@@ -89,13 +92,43 @@ const FilePreviewDialog: React.FC<Props> = ({ entry, onOpenChange }) => {
               <dd className="text-fg-default">{formatModified(entry.modified_at)}</dd>
             </dl>
 
-            {src && (
-              <Button asChild variant="outline" size="sm">
-                <a href={src} download={entry.name} target="_blank" rel="noreferrer">
-                  <Download className="h-4 w-4" /> Download
-                </a>
-              </Button>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {entry.ref && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Move the preview to the persistent docked surface. The
+                    // dock sits behind this 95vw parameter modal, so opening
+                    // there must also close the modal — that is the point of
+                    // the affordance.
+                    const item: CanvasItem = {
+                      id: `ephemeral-${entry.path}`,
+                      kind: 'file',
+                      title: null,
+                      ref: entry.ref,
+                      url: null,
+                      content: null,
+                      language: null,
+                      source: 'workflow',
+                      created_at: entry.modified_at,
+                    };
+                    useCanvasDockStore.getState().showEphemeral(item);
+                    onOpenChange(false);
+                    useAppStore.getState().setSelectedNode(null);
+                  }}
+                >
+                  <PanelRight className="h-4 w-4" /> Open in side panel
+                </Button>
+              )}
+              {src && (
+                <Button asChild variant="outline" size="sm">
+                  <a href={src} download={entry.name} target="_blank" rel="noreferrer">
+                    <Download className="h-4 w-4" /> Download
+                  </a>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>

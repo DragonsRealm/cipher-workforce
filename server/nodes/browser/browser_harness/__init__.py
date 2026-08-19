@@ -17,6 +17,7 @@ profile/session state.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -160,5 +161,28 @@ class BrowserHarnessNode(ActionNode):
             data = await svc.doctor()
         else:
             data = await svc.run_code(_code_for(params), timeout=params.timeout)
+
+        if params.operation == "screenshot" and isinstance(data, dict):
+            # capture_screenshot prints an absolute path under the harness
+            # tmp dir — unreachable over HTTP. Copy the bytes into the
+            # workspace so the shot becomes a servable FileRef; the raw
+            # output stays for provenance. Containment-checked read.
+            from core.paths import daemons_dir
+
+            from .._screenshots import persist_screenshot_file
+
+            lines = [
+                line.strip()
+                for line in str(data.get("output") or "").splitlines()
+                if line.strip()
+            ]
+            if lines:
+                ref = persist_screenshot_file(
+                    lines[-1],
+                    ctx,
+                    contained_under=Path(daemons_dir()) / "browser-harness",
+                )
+                if ref is not None:
+                    data["screenshot"] = ref
 
         return BrowserHarnessOutput(operation=params.operation, data=data)

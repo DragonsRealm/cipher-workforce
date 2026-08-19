@@ -31,6 +31,7 @@ import {
 } from '../types/cloudEvents';
 import { WS_CLOSE, WS_RECONNECT } from '../lib/connectionConfig';
 import { todoQueryKeyFromEvent } from '../lib/todoQuery';
+import { useCanvasDockStore } from '../stores/canvasDockStore';
 // Cycle note: lib/nodeSpec imports useWebSocket from this module. Safe in
 // both evaluation orders because neither side calls the other's binding at
 // module top level — `executionBudgetFor` only references it inside a body.
@@ -1084,6 +1085,31 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // refetches through the authorized `list_memory_items` handler.
           void queryClient.invalidateQueries({ queryKey: ['memoryItems'] });
           void queryClient.invalidateQueries({ queryKey: ['memoryItem'] });
+          break;
+        }
+
+        case 'canvas_updated': {
+          // CloudEvents-typed Canvas board change from
+          // server/nodes/tool/canvas/_events.py. Identity + revision only —
+          // panels refetch through the authorized `canvas_list` handler
+          // (ContextPanel posture). NOTE: because this switch case exists,
+          // the default-case listener fan-out never fires for this type —
+          // do not addEventListener('canvas_updated') anywhere.
+          const event = data as WorkflowEvent<{
+            workflow_id?: string | null;
+            node_id?: string | null;
+            revision?: number;
+          }>;
+          void queryClient.invalidateQueries({ queryKey: ['canvasBoard'] });
+          const identity = event?.data;
+          if (
+            identity?.node_id &&
+            identity?.workflow_id &&
+            identity.workflow_id === useAppStore.getState().currentWorkflow?.id
+          ) {
+            // Auto-open / follow the pushed node in the docked sidebar.
+            useCanvasDockStore.getState().notifyPushed(identity.node_id);
+          }
           break;
         }
 

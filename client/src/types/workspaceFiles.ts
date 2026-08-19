@@ -13,7 +13,7 @@
  */
 
 /** What the workspace route will let a browser render in place. */
-export type PreviewKind = 'image' | 'audio' | 'video' | 'none';
+export type PreviewKind = 'image' | 'audio' | 'video' | 'pdf' | 'none';
 
 /** One entry in a directory listing. `path` is always workspace-relative. */
 export interface WorkspaceEntry {

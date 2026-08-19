@@ -394,4 +394,19 @@ class BrowserNode(ActionNode):
         else:
             data = await svc.run(_build_args(op, p), session, timeout, **run_kw)
 
+        if op == "screenshot" and isinstance(data, dict):
+            # Land the pixels in the workspace as a FileRef (media contract:
+            # references, never bytes — a base64 blob in the result rides the
+            # DB, broadcasts, Temporal payloads and LLM context). Tolerant:
+            # an unrecognized CLI shape passes through unchanged.
+            from .._screenshots import persist_screenshot_from_payload
+
+            ref, consumed_key = persist_screenshot_from_payload(
+                data, ctx, fmt=params.screenshot_format or "png"
+            )
+            if ref is not None:
+                if consumed_key:
+                    data = {k: v for k, v in data.items() if k != consumed_key}
+                data["screenshot"] = ref
+
         return BrowserOutput(operation=op, data=data, session=session)

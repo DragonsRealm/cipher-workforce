@@ -24,6 +24,7 @@ import {
   Clock,
   Zap,
   Lock,
+  Monitor,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -56,6 +57,7 @@ import {
 } from '../../contexts/WebSocketContext';
 import { ThemeSwitcher } from '@/components/ui/ThemeSwitcher';
 import { cn } from '@/lib/utils';
+import { useCanvasDockStore } from '../../stores/canvasDockStore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApiKeys, GlobalModelState } from '../../hooks/useApiKeys';
 import { useStoredProviderCount } from '../../hooks/useCatalogueQuery';
@@ -124,6 +126,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
   onOverrideAllAgents,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
+  // Dock state lives on its own store (not a prop): slice reads scope
+  // re-renders to this button, and the state isn't Dashboard's to thread.
+  const canvasDockOpen = useCanvasDockStore((s) => s.open);
+  const toggleCanvasDock = useCanvasDockStore((s) => s.toggle);
   const [resetOpen, setResetOpen] = useState(false);
   const [tempName, setTempName] = useState(workflowName);
   const { user, logout } = useAuth();
@@ -546,6 +552,17 @@ const TopToolbar: React.FC<TopToolbarProps> = ({
           className="border-action-tools-border bg-action-tools-soft text-action-tools-ink hover:bg-action-tools-hover aria-pressed:bg-action-tools-hover"
         >
           {componentPaletteVisible ? <PanelRightClose /> : <PanelRightOpen />}
+        </Button>
+
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={toggleCanvasDock}
+          aria-pressed={canvasDockOpen}
+          title={canvasDockOpen ? 'Hide canvas' : 'Show canvas'}
+          className="border-action-tools-border bg-action-tools-soft text-action-tools-ink hover:bg-action-tools-hover aria-pressed:bg-action-tools-hover"
+        >
+          <Monitor />
         </Button>
       </div>
     </div>

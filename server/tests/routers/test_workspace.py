@@ -273,9 +273,21 @@ class TestInlineDispositionHasOneDefinition:
             assert serves_inline(mime) is True, mime
             assert preview_kind(mime) == kind, mime
 
+    def test_pdf_is_inline_exact_match(self):
+        """PDF renders in the browser's built-in viewer (Canvas node).
+
+        Exact-match only — ``application/pdf`` rides ``INLINE_EXACT``, not a
+        prefix, so no other ``application/*`` type gains inline serving as a
+        side effect.
+        """
+        from services.media.preview import preview_kind, serves_inline
+
+        assert serves_inline("application/pdf") is True
+        assert preview_kind("application/pdf") == "pdf"
+
     def test_everything_else_downloads(self):
         from services.media.preview import preview_kind, serves_inline
 
-        for mime in ("application/pdf", "text/plain", "application/octet-stream", None):
+        for mime in ("text/plain", "application/octet-stream", "application/x-pdf", None):
             assert serves_inline(mime) is False, mime
             assert preview_kind(mime) == "none", mime

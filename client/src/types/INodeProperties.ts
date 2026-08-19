@@ -241,6 +241,9 @@ export interface INodeUIHints {
   isProcessManagerPanel?: boolean;
   /** MiddleSection: render the workspace gallery (drag files to params). */
   isGalleryPanel?: boolean;
+  /** MiddleSection: render the pushed-content Canvas board. The docked
+   * canvas sidebar reads the same flag to find Canvas nodes. */
+  isCanvasPanel?: boolean;
   /** Special-case panel for gmaps_create with map preview. */
   showLocationPanel?: boolean;
   /** ConsolePanel: this node is a chat-message target. */

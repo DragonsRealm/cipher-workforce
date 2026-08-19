@@ -41,6 +41,7 @@ import GetStartedChecklist from './components/onboarding/GetStartedChecklist';
 import { useSaveUserSettingsMutation } from './hooks/useUserSettingsQuery';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import ConsolePanel from './components/ui/ConsolePanel';
+import CanvasDock from './components/ui/CanvasDock';
 import StatusBar from './components/ui/StatusBar';
 import CommandPaletteHost from './components/ui/CommandPaletteHost';
 import { useSoundSync, withSound } from './hooks/useSound';
@@ -1531,6 +1532,11 @@ const DashboardContent: React.FC = () => {
                 />
               )}
             </div>
+
+            {/* Docked Canvas sidebar — persistent content viewer at the
+                rightmost edge. Owns its own state (canvasDockStore);
+                auto-opens on canvas_updated for the current workflow. */}
+            <CanvasDock nodes={nodes} />
           </div>
         </div>
 
