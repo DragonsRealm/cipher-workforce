@@ -1,517 +1,370 @@
 {
-  "id": "9fa6f4d2e603427491a26405e0fc8cde",
+  "id": "9cf6613149824411ae8e57b559bf5aa9",
   "name": "Claude Assistant",
-  "slug": "Claude_Assistant_1",
+  "slug": "Claude_Assistant_2",
   "nodes": [
     {
-      "id": "chatTrigger-17842180599640-7e1723",
-      "type": "chatTrigger",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:chatTrigger:1",
       "position": {
         "x": 920,
         "y": 480
       },
+      "type": "chatTrigger",
       "data": {
         "label": "Chat Trigger"
       },
       "width": 69,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 920,
-        "y": 480
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "console-17842180599641-7e1723",
-      "type": "console",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:console:1",
       "position": {
         "x": 1760,
         "y": 520
       },
+      "type": "console",
       "data": {
         "label": "Console"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1760,
-        "y": 520
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "simpleMemory-17842180599642-7e1723",
-      "type": "simpleMemory",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:simpleMemory:1",
       "position": {
-        "x": 1160,
+        "x": 1380,
         "y": 720
       },
+      "type": "simpleMemory",
       "data": {
-        "label": "Simple Memory"
+        "label": "Memory"
       },
-      "width": 87,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1160,
-        "y": 720
-      },
-      "dragging": true
+      "width": 88,
+      "height": 86
     },
     {
-      "id": "writeTodos-17842180599643-7e1723",
-      "type": "writeTodos",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:writeTodos:1",
       "position": {
         "x": 1480,
         "y": 720
       },
+      "type": "writeTodos",
       "data": {
         "label": "Write Todos"
       },
       "width": 66,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1480,
-        "y": 720
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "telegramReceive-17842180599644-7e1723",
-      "type": "telegramReceive",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:telegramReceive:1",
       "position": {
         "x": 920,
         "y": 340
       },
+      "type": "telegramReceive",
       "data": {
         "label": "Telegram Receive"
       },
       "width": 99,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 920,
-        "y": 340
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "telegramSend-17842180599645-7e1723",
-      "type": "telegramSend",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:telegramSend:1",
       "position": {
         "x": 1720,
         "y": 380
       },
+      "type": "telegramSend",
       "data": {
         "label": "Telegram Send"
       },
       "width": 84,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1720,
-        "y": 380
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "masterSkill-17842180599646-7e1723",
-      "type": "masterSkill",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:masterSkill:1",
       "position": {
         "x": 1280,
         "y": 720
       },
+      "type": "masterSkill",
       "data": {
         "label": "Master Skill"
       },
       "width": 67,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1280,
-        "y": 720
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "claude_code_agent-17842180599647-7e1723",
-      "type": "claude_code_agent",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "position": {
         "x": 1300,
         "y": 380
       },
+      "type": "claude_code_agent",
       "data": {
         "label": "Claude Code"
       },
       "width": 300,
-      "height": 200,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1300,
-        "y": 380
-      },
-      "dragging": false
+      "height": 200
     },
     {
-      "id": "duckduckgoSearch-17842180599648-7e1723",
-      "type": "duckduckgoSearch",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:duckduckgoSearch:1",
       "position": {
-        "x": 1700,
+        "x": 1680,
         "y": 720
       },
+      "type": "duckduckgoSearch",
       "data": {
         "label": "DuckDuckGo Search"
       },
       "width": 116,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1700,
-        "y": 720
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "processManager-17842180599649-7e1723",
-      "type": "processManager",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:processManager:1",
       "position": {
         "x": 1580,
         "y": 720
       },
+      "type": "processManager",
       "data": {
         "label": "Process Manager"
       },
       "width": 98,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1580,
-        "y": 720
-      },
-      "dragging": true
+      "height": 86
     },
     {
-      "id": "browser-178421805996410-7e1723",
-      "type": "browser",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:browser:1",
       "position": {
         "x": 1820,
         "y": 720
       },
+      "type": "browser",
       "data": {
         "label": "Browser"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1820,
-        "y": 720
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fileModify-178421805996411-7e1723",
-      "type": "fileModify",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:fileModify:1",
       "position": {
         "x": 1920,
         "y": 720
       },
+      "type": "fileModify",
       "data": {
         "label": "File Modify"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 1920,
-        "y": 720
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fileRead-178421805996412-7e1723",
-      "type": "fileRead",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:fileRead:1",
       "position": {
-        "x": 2020,
+        "x": 2040,
         "y": 720
       },
+      "type": "fileRead",
       "data": {
         "label": "File Read"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2020,
-        "y": 720
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "fsSearch-178421805996413-7e1723",
-      "type": "fsSearch",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:fsSearch:1",
       "position": {
-        "x": 2120,
+        "x": 2140,
         "y": 720
       },
+      "type": "fsSearch",
       "data": {
         "label": "FS Search"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2120,
-        "y": 720
-      },
-      "dragging": false
+      "height": 86
     },
     {
-      "id": "shell-178421805996414-7e1723",
-      "type": "shell",
+      "id": "9cf6613149824411ae8e57b559bf5aa9:shell:1",
       "position": {
-        "x": 2220,
+        "x": 2240,
         "y": 720
       },
+      "type": "shell",
       "data": {
         "label": "Shell"
       },
       "width": 64,
-      "height": 86,
-      "selected": false,
-      "positionAbsolute": {
-        "x": 2220,
+      "height": 86
+    },
+    {
+      "id": "9cf6613149824411ae8e57b559bf5aa9:context:1",
+      "position": {
+        "x": 1180,
         "y": 720
       },
-      "dragging": true
+      "type": "context",
+      "data": {
+        "agentNodeId": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
+        "label": "Context",
+        "systemManaged": true
+      },
+      "width": 64,
+      "height": 86
     }
   ],
   "edges": [
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "telegramReceive-17842180599644-7e1723",
+      "id": "e-telegramReceive-17841962656474-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:telegramReceive:1",
       "sourceHandle": "output-main",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-main",
-      "id": "e-telegramReceive-17842180599644-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "chatTrigger-17842180599640-7e1723",
+      "id": "e-chatTrigger-17841962656470-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:chatTrigger:1",
       "sourceHandle": "output-main",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-main",
-      "id": "e-chatTrigger-17842180599640-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "claude_code_agent-17842180599647-7e1723",
+      "id": "e-claude_code_agent-17841962656477-fd584a-telegramSend-17841962656475-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "sourceHandle": "output-main",
-      "target": "telegramSend-17842180599645-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:telegramSend:1",
       "targetHandle": "input-main",
-      "id": "e-claude_code_agent-17842180599647-7e1723-telegramSend-17842180599645-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "claude_code_agent-17842180599647-7e1723",
+      "id": "e-claude_code_agent-17841962656477-fd584a-console-17841962656471-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "sourceHandle": "output-main",
-      "target": "console-17842180599641-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:console:1",
       "targetHandle": "input-main",
-      "id": "e-claude_code_agent-17842180599647-7e1723-console-17842180599641-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "simpleMemory-17842180599642-7e1723",
+      "id": "e-masterSkill-17841962656476-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:masterSkill:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
-      "targetHandle": "input-memory",
-      "id": "e-simpleMemory-17842180599642-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
-    },
-    {
-      "type": "smoothstep",
-      "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "masterSkill-17842180599646-7e1723",
-      "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-skill",
-      "id": "e-masterSkill-17842180599646-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "writeTodos-17842180599643-7e1723",
+      "id": "e-writeTodos-17841962656473-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:writeTodos:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-writeTodos-17842180599643-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "browser-178421805996410-7e1723",
+      "id": "e-browser-178419626564710-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:browser:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-browser-178421805996410-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "processManager-17842180599649-7e1723",
+      "id": "e-processManager-17841962656479-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:processManager:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-processManager-17842180599649-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "duckduckgoSearch-17842180599648-7e1723",
+      "id": "e-duckduckgoSearch-17841962656478-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:duckduckgoSearch:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-duckduckgoSearch-17842180599648-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fileModify-178421805996411-7e1723",
+      "id": "e-fileModify-178419626564711-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:fileModify:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-fileModify-178421805996411-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fileRead-178421805996412-7e1723",
+      "id": "e-fileRead-178419626564712-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:fileRead:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-fileRead-178421805996412-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "fsSearch-178421805996413-7e1723",
+      "id": "e-fsSearch-178419626564713-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:fsSearch:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-fsSearch-178421805996413-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
     },
     {
-      "type": "smoothstep",
       "animated": true,
-      "style": {
-        "stroke": "#8be9fd",
-        "strokeWidth": 3
-      },
-      "source": "shell-178421805996414-7e1723",
+      "id": "e-shell-178419626564714-fd584a-claude_code_agent-17841962656477-fd584a-1784196265647-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:shell:1",
       "sourceHandle": "output-tool",
-      "target": "claude_code_agent-17842180599647-7e1723",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
       "targetHandle": "input-tools",
-      "id": "e-shell-178421805996414-7e1723-claude_code_agent-17842180599647-7e1723-1784218059964-7e1723",
-      "selected": false
+      "type": "smoothstep"
+    },
+    {
+      "id": "memory-tool-simpleMemory-17841962656472-fd584a-claude_code_agent-17841962656477-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:simpleMemory:1",
+      "sourceHandle": "output-tool",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "context-__context__-1-claude_code_agent-17841962656477-fd584a-claude_code_agent-17841962656477-fd584a",
+      "source": "9cf6613149824411ae8e57b559bf5aa9:context:1",
+      "sourceHandle": "output-context",
+      "target": "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1",
+      "targetHandle": "input-context",
+      "data": {
+        "systemManaged": true
+      }
     }
   ],
-  "createdAt": "2026-07-16T10:37:39.971Z",
-  "lastModified": "2026-07-24T10:56:59.000Z",
-  "version": "0.0.95",
+  "createdAt": "2026-07-16T04:34:25.658Z",
+  "lastModified": "2026-08-19T14:34:03.411Z",
+  "version": "0.1.0",
   "nodeParameters": {
-    "console-17842180599641-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:console:1": {
       "label": "Console",
       "log_mode": "field",
       "field_path": "{{claudecode.response}}",
       "expression": "",
-      "format": "json",
-      "fieldPath": ""
+      "format": "json"
     },
-    "simpleMemory-17842180599642-7e1723": {
-      "session_id": "",
-      "window_size": 100,
-      "memory_content": "# Conversation History\n\n*No messages yet.*\n",
-      "long_term_enabled": false,
-      "retrieval_count": 3,
-      "last_session_id": null,
-      "sessionId": "",
-      "windowSize": 100,
-      "longTermEnabled": false,
-      "retrievalCount": 3
+    "9cf6613149824411ae8e57b559bf5aa9:simpleMemory:1": {
+      "label": "Memory"
     },
-    "telegramReceive-17842180599644-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:telegramReceive:1": {
       "content_type_filter": "text",
       "sender_filter": "self",
       "chat_id": "",
@@ -520,7 +373,7 @@
       "ignore_bots": true,
       "label": "Telegram Receive"
     },
-    "telegramSend-17842180599645-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:telegramSend:1": {
       "recipient_type": "self",
       "chat_id": "",
       "message_type": "text",
@@ -537,7 +390,7 @@
       "reply_to_message_id": 0,
       "label": "Telegram Send"
     },
-    "masterSkill-17842180599646-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:masterSkill:1": {
       "skills_config": {
         "perplexity-search-skill": {
           "enabled": true,
@@ -631,7 +484,7 @@
         }
       }
     },
-    "claude_code_agent-17842180599647-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:claude_code_agent:1": {
       "tasks": null,
       "prompt": "{{telegramreceive.text}}",
       "model": "claude-sonnet-4-6",
@@ -641,11 +494,11 @@
       "allowed_credentials": null,
       "label": "Claude Code"
     },
-    "duckduckgoSearch-17842180599648-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:duckduckgoSearch:1": {
       "max_results": 5,
       "label": "DuckDuckGo Search"
     },
-    "processManager-17842180599649-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:processManager:1": {
       "operation": "list",
       "name": "",
       "command": "",
@@ -655,7 +508,7 @@
       "tail": 100,
       "label": "Process Manager"
     },
-    "browser-178421805996410-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:browser:1": {
       "operation": "navigate",
       "url": "",
       "selector": "",
@@ -682,7 +535,7 @@
       "timeout": 30,
       "label": "Browser"
     },
-    "fileModify-178421805996411-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:fileModify:1": {
       "operation": "write",
       "content": "",
       "old_string": "",
@@ -690,18 +543,18 @@
       "replace_all": false,
       "label": "File Modify"
     },
-    "fileRead-178421805996412-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:fileRead:1": {
       "offset": 0,
       "limit": 2000,
       "label": "File Read"
     },
-    "fsSearch-178421805996413-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:fsSearch:1": {
       "mode": "ls",
       "path": ".",
       "pattern": "",
       "label": "FS Search"
     },
-    "shell-178421805996414-7e1723": {
+    "9cf6613149824411ae8e57b559bf5aa9:shell:1": {
       "cwd": "",
       "timeout": 30,
       "label": "Shell"
@@ -773,6 +626,10 @@
       {
         "type": "shell",
         "version": 1
+      },
+      {
+        "type": "context",
+        "version": 2
       }
     ]
   }

@@ -1,10 +1,10 @@
 {
-  "id": "2",
+  "id": "321151185156422f965c63a299945da7",
   "name": "AI Employee",
-  "slug": "AI_Employee_1",
+  "slug": "AI_Employee_2",
   "nodes": [
     {
-      "id": "2:perplexitySearch:1",
+      "id": "321151185156422f965c63a299945da7:perplexitySearch:1",
       "position": {
         "x": 1020,
         "y": 200
@@ -17,7 +17,7 @@
       "height": 86
     },
     {
-      "id": "2:duckduckgoSearch:1",
+      "id": "321151185156422f965c63a299945da7:duckduckgoSearch:1",
       "position": {
         "x": 1120,
         "y": 200
@@ -30,10 +30,10 @@
       "height": 86
     },
     {
-      "id": "2:writeTodos:1",
+      "id": "321151185156422f965c63a299945da7:writeTodos:1",
       "position": {
-        "x": 920,
-        "y": -460
+        "x": 1000,
+        "y": -440
       },
       "type": "writeTodos",
       "data": {
@@ -43,23 +43,23 @@
       "height": 86
     },
     {
-      "id": "2:simpleMemory:1",
+      "id": "321151185156422f965c63a299945da7:simpleMemory:1",
       "position": {
-        "x": 700,
-        "y": -460
+        "x": 740,
+        "y": -440
       },
       "type": "simpleMemory",
       "data": {
-        "label": "Simple Memory"
+        "label": "Memory"
       },
-      "width": 87,
+      "width": 88,
       "height": 86
     },
     {
-      "id": "2:chatTrigger:1",
+      "id": "321151185156422f965c63a299945da7:chatTrigger:1",
       "position": {
         "x": -200,
-        "y": -700
+        "y": -760
       },
       "type": "chatTrigger",
       "data": {
@@ -69,7 +69,7 @@
       "height": 86
     },
     {
-      "id": "2:console:1",
+      "id": "321151185156422f965c63a299945da7:console:1",
       "position": {
         "x": 920,
         "y": -720
@@ -82,10 +82,10 @@
       "height": 86
     },
     {
-      "id": "2:processManager:1",
+      "id": "321151185156422f965c63a299945da7:processManager:1",
       "position": {
-        "x": 800,
-        "y": -460
+        "x": 860,
+        "y": -440
       },
       "type": "processManager",
       "data": {
@@ -95,9 +95,9 @@
       "height": 86
     },
     {
-      "id": "2:httpRequest:1",
+      "id": "321151185156422f965c63a299945da7:httpRequest:1",
       "position": {
-        "x": 1340,
+        "x": 1320,
         "y": 200
       },
       "type": "httpRequest",
@@ -108,7 +108,7 @@
       "height": 86
     },
     {
-      "id": "2:fileModify:1",
+      "id": "321151185156422f965c63a299945da7:fileModify:1",
       "position": {
         "x": 2100,
         "y": 200
@@ -121,7 +121,7 @@
       "height": 86
     },
     {
-      "id": "2:fileRead:1",
+      "id": "321151185156422f965c63a299945da7:fileRead:1",
       "position": {
         "x": 2000,
         "y": 200
@@ -134,7 +134,7 @@
       "height": 86
     },
     {
-      "id": "2:fsSearch:1",
+      "id": "321151185156422f965c63a299945da7:fsSearch:1",
       "position": {
         "x": 2200,
         "y": 200
@@ -147,7 +147,7 @@
       "height": 86
     },
     {
-      "id": "2:shell:1",
+      "id": "321151185156422f965c63a299945da7:shell:1",
       "position": {
         "x": 1900,
         "y": 200
@@ -160,9 +160,35 @@
       "height": 86
     },
     {
-      "id": "2:pythonExecutor:1",
+      "id": "321151185156422f965c63a299945da7:gmaps_nearby_places:1",
       "position": {
-        "x": 1780,
+        "x": 2720,
+        "y": 200
+      },
+      "type": "gmaps_nearby_places",
+      "data": {
+        "label": "Nearby Places"
+      },
+      "width": 81,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:gmaps_locations:1",
+      "position": {
+        "x": 2640,
+        "y": 200
+      },
+      "type": "gmaps_locations",
+      "data": {
+        "label": "Geocoding"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:pythonExecutor:1",
+      "position": {
+        "x": 1800,
         "y": 200
       },
       "type": "pythonExecutor",
@@ -173,7 +199,33 @@
       "height": 86
     },
     {
-      "id": "2:twitterSearch:1",
+      "id": "321151185156422f965c63a299945da7:telegramReceive:1",
+      "position": {
+        "x": -220,
+        "y": -620
+      },
+      "type": "telegramReceive",
+      "data": {
+        "label": "Telegram Receive"
+      },
+      "width": 99,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:telegramSend:1",
+      "position": {
+        "x": 920,
+        "y": -620
+      },
+      "type": "telegramSend",
+      "data": {
+        "label": "Telegram Send"
+      },
+      "width": 84,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:twitterSearch:1",
       "position": {
         "x": -240,
         "y": 200
@@ -186,7 +238,7 @@
       "height": 86
     },
     {
-      "id": "2:twitterUser:1",
+      "id": "321151185156422f965c63a299945da7:twitterUser:1",
       "position": {
         "x": -340,
         "y": 200
@@ -199,9 +251,9 @@
       "height": 86
     },
     {
-      "id": "2:whatsappDb:1",
+      "id": "321151185156422f965c63a299945da7:whatsappDb:1",
       "position": {
-        "x": -440,
+        "x": -460,
         "y": 200
       },
       "type": "whatsappDb",
@@ -212,371 +264,7 @@
       "height": 86
     },
     {
-      "id": "2:browser:1",
-      "position": {
-        "x": 1240,
-        "y": 200
-      },
-      "type": "browser",
-      "data": {
-        "label": "Browser"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:masterSkill:1",
-      "position": {
-        "x": -780,
-        "y": 200
-      },
-      "type": "masterSkill",
-      "data": {
-        "label": "Master Skill 1"
-      },
-      "width": 74,
-      "height": 86
-    },
-    {
-      "id": "2:coding_agent:1",
-      "position": {
-        "x": 1460,
-        "y": -120
-      },
-      "type": "coding_agent",
-      "data": {
-        "label": "Coding Agent"
-      },
-      "width": 300,
-      "height": 200
-    },
-    {
-      "id": "2:productivity_agent:1",
-      "position": {
-        "x": -80,
-        "y": -120
-      },
-      "type": "productivity_agent",
-      "data": {
-        "label": "Productivity Agent"
-      },
-      "width": 300,
-      "height": 200
-    },
-    {
-      "id": "2:web_agent:1",
-      "position": {
-        "x": 740,
-        "y": -120
-      },
-      "type": "web_agent",
-      "data": {
-        "label": "Web Agent"
-      },
-      "width": 300,
-      "height": 200
-    },
-    {
-      "id": "2:social_agent:1",
-      "position": {
-        "x": -780,
-        "y": -120
-      },
-      "type": "social_agent",
-      "data": {
-        "label": "Social Agent"
-      },
-      "width": 300,
-      "height": 200
-    },
-    {
-      "id": "2:masterSkill:2",
-      "position": {
-        "x": -100,
-        "y": 200
-      },
-      "type": "masterSkill",
-      "data": {
-        "label": "Master Skill 2"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:masterSkill:3",
-      "position": {
-        "x": 680,
-        "y": 200
-      },
-      "type": "masterSkill",
-      "data": {
-        "label": "Master Skill 3"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:masterSkill:4",
-      "position": {
-        "x": 1460,
-        "y": 200
-      },
-      "type": "masterSkill",
-      "data": {
-        "label": "Master Skill 4"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:processManager:2",
-      "position": {
-        "x": -560,
-        "y": 200
-      },
-      "type": "processManager",
-      "data": {
-        "label": "Process Manager 1"
-      },
-      "width": 106,
-      "height": 86
-    },
-    {
-      "id": "2:processManager:3",
-      "position": {
-        "x": 140,
-        "y": 200
-      },
-      "type": "processManager",
-      "data": {
-        "label": "Process Manager 2"
-      },
-      "width": 108,
-      "height": 86
-    },
-    {
-      "id": "2:processManager:4",
-      "position": {
-        "x": 900,
-        "y": 200
-      },
-      "type": "processManager",
-      "data": {
-        "label": "Process Manager 3"
-      },
-      "width": 108,
-      "height": 86
-    },
-    {
-      "id": "2:processManager:5",
-      "position": {
-        "x": 1660,
-        "y": 200
-      },
-      "type": "processManager",
-      "data": {
-        "label": "Process Manager 4"
-      },
-      "width": 108,
-      "height": 86
-    },
-    {
-      "id": "2:processManager:6",
-      "position": {
-        "x": 2520,
-        "y": 200
-      },
-      "type": "processManager",
-      "data": {
-        "label": "Process Manager 6"
-      },
-      "width": 108,
-      "height": 86
-    },
-    {
-      "id": "2:googleGmail:1",
-      "position": {
-        "x": 260,
-        "y": 200
-      },
-      "type": "googleGmail",
-      "data": {
-        "label": "Gmail"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:writeTodos:2",
-      "position": {
-        "x": -660,
-        "y": 200
-      },
-      "type": "writeTodos",
-      "data": {
-        "label": "Write Todos 1"
-      },
-      "width": 74,
-      "height": 86
-    },
-    {
-      "id": "2:writeTodos:3",
-      "position": {
-        "x": 40,
-        "y": 200
-      },
-      "type": "writeTodos",
-      "data": {
-        "label": "Write Todos 2"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:writeTodos:4",
-      "position": {
-        "x": 800,
-        "y": 200
-      },
-      "type": "writeTodos",
-      "data": {
-        "label": "Write Todos 3"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:writeTodos:5",
-      "position": {
-        "x": 1560,
-        "y": 200
-      },
-      "type": "writeTodos",
-      "data": {
-        "label": "Write Todos 4"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:writeTodos:6",
-      "position": {
-        "x": 2420,
-        "y": 200
-      },
-      "type": "writeTodos",
-      "data": {
-        "label": "Write Todos 6"
-      },
-      "width": 77,
-      "height": 86
-    },
-    {
-      "id": "2:googleSheets:1",
-      "position": {
-        "x": 560,
-        "y": 200
-      },
-      "type": "googleSheets",
-      "data": {
-        "label": "Sheets"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:googleDrive:1",
-      "position": {
-        "x": 460,
-        "y": 200
-      },
-      "type": "googleDrive",
-      "data": {
-        "label": "Drive"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:googleCalendar:1",
-      "position": {
-        "x": 360,
-        "y": 200
-      },
-      "type": "googleCalendar",
-      "data": {
-        "label": "Calendar"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:console:2",
-      "position": {
-        "x": -400,
-        "y": -60
-      },
-      "type": "console",
-      "data": {
-        "label": "Console 1"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:console:3",
-      "position": {
-        "x": 320,
-        "y": -40
-      },
-      "type": "console",
-      "data": {
-        "label": "Console 2"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:console:4",
-      "position": {
-        "x": 1120,
-        "y": -40
-      },
-      "type": "console",
-      "data": {
-        "label": "Console 3"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:console:5",
-      "position": {
-        "x": 1900,
-        "y": -40
-      },
-      "type": "console",
-      "data": {
-        "label": "Console 4"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:console:6",
-      "position": {
-        "x": 2640,
-        "y": -60
-      },
-      "type": "console",
-      "data": {
-        "label": "Console 6"
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:masterSkill:5",
+      "id": "321151185156422f965c63a299945da7:masterSkill:1",
       "position": {
         "x": 460,
         "y": -460
@@ -589,88 +277,413 @@
       "height": 86
     },
     {
-      "id": "2:tool_agent:1",
+      "id": "321151185156422f965c63a299945da7:browser:1",
       "position": {
-        "x": 2260,
-        "y": -120
+        "x": 1240,
+        "y": 200
       },
-      "type": "tool_agent",
+      "type": "browser",
       "data": {
-        "label": "Tool Agent"
+        "label": "Browser"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:chatAgent:1",
+      "position": {
+        "x": 500,
+        "y": -720
+      },
+      "type": "chatAgent",
+      "data": {
+        "label": "Zeenie"
       },
       "width": 300,
       "height": 200
     },
     {
-      "id": "2:cloudflareAction:1",
+      "id": "321151185156422f965c63a299945da7:masterSkill:2",
       "position": {
-        "x": 2660,
+        "x": -800,
         "y": 200
       },
-      "type": "cloudflareAction",
+      "type": "masterSkill",
       "data": {
-        "label": "Cloudflare"
+        "label": "Master Skill 1"
+      },
+      "width": 75,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:coding_agent:1",
+      "position": {
+        "x": 1460,
+        "y": -120
+      },
+      "type": "coding_agent",
+      "data": {
+        "label": "Coding Agent"
+      },
+      "width": 300,
+      "height": 200
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "position": {
+        "x": -80,
+        "y": -120
+      },
+      "type": "productivity_agent",
+      "data": {
+        "label": "Productivity Agent"
+      },
+      "width": 300,
+      "height": 200
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:travel_agent:1",
+      "position": {
+        "x": 2220,
+        "y": -120
+      },
+      "type": "travel_agent",
+      "data": {
+        "label": "Travel Agent"
+      },
+      "width": 300,
+      "height": 200
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:web_agent:1",
+      "position": {
+        "x": 740,
+        "y": -120
+      },
+      "type": "web_agent",
+      "data": {
+        "label": "Web Agent"
+      },
+      "width": 300,
+      "height": 200
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:social_agent:1",
+      "position": {
+        "x": -780,
+        "y": -120
+      },
+      "type": "social_agent",
+      "data": {
+        "label": "Social Agent"
+      },
+      "width": 300,
+      "height": 200
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:masterSkill:3",
+      "position": {
+        "x": -100,
+        "y": 200
+      },
+      "type": "masterSkill",
+      "data": {
+        "label": "Master Skill 2"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:masterSkill:4",
+      "position": {
+        "x": 680,
+        "y": 200
+      },
+      "type": "masterSkill",
+      "data": {
+        "label": "Master Skill 3"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:masterSkill:5",
+      "position": {
+        "x": 1460,
+        "y": 200
+      },
+      "type": "masterSkill",
+      "data": {
+        "label": "Master Skill 4"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:processManager:2",
+      "position": {
+        "x": -600,
+        "y": 200
+      },
+      "type": "processManager",
+      "data": {
+        "label": "Process Manager 1"
+      },
+      "width": 106,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:processManager:3",
+      "position": {
+        "x": 140,
+        "y": 200
+      },
+      "type": "processManager",
+      "data": {
+        "label": "Process Manager 2"
+      },
+      "width": 108,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:processManager:4",
+      "position": {
+        "x": 900,
+        "y": 200
+      },
+      "type": "processManager",
+      "data": {
+        "label": "Process Manager 3"
+      },
+      "width": 108,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:processManager:5",
+      "position": {
+        "x": 1680,
+        "y": 200
+      },
+      "type": "processManager",
+      "data": {
+        "label": "Process Manager 4"
+      },
+      "width": 108,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:processManager:6",
+      "position": {
+        "x": 2520,
+        "y": 200
+      },
+      "type": "processManager",
+      "data": {
+        "label": "Process Manager 6"
+      },
+      "width": 108,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:googleGmail:1",
+      "position": {
+        "x": 280,
+        "y": 200
+      },
+      "type": "googleGmail",
+      "data": {
+        "label": "Gmail"
       },
       "width": 64,
       "height": 86
     },
     {
-      "id": "2:vercelAction:1",
+      "id": "321151185156422f965c63a299945da7:writeTodos:2",
       "position": {
-        "x": 2760,
+        "x": -700,
         "y": 200
       },
-      "type": "vercelAction",
+      "type": "writeTodos",
       "data": {
-        "label": "Vercel"
+        "label": "Write Todos 1"
+      },
+      "width": 74,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:writeTodos:3",
+      "position": {
+        "x": 40,
+        "y": 200
+      },
+      "type": "writeTodos",
+      "data": {
+        "label": "Write Todos 2"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:writeTodos:4",
+      "position": {
+        "x": 800,
+        "y": 200
+      },
+      "type": "writeTodos",
+      "data": {
+        "label": "Write Todos 3"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:writeTodos:5",
+      "position": {
+        "x": 1580,
+        "y": 200
+      },
+      "type": "writeTodos",
+      "data": {
+        "label": "Write Todos 4"
+      },
+      "width": 77,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:writeTodos:6",
+      "position": {
+        "x": 2420,
+        "y": 200
+      },
+      "type": "writeTodos",
+      "data": {
+        "label": "Write Todos 6"
+      },
+      "width": 76,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:googleSheets:1",
+      "position": {
+        "x": 560,
+        "y": 200
+      },
+      "type": "googleSheets",
+      "data": {
+        "label": "Sheets"
       },
       "width": 64,
       "height": 86
     },
     {
-      "id": "2:githubAction:1",
+      "id": "321151185156422f965c63a299945da7:googleDrive:1",
       "position": {
-        "x": 2860,
+        "x": 460,
         "y": 200
       },
-      "type": "githubAction",
+      "type": "googleDrive",
       "data": {
-        "label": "GitHub"
+        "label": "Drive"
       },
       "width": 64,
       "height": 86
     },
     {
-      "id": "2:masterSkill:6",
+      "id": "321151185156422f965c63a299945da7:googleCalendar:1",
+      "position": {
+        "x": 360,
+        "y": 200
+      },
+      "type": "googleCalendar",
+      "data": {
+        "label": "Calendar"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:masterSkill:6",
       "position": {
         "x": 2300,
         "y": 200
       },
       "type": "masterSkill",
       "data": {
-        "label": "Master Skill 5"
+        "label": "Master Skill 6"
       },
       "width": 77,
       "height": 86
     },
     {
-      "id": "2:taskManager:1",
+      "id": "321151185156422f965c63a299945da7:console:2",
       "position": {
-        "x": 1020,
-        "y": -460
+        "x": -400,
+        "y": -60
       },
-      "type": "taskManager",
+      "type": "console",
       "data": {
-        "label": "Task Manager"
+        "label": "Console 1"
       },
-      "width": 79,
+      "width": 64,
       "height": 86
     },
     {
-      "id": "2:taskTrigger:1",
+      "id": "321151185156422f965c63a299945da7:console:3",
       "position": {
-        "x": -200,
-        "y": -560
+        "x": 320,
+        "y": -40
+      },
+      "type": "console",
+      "data": {
+        "label": "Console 2"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:console:4",
+      "position": {
+        "x": 1120,
+        "y": -40
+      },
+      "type": "console",
+      "data": {
+        "label": "Console 3"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:console:5",
+      "position": {
+        "x": 1820,
+        "y": -60
+      },
+      "type": "console",
+      "data": {
+        "label": "Console 4"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:console:6",
+      "position": {
+        "x": 2640,
+        "y": -60
+      },
+      "type": "console",
+      "data": {
+        "label": "Console 6"
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:taskTrigger:1",
+      "position": {
+        "x": -180,
+        "y": -460
       },
       "type": "taskTrigger",
       "data": {
@@ -680,27 +693,14 @@
       "height": 86
     },
     {
-      "id": "2:ai_employee:1",
-      "position": {
-        "x": 440,
-        "y": -760
-      },
-      "type": "ai_employee",
-      "data": {
-        "label": "AI Employee"
-      },
-      "width": 300,
-      "height": 200
-    },
-    {
-      "id": "2:context:1",
+      "id": "321151185156422f965c63a299945da7:context:1",
       "position": {
         "x": 360,
         "y": -460
       },
       "type": "context",
       "data": {
-        "agentNodeId": "2:ai_employee:1",
+        "agentNodeId": "321151185156422f965c63a299945da7:chatAgent:1",
         "label": "Context",
         "systemManaged": true
       },
@@ -708,29 +708,14 @@
       "height": 86
     },
     {
-      "id": "2:context:2",
+      "id": "321151185156422f965c63a299945da7:context:2",
       "position": {
         "x": 1340,
-        "y": 20
-      },
-      "type": "context",
-      "data": {
-        "agentNodeId": "2:coding_agent:1",
-        "label": "Context",
-        "systemManaged": true
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:context:3",
-      "position": {
-        "x": -200,
         "y": 40
       },
       "type": "context",
       "data": {
-        "agentNodeId": "2:productivity_agent:1",
+        "agentNodeId": "321151185156422f965c63a299945da7:coding_agent:1",
         "label": "Context",
         "systemManaged": true
       },
@@ -738,29 +723,14 @@
       "height": 86
     },
     {
-      "id": "2:context:4",
+      "id": "321151185156422f965c63a299945da7:context:3",
       "position": {
-        "x": -900,
-        "y": 80
-      },
-      "type": "context",
-      "data": {
-        "agentNodeId": "2:social_agent:1",
-        "label": "Context",
-        "systemManaged": true
-      },
-      "width": 64,
-      "height": 86
-    },
-    {
-      "id": "2:context:5",
-      "position": {
-        "x": 2140,
+        "x": -180,
         "y": 20
       },
       "type": "context",
       "data": {
-        "agentNodeId": "2:tool_agent:1",
+        "agentNodeId": "321151185156422f965c63a299945da7:productivity_agent:1",
         "label": "Context",
         "systemManaged": true
       },
@@ -768,14 +738,44 @@
       "height": 86
     },
     {
-      "id": "2:context:6",
+      "id": "321151185156422f965c63a299945da7:context:4",
+      "position": {
+        "x": -880,
+        "y": 40
+      },
+      "type": "context",
+      "data": {
+        "agentNodeId": "321151185156422f965c63a299945da7:social_agent:1",
+        "label": "Context",
+        "systemManaged": true
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:context:5",
+      "position": {
+        "x": 2120,
+        "y": 20
+      },
+      "type": "context",
+      "data": {
+        "agentNodeId": "321151185156422f965c63a299945da7:travel_agent:1",
+        "label": "Context",
+        "systemManaged": true
+      },
+      "width": 64,
+      "height": 86
+    },
+    {
+      "id": "321151185156422f965c63a299945da7:context:6",
       "position": {
         "x": 620,
         "y": 20
       },
       "type": "context",
       "data": {
-        "agentNodeId": "2:web_agent:1",
+        "agentNodeId": "321151185156422f965c63a299945da7:web_agent:1",
         "label": "Context",
         "systemManaged": true
       },
@@ -785,435 +785,537 @@
   ],
   "edges": [
     {
-      "id": "e-masterSkill-178585860234422-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:2",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-masterSkill-178585860234417-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:1",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-masterSkill-178585860234423-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:3",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-processManager-178585860234425-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:2",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-whatsappDb-178585860234415-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:whatsappDb:1",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-twitterUser-178585860234414-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:twitterUser:1",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-twitterSearch-178585860234413-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:twitterSearch:1",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-googleGmail-178585860234430-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:googleGmail:1",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-processManager-178585860234426-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:3",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-processManager-178585860234427-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:4",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-perplexitySearch-17858586023440-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:perplexitySearch:1",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-duckduckgoSearch-17858586023441-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:duckduckgoSearch:1",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-httpRequest-17858586023447-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:httpRequest:1",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-writeTodos-178585860234431-cfd2c2-social_agent-178585860234421-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:2",
-      "sourceHandle": "output-tool",
-      "target": "2:social_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-writeTodos-178585860234432-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:3",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-googleCalendar-178585860234438-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:googleCalendar:1",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-googleDrive-178585860234437-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:googleDrive:1",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-googleSheets-178585860234436-cfd2c2-productivity_agent-178585860234419-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:googleSheets:1",
-      "sourceHandle": "output-tool",
-      "target": "2:productivity_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-writeTodos-178585860234433-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:4",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-writeTodos-178585860234434-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:5",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-processManager-178585860234428-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:5",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-pythonExecutor-178585860234412-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:pythonExecutor:1",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-masterSkill-178585860234424-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:4",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-social_agent-178585860234421-cfd2c2-console-178585860234439-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:social_agent:1",
+      "animated": true,
+      "id": "e-chatTrigger-17841962642204-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:chatTrigger:1",
       "sourceHandle": "output-main",
-      "target": "2:console:2",
-      "targetHandle": "input-main"
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-productivity_agent-178585860234419-cfd2c2-console-178585860234440-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:productivity_agent:1",
+      "animated": true,
+      "id": "e-telegramReceive-178419626422015-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:telegramReceive:1",
       "sourceHandle": "output-main",
-      "target": "2:console:3",
-      "targetHandle": "input-main"
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-web_agent-178585860234420-cfd2c2-console-178585860234441-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:web_agent:1",
-      "sourceHandle": "output-main",
-      "target": "2:console:4",
-      "targetHandle": "input-main"
-    },
-    {
-      "id": "e-coding_agent-178585860234418-cfd2c2-console-178585860234442-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:coding_agent:1",
-      "sourceHandle": "output-main",
-      "target": "2:console:5",
-      "targetHandle": "input-main"
-    },
-    {
-      "id": "e-shell-178585860234411-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:shell:1",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-fileRead-17858586023449-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:fileRead:1",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-fileModify-17858586023448-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:fileModify:1",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-fsSearch-178585860234410-cfd2c2-coding_agent-178585860234418-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:fsSearch:1",
-      "sourceHandle": "output-tool",
-      "target": "2:coding_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-tool_agent-178585860234445-cfd2c2-console-178585860234443-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:tool_agent:1",
-      "sourceHandle": "output-main",
-      "target": "2:console:6",
-      "targetHandle": "input-main"
-    },
-    {
-      "id": "e-writeTodos-178585860234435-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:6",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-masterSkill-178585860234449-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:6",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-processManager-178585860234429-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:6",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-cloudflareAction-178585860234446-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:cloudflareAction:1",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-vercelAction-178585860234447-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:vercelAction:1",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-githubAction-178585860234448-cfd2c2-tool_agent-178585860234445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:githubAction:1",
-      "sourceHandle": "output-tool",
-      "target": "2:tool_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-browser-178585860234416-cfd2c2-web_agent-178585860234420-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:browser:1",
-      "sourceHandle": "output-tool",
-      "target": "2:web_agent:1",
-      "targetHandle": "input-tools"
-    },
-    {
-      "id": "e-chatTrigger-17858586023444-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:chatTrigger:1",
-      "sourceHandle": "output-main",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-main"
-    },
-    {
-      "id": "e-taskTrigger-178585860234451-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:taskTrigger:1",
-      "sourceHandle": "output-main",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-task"
-    },
-    {
-      "id": "e-masterSkill-178585860234444-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:masterSkill:5",
-      "sourceHandle": "output-tool",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-skill"
-    },
-    {
-      "id": "e-web_agent-178585860234420-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:web_agent:1",
+      "animated": true,
+      "id": "e-web_agent-178419626422028-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:web_agent:1",
       "sourceHandle": "output-top",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-teammates"
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
     },
     {
-      "id": "e-processManager-17858586023446-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:processManager:1",
+      "animated": true,
+      "id": "e-productivity_agent-178419626422026-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "sourceHandle": "output-top",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-travel_agent-178419626422027-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:travel_agent:1",
+      "sourceHandle": "output-top",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-coding_agent-178419626422025-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:coding_agent:1",
+      "sourceHandle": "output-top",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-social_agent-178419626422029-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:social_agent:1",
+      "sourceHandle": "output-top",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-masterSkill-178419626422020-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:1",
       "sourceHandle": "output-tool",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-tools"
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
     },
     {
-      "id": "e-writeTodos-17858586023442-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:writeTodos:1",
+      "animated": true,
+      "id": "e-writeTodos-17841962642202-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:1",
       "sourceHandle": "output-tool",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-tools"
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
     },
     {
-      "id": "e-taskManager-178585860234450-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:taskManager:1",
+      "animated": true,
+      "id": "e-masterSkill-178419626422033-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:3",
       "sourceHandle": "output-tool",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-tools"
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
     },
     {
-      "id": "e-ai_employee-178585860234452-cfd2c2-console-17858586023445-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:ai_employee:1",
+      "animated": true,
+      "id": "e-masterSkill-178419626422024-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:2",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-masterSkill-178419626422034-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:4",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-17841962642206-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-178419626422036-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:2",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-whatsappDb-178419626422019-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:whatsappDb:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-twitterUser-178419626422018-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:twitterUser:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-twitterSearch-178419626422017-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:twitterSearch:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-googleGmail-178419626422041-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:googleGmail:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-178419626422037-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:3",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-178419626422038-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:4",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-perplexitySearch-17841962642200-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:perplexitySearch:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-duckduckgoSearch-17841962642201-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:duckduckgoSearch:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-browser-178419626422021-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:browser:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-httpRequest-17841962642207-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:httpRequest:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-writeTodos-178419626422042-ff6b92-social_agent-178419626422029-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:2",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-writeTodos-178419626422043-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:3",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-googleCalendar-178419626422049-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:googleCalendar:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-googleDrive-178419626422048-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:googleDrive:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-googleSheets-178419626422047-ff6b92-productivity_agent-178419626422026-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:googleSheets:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-writeTodos-178419626422044-ff6b92-web_agent-178419626422028-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:4",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-writeTodos-178419626422045-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:5",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-178419626422039-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:5",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-pythonExecutor-178419626422014-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:pythonExecutor:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-masterSkill-178419626422035-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:5",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-masterSkill-178419626422051-ff6b92-travel_agent-178419626422027-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:masterSkill:6",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
+      "targetHandle": "input-skill",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-writeTodos-178419626422046-ff6b92-travel_agent-178419626422027-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:writeTodos:6",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-processManager-178419626422040-ff6b92-travel_agent-178419626422027-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:processManager:6",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-gmaps_locations-178419626422013-ff6b92-travel_agent-178419626422027-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:gmaps_locations:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-gmaps_nearby_places-178419626422012-ff6b92-travel_agent-178419626422027-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:gmaps_nearby_places:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-social_agent-178419626422029-ff6b92-console-178419626422052-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:social_agent:1",
       "sourceHandle": "output-main",
-      "target": "2:console:1",
-      "targetHandle": "input-main"
+      "target": "321151185156422f965c63a299945da7:console:2",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-social_agent-178585860234421-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:social_agent:1",
-      "sourceHandle": "output-top",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-teammates"
+      "animated": true,
+      "id": "e-productivity_agent-178419626422026-ff6b92-console-178419626422053-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:productivity_agent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:console:3",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-productivity_agent-178585860234419-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:productivity_agent:1",
-      "sourceHandle": "output-top",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-teammates"
+      "animated": true,
+      "id": "e-web_agent-178419626422028-ff6b92-console-178419626422054-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:web_agent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:console:4",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-coding_agent-178585860234418-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:coding_agent:1",
-      "sourceHandle": "output-top",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-teammates"
+      "animated": true,
+      "id": "e-coding_agent-178419626422025-ff6b92-console-178419626422055-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:coding_agent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:console:5",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-tool_agent-178585860234445-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:tool_agent:1",
-      "sourceHandle": "output-top",
-      "target": "2:ai_employee:1",
-      "targetHandle": "input-teammates"
+      "animated": true,
+      "id": "e-travel_agent-178419626422027-ff6b92-console-178419626422056-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:travel_agent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:console:6",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
     },
     {
-      "id": "e-simpleMemory-17858586023443-cfd2c2-ai_employee-178585860234452-cfd2c2-1785858602344-cfd2c2",
-      "source": "2:simpleMemory:1",
+      "animated": true,
+      "id": "e-chatAgent-178419626422022-ff6b92-console-17841962642205-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:chatAgent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:console:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-chatAgent-178419626422022-ff6b92-telegramSend-178419626422016-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:chatAgent:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:telegramSend:1",
+      "targetHandle": "input-main",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-taskTrigger-178419626422057-ff6b92-chatAgent-178419626422022-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:taskTrigger:1",
+      "sourceHandle": "output-main",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
+      "targetHandle": "input-task",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-shell-178419626422011-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:shell:1",
       "sourceHandle": "output-tool",
-      "target": "2:ai_employee:1",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-fileRead-17841962642209-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:fileRead:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-fileModify-17841962642208-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:fileModify:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "animated": true,
+      "id": "e-fsSearch-178419626422010-ff6b92-coding_agent-178419626422025-ff6b92-1784196264220-ff6b92",
+      "source": "321151185156422f965c63a299945da7:fsSearch:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
+      "targetHandle": "input-tools",
+      "type": "smoothstep"
+    },
+    {
+      "id": "memory-tool-simpleMemory-17841962642203-ff6b92-chatAgent-178419626422022-ff6b92",
+      "source": "321151185156422f965c63a299945da7:simpleMemory:1",
+      "sourceHandle": "output-tool",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
       "targetHandle": "input-tools"
     },
     {
-      "id": "context-__context__-1-ai_employee-178585860234452-cfd2c2-ai_employee-178585860234452-cfd2c2",
-      "source": "2:context:1",
+      "id": "context-__context__-1-chatAgent-178419626422022-ff6b92-chatAgent-178419626422022-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:1",
       "sourceHandle": "output-context",
-      "target": "2:ai_employee:1",
+      "target": "321151185156422f965c63a299945da7:chatAgent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     },
     {
-      "id": "context-__context__-2-coding_agent-178585860234418-cfd2c2-coding_agent-178585860234418-cfd2c2",
-      "source": "2:context:2",
+      "id": "context-__context__-2-coding_agent-178419626422025-ff6b92-coding_agent-178419626422025-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:2",
       "sourceHandle": "output-context",
-      "target": "2:coding_agent:1",
+      "target": "321151185156422f965c63a299945da7:coding_agent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     },
     {
-      "id": "context-__context__-3-productivity_agent-178585860234419-cfd2c2-productivity_agent-178585860234419-cfd2c2",
-      "source": "2:context:3",
+      "id": "context-__context__-3-productivity_agent-178419626422026-ff6b92-productivity_agent-178419626422026-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:3",
       "sourceHandle": "output-context",
-      "target": "2:productivity_agent:1",
+      "target": "321151185156422f965c63a299945da7:productivity_agent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     },
     {
-      "id": "context-__context__-4-social_agent-178585860234421-cfd2c2-social_agent-178585860234421-cfd2c2",
-      "source": "2:context:4",
+      "id": "context-__context__-4-social_agent-178419626422029-ff6b92-social_agent-178419626422029-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:4",
       "sourceHandle": "output-context",
-      "target": "2:social_agent:1",
+      "target": "321151185156422f965c63a299945da7:social_agent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     },
     {
-      "id": "context-__context__-5-tool_agent-178585860234445-cfd2c2-tool_agent-178585860234445-cfd2c2",
-      "source": "2:context:5",
+      "id": "context-__context__-5-travel_agent-178419626422027-ff6b92-travel_agent-178419626422027-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:5",
       "sourceHandle": "output-context",
-      "target": "2:tool_agent:1",
+      "target": "321151185156422f965c63a299945da7:travel_agent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     },
     {
-      "id": "context-__context__-6-web_agent-178585860234420-cfd2c2-web_agent-178585860234420-cfd2c2",
-      "source": "2:context:6",
+      "id": "context-__context__-6-web_agent-178419626422028-ff6b92-web_agent-178419626422028-ff6b92",
+      "source": "321151185156422f965c63a299945da7:context:6",
       "sourceHandle": "output-context",
-      "target": "2:web_agent:1",
+      "target": "321151185156422f965c63a299945da7:web_agent:1",
       "targetHandle": "input-context",
       "data": {
         "systemManaged": true
       }
     }
   ],
-  "createdAt": "2026-08-04T10:20:02.357Z",
-  "lastModified": "2026-08-04T15:53:37.247Z",
-  "version": "0.0.95",
+  "createdAt": "2026-07-16T04:34:24.274Z",
+  "lastModified": "2026-08-19T14:35:06.813Z",
+  "version": "0.1.0",
   "nodeParameters": {
-    "2:perplexitySearch:1": {
+    "321151185156422f965c63a299945da7:perplexitySearch:1": {
       "tool_name": "perplexity_search",
       "tool_description": "AI-powered search using Perplexity Sonar. Returns a markdown-formatted answer with inline citation references and source URLs.",
       "model": "sonar",
@@ -1222,27 +1324,26 @@
       "return_related_questions": false,
       "label": "Perplexity Search"
     },
-    "2:duckduckgoSearch:1": {
+    "321151185156422f965c63a299945da7:duckduckgoSearch:1": {
       "max_results": 5,
       "label": "DuckDuckGo Search"
     },
-    "2:simpleMemory:1": {
-      "label": "Simple Memory",
-      "reset_policy": "preserve"
+    "321151185156422f965c63a299945da7:simpleMemory:1": {
+      "label": "Simple Memory"
     },
-    "2:chatTrigger:1": {
+    "321151185156422f965c63a299945da7:chatTrigger:1": {
+      "session_id": "default",
       "placeholder": "Type a message...",
-      "label": "Chat Trigger",
-      "reset_policy": "preserve"
+      "label": "Chat Trigger"
     },
-    "2:console:1": {
+    "321151185156422f965c63a299945da7:console:1": {
       "label": "Console",
       "log_mode": "field",
-      "field_path": "{{aiemployee.response}}",
+      "field_path": "{{zeenie.response}}",
       "expression": "",
       "format": "json"
     },
-    "2:processManager:1": {
+    "321151185156422f965c63a299945da7:processManager:1": {
       "operation": "list",
       "name": "",
       "command": "",
@@ -1252,7 +1353,7 @@
       "tail": 100,
       "label": "Process Manager"
     },
-    "2:httpRequest:1": {
+    "321151185156422f965c63a299945da7:httpRequest:1": {
       "method": "GET",
       "body": null,
       "timeout": 30,
@@ -1263,7 +1364,7 @@
       "sticky_duration": 600,
       "label": "HTTP Request"
     },
-    "2:fileModify:1": {
+    "321151185156422f965c63a299945da7:fileModify:1": {
       "operation": "write",
       "content": "",
       "old_string": "",
@@ -1271,27 +1372,67 @@
       "replace_all": false,
       "label": "File Modify"
     },
-    "2:fileRead:1": {
+    "321151185156422f965c63a299945da7:fileRead:1": {
       "offset": 0,
       "limit": 2000,
       "label": "File Read"
     },
-    "2:fsSearch:1": {
+    "321151185156422f965c63a299945da7:fsSearch:1": {
       "mode": "ls",
       "path": ".",
       "pattern": "",
       "label": "FS Search"
     },
-    "2:shell:1": {
+    "321151185156422f965c63a299945da7:shell:1": {
       "cwd": "",
       "timeout": 30,
       "label": "Shell"
     },
-    "2:pythonExecutor:1": {
+    "321151185156422f965c63a299945da7:gmaps_nearby_places:1": {
+      "radius": 1000,
+      "place_type": "",
+      "keyword": "",
+      "label": "Nearby Places"
+    },
+    "321151185156422f965c63a299945da7:gmaps_locations:1": {
+      "service_type": "geocode",
+      "address": "",
+      "region": "",
+      "lat": 0,
+      "lng": 0,
+      "label": "Geocoding"
+    },
+    "321151185156422f965c63a299945da7:pythonExecutor:1": {
       "timeout": 30,
       "label": "Python Executor"
     },
-    "2:twitterSearch:1": {
+    "321151185156422f965c63a299945da7:telegramReceive:1": {
+      "content_type_filter": "all",
+      "sender_filter": "all",
+      "chat_id": "",
+      "from_user": "",
+      "keywords": "",
+      "ignore_bots": true,
+      "label": "Telegram Receive"
+    },
+    "321151185156422f965c63a299945da7:telegramSend:1": {
+      "recipient_type": "self",
+      "chat_id": "",
+      "message_type": "text",
+      "text": "{{zeenie.response}}",
+      "media_url": "",
+      "caption": "",
+      "latitude": null,
+      "longitude": null,
+      "phone_number": "",
+      "first_name": "",
+      "last_name": "",
+      "parse_mode": "Auto",
+      "silent": false,
+      "reply_to_message_id": 0,
+      "label": "Telegram Send"
+    },
+    "321151185156422f965c63a299945da7:twitterSearch:1": {
       "query": "",
       "max_results": 10,
       "sort_order": "recency",
@@ -1301,14 +1442,14 @@
       "include_author": true,
       "label": "Twitter Search"
     },
-    "2:twitterUser:1": {
+    "321151185156422f965c63a299945da7:twitterUser:1": {
       "operation": "me",
       "username": "",
       "user_id": "",
       "max_results": 100,
       "label": "Twitter User"
     },
-    "2:whatsappDb:1": {
+    "321151185156422f965c63a299945da7:whatsappDb:1": {
       "operation": "chat_history",
       "chat_type": "individual",
       "phone": "",
@@ -1343,7 +1484,47 @@
       "preview": false,
       "label": "WhatsApp DB"
     },
-    "2:browser:1": {
+    "321151185156422f965c63a299945da7:masterSkill:1": {
+      "skill_folder": "terminal",
+      "skills_config": {
+        "assistant-personality": {
+          "enabled": true,
+          "instructions": "# Assistant Personality\n\nYou are a helpful, harmless, and honest AI assistant. Your goal is to assist users with their requests while being truthful and avoiding harmful content.\n\n## Core Principles\n\n1. **Helpfulness**: Provide clear, accurate, and useful information\n2. **Honesty**: Be truthful about your capabilities and limitations\n3. **Safety**: Avoid generating harmful, illegal, or unethical content\n\n## Task Planning\n\nWhen a request involves **3 or more steps**, use the `write_todos` tool to plan and track your work before acting:\n\n1. **Plan first** -- call `write_todos` with a list of actionable steps, mark the first `in_progress`\n2. **Work, then update** -- after each step, call `write_todos` again to mark it `completed` and the next `in_progress`\n3. **Revise as you go** -- add new tasks, remove irrelevant ones, reword as needed\n4. **Complete all** -- keep working until every task is `completed`\n\nFor simple requests (1-2 steps), skip the todo list and respond directly.\n\n## Communication Style\n\n- Be concise but thorough\n- Use clear, simple language\n- Break down complex topics into understandable parts\n- Ask clarifying questions when needed\n- Admit when you don't know something\n\n## Response Guidelines\n\nWhen responding to users:\n1. Understand the intent behind their question\n2. For complex tasks: plan with `write_todos` first, then execute step by step\n3. For simple questions: respond directly\n4. Include relevant context or caveats\n5. Suggest follow-up actions if appropriate\n",
+          "isCustomized": false
+        },
+        "compaction-skill": {
+          "enabled": true,
+          "instructions": "# Memory Compaction Skill\n\nYou have the ability to compact conversation memory when it grows too large. Compaction transforms verbose conversation history into a structured summary that preserves essential context while reducing token usage.\n\n## When to Compact\n\nCompact memory when:\n- The system indicates token threshold is approaching\n- Conversation history becomes repetitive or verbose\n- You need to preserve important context but reduce size\n- Starting a new phase of work after completing a major task\n\n## Compaction Summary Structure\n\nWhen compacting, create a summary with these 5 sections:\n\n### 1. Task Overview\nWhat the user is trying to accomplish. Include:\n- Primary goal or objective\n- Key constraints or requirements\n- Scope of the work\n\n### 2. Current State\nWhat's been completed and what's in progress:\n- Completed tasks and their outcomes\n- Work currently in flight\n- Pending decisions or blockers\n\n### 3. Important Discoveries\nKey findings, decisions, or problems encountered:\n- Technical discoveries or insights\n- Decisions made and their rationale\n- Problems encountered and solutions applied\n- User preferences learned\n\n### 4. Next Steps\nWhat needs to happen next:\n- Immediate actions required\n- Planned approach for remaining work\n- Dependencies or prerequisites\n\n### 5. Context to Preserve\nCritical details that must be retained:\n- Specific values, IDs, or references\n- User preferences or constraints\n- Technical details needed for continuity\n- Any warnings or caveats\n\n## Compaction Format\n\nOutput the compacted summary in this format:\n\n```markdown\n# Conversation Summary (Compacted)\n*Generated: [ISO timestamp]*\n\n## Task Overview\n[1-3 sentences describing the goal]\n\n## Current State\n- [Completed item 1]\n- [Completed item 2]\n- [In progress: description]\n\n## Important Discoveries\n- [Discovery 1 with context]\n- [Decision made: rationale]\n- [Problem solved: approach]\n\n## Next Steps\n1. [Next action]\n2. [Following action]\n\n## Context to Preserve\n- [Critical detail 1]\n- [Critical detail 2]\n```\n\n## Best Practices\n\n1. **Be Concise**: Each section should be brief but complete\n2. **Preserve Specifics**: Keep exact values, names, and references\n3. **Capture Decisions**: Record WHY decisions were made, not just WHAT\n4. **Include Failures**: Document what didn't work to avoid repetition\n5. **Maintain Continuity**: Summary should allow seamless continuation\n\n## What NOT to Include\n\n- Verbose back-and-forth dialogue\n- Redundant information\n- Superseded decisions (only keep final decisions)\n- Exploratory tangents that didn't lead anywhere\n- Standard pleasantries or acknowledgments\n\n## Example Compaction\n\n**Before** (verbose history):\n```\nHuman: Can you help me debug this Python function?\nAI: Of course! Please share the function.\nHuman: Here's the function: def calculate(x): return x * 2\nAI: I see the function. What issue are you experiencing?\nHuman: It returns None sometimes\nAI: That's interesting. Can you show me an example input?\nHuman: calculate(\"5\") returns None\nAI: Ah, I see the issue! When you pass a string...\n[continues for 50+ messages]\n```\n\n**After** (compacted):\n```markdown\n# Conversation Summary (Compacted)\n*Generated: 2025-02-13T10:30:00Z*\n\n## Task Overview\nDebug Python function `calculate(x)` that returns None for some inputs.\n\n## Current State\n- Identified root cause: string inputs cause implicit None return\n- Implemented fix with type checking and conversion\n- Tests passing for int, float, and string inputs\n\n## Important Discoveries\n- Original function had no type validation\n- String multiplication in Python doesn't raise error but behaves unexpectedly\n- User prefers explicit error messages over silent failures\n\n## Next Steps\n1. Add input validation for edge cases (None, empty string)\n2. Write unit tests for the fixed function\n\n## Context to Preserve\n- Function location: `utils/math_helpers.py:45`\n- User wants to maintain backward compatibility\n- Prefer raising ValueError over returning None\n```\n\n## Integration with Memory System\n\nWhen compaction is triggered:\n1. The compacted summary replaces the current memory content\n2. New conversation messages are appended after the summary\n3. The summary header indicates when compaction occurred\n\nThis allows conversation to continue naturally while maintaining reduced token usage.\n",
+          "isCustomized": false
+        },
+        "humanify-skill": {
+          "enabled": true,
+          "instructions": "# Humanify Output Skill\n\nFormat your responses for human readability. Output clean, pretty text that's easy to scan and understand - not raw markdown syntax or code-heavy formatting.\n\n## Core Principles\n\n1. **Plain Language First**: Write naturally, as if speaking to someone\n2. **Visual Clarity**: Use spacing, indentation, and structure for scannability\n3. **No Raw Syntax**: Avoid showing markdown symbols, JSON, or code unless specifically requested\n4. **Progressive Detail**: Lead with key information, details follow\n\n## Formatting Guidelines\n\n### Instead of Markdown Headers\n```\nBad:  ## Section Title\nGood: SECTION TITLE\n      -------------\n```\n\n### Instead of Bullet Lists with Symbols\n```\nBad:  - Item one\n      - Item two\n\nGood: Item one\n      Item two\n\n  or: * Item one\n      * Item two\n```\n\n### Instead of Code Blocks for Data\n```\nBad:  ```json\n      {\"name\": \"John\", \"age\": 30}\n      ```\n\nGood: Name: John\n      Age: 30\n```\n\n### Instead of Tables with Pipes\n```\nBad:  | Name | Value |\n      |------|-------|\n      | Foo  | 123   |\n\nGood: Name     Value\n      ----     -----\n      Foo      123\n```\n\n### Instead of Raw URLs\n```\nBad:  Check https://example.com/very/long/path/to/resource\n\nGood: Check the resource page (link available)\n  or: Resource: example.com\n```\n\n## Response Patterns\n\n### For Status Updates\n```\nStatus: Complete\nTime: 2.3 seconds\nResult: Successfully processed 15 items\n\nDetails:\n  Processed: 15\n  Skipped: 2\n  Errors: 0\n```\n\n### For Lists of Items\n```\nFound 3 matching files:\n\n  1. config.json\n     Location: /app/settings\n     Modified: Today\n\n  2. config.backup.json\n     Location: /app/backups\n     Modified: Yesterday\n\n  3. config.old.json\n     Location: /archive\n     Modified: Last week\n```\n\n### For Explanations\n```\nThe function calculates the total by:\n\n  First, it gathers all input values\n  Then, it filters out any invalid entries\n  Finally, it sums the remaining numbers\n\nNote: Empty inputs are treated as zero.\n```\n\n### For Errors or Warnings\n```\nCould not complete the request.\n\nReason: The file was not found at the specified location.\n\nSuggestions:\n  Check if the file path is correct\n  Verify the file exists\n  Ensure you have read permissions\n```\n\n### For Confirmations\n```\nDone! Created new user account.\n\n  Username: jsmith\n  Email: john@example.com\n  Role: Editor\n\nNext: The user will receive a welcome email shortly.\n```\n\n## When to Use Each Style\n\n### Use Pretty Formatting When:\n- Showing results or status\n- Explaining concepts\n- Listing options or items\n- Providing instructions\n- Displaying data summaries\n\n### Keep Technical Formatting When:\n- User explicitly requests code/markdown\n- Showing code that needs to be copied\n- Displaying configuration files\n- Technical documentation\n- API responses that need exact format\n\n## Typography Tips\n\n### Visual Separators\n```\nSection breaks:    ---------------\nLight dividers:    . . . . . . . .\nBox drawing:       +-------------+\n                   |  Content    |\n                   +-------------+\n```\n\n### Emphasis Without Markdown\n```\nInstead of **bold**:     Use CAPS or spacing\nInstead of *italic*:     Use quotes or context\nInstead of `code`:       Use clear naming\n```\n\n### Spacing for Clarity\n```\nGroup related items with spacing:\n\n  Primary Actions\n    Save changes\n    Submit form\n\n  Secondary Actions\n    Cancel\n    Reset\n```\n\n## Examples\n\n### Bad (Raw Markdown)\n```\n### Results\n- **Found**: 5 files\n- **Size**: 2.3MB\n- **Status**: `complete`\n\nSee [documentation](https://docs.example.com) for more info.\n```\n\n### Good (Humanified)\n```\nRESULTS\n-------\nFound: 5 files\nSize: 2.3 MB\nStatus: Complete\n\nSee the documentation for more details.\n```\n\n## Remember\n\nThe goal is communication, not formatting. Choose the clearest way to convey information to a human reader. When in doubt, write it as you would explain it to a colleague standing next to you.\n",
+          "isCustomized": false
+        },
+        "memory-skill": {
+          "enabled": true,
+          "instructions": "# Memory Management Skill\n\nThis skill enables you to manage conversation memory using the SimpleMemory node's markdown-based storage system.\n\n## Memory Architecture\n\n### Short-Term Memory (Markdown)\n- Visible and editable in the SimpleMemory node's UI\n- Stored as markdown with timestamped entries\n- Window-based: keeps last N message pairs (configurable)\n- Format: `### **Human** (timestamp)` and `### **Assistant** (timestamp)`\n\n### Long-Term Memory (Vector DB)\n- Automatically archives messages that exceed the window\n- Semantic search for relevant past conversations\n- Enabled via `longTermEnabled` in SimpleMemory node\n\n## Capabilities\n\n1. **View History**: See recent conversation in markdown format\n2. **Save Notes**: Add explicit notes/memories to the conversation\n3. **Search Memory**: Find relevant past conversations semantically\n4. **Clear Memory**: Reset conversation history\n\n## When to Use\n\n**Save information when:**\n- User says \"remember this\" or \"don't forget\"\n- Important context is shared for future use\n- User wants to note something specific\n\n**Recall information when:**\n- User asks \"do you remember...\"\n- Context from earlier is needed\n- User references previous discussions\n\n**View history when:**\n- User wants to see conversation log\n- Debugging or reviewing past exchanges\n\n## Tool Reference\n\n### memory-save\nAdd a note or memory entry to the conversation history.\n\nParameters:\n- `content` (required): Information to remember\n- `role` (optional): \"note\" (default) or \"context\"\n\nExample:\n```json\n{\n  \"content\": \"User's favorite color is blue\",\n  \"role\": \"note\"\n}\n```\n\n### memory-get\nGet recent conversation history or search for specific content.\n\nParameters:\n- `count` (optional): Number of recent messages (default: 10)\n- `search` (optional): Search term to find specific memories\n\nExample - Recent history:\n```json\n{\n  \"count\": 5\n}\n```\n\nExample - Search:\n```json\n{\n  \"search\": \"favorite color\"\n}\n```\n\n### memory-clear\nClear conversation history.\n\nParameters:\n- `confirm` (required): Must be true to clear\n\nExample:\n```json\n{\n  \"confirm\": true\n}\n```\n\n### memory-view\nView the current conversation history in markdown format.\n\nParameters: None\n\nReturns the full markdown content of the conversation history.\n\n### memory-search\nSemantic search in long-term memory (if enabled).\n\nParameters:\n- `query` (required): Search query\n- `count` (optional): Number of results (default: 3)\n\nExample:\n```json\n{\n  \"query\": \"what did we discuss about the project\",\n  \"count\": 5\n}\n```\n\n## Markdown Format\n\nThe conversation history uses this format:\n\n```markdown\n# Conversation History\n\n### **Human** (2025-01-30 10:15:32)\nHello, how are you?\n\n### **Assistant** (2025-01-30 10:15:35)\nI'm doing well! How can I help you today?\n\n### **Note** (2025-01-30 10:16:00)\nUser prefers formal language.\n```\n\n## Integration with SimpleMemory Node\n\nWhen connected to a Zeenie:\n1. Conversation is automatically logged to markdown\n2. Window size limits short-term memory\n3. Overflow archives to vector DB (if long-term enabled)\n4. You can view/edit the markdown in the node's parameter panel\n\n## Best Practices\n\n1. Use memory-save for explicit user requests to remember\n2. Use memory-search for semantic recall of past discussions\n3. Don't save sensitive information without user consent\n4. The markdown is editable - users can manually curate their history\n",
+          "isCustomized": false
+        },
+        "subagent-skill": {
+          "enabled": true,
+          "instructions": "# Sub-Agent Management Skill\n\nYou are a parent agent that can delegate tasks to specialized sub-agents. This skill helps you understand, delegate to, and handle results from sub-agents effectively.\n\n## CRITICAL: Always Check Sub-Agents First\n\n**NEVER say \"I don't have that tool\" or \"I can't do that\" without first checking your connected sub-agents.**\n\nWhen a user requests something you don't have a direct tool for:\n\n1. **Check your connected sub-agents** - Look at what agents are available in your tools\n2. **Delegate to the appropriate sub-agent** - They have their own tools and capabilities\n3. **Only say you can't** if NO sub-agent can handle it\n\n**Wrong approach:**\n```\nUser: \"Check my phone battery\"\nYou: \"I don't have access to Android tools, so I can't check your battery.\"\n```\n\n**Correct approach:**\n```\nUser: \"Check my phone battery\"\nYou: [Check if Android Control Agent is connected]\nYou: [Delegate to Android Control Agent: \"Get battery status\"]\nYou: \"Let me check that for you...\" [waits for result]\n```\n\n## Available Sub-Agent Types\n\nYou can delegate tasks to these specialized agents (when connected to your tools):\n\n### Domain-Specific Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Android Control Agent** | 📱 | Android device automation | Battery checks, WiFi control, app launching, location tracking, sensor data |\n| **Coding Agent** | 💻 | Code execution | Python/JavaScript execution, calculations, data processing |\n| **Web Control Agent** | 🌐 | Browser automation | Web scraping, HTTP requests, form filling |\n| **Social Media Agent** | 📱 | Social messaging | WhatsApp, Telegram, multi-platform messaging |\n| **Travel Agent** | ✈️ | Travel planning | Itineraries, location lookups, travel recommendations |\n\n### Task & Workflow Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Task Management Agent** | 📋 | Task automation | Scheduling, reminders, to-do management |\n| **Tool Agent** | 🔧 | Tool orchestration | Multi-tool workflows, complex task execution |\n| **Productivity Agent** | ⏰ | Productivity | Time management, note-taking, workflow automation |\n\n### Business Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Payments Agent** | 💳 | Payment processing | Payment workflows, invoices, financial operations |\n| **Consumer Agent** | 🛒 | Consumer support | Customer service, product recommendations, order management |\n\n## How to Check Sub-Agent Capabilities\n\nBefore responding \"I can't do that\":\n\n1. **List your available tools** - Sub-agents appear as delegation tools\n2. **Match the request to an agent specialty** - Use the table above\n3. **Delegate if a match exists** - The sub-agent has its own tools\n4. **Only decline if truly impossible** - No matching agent connected\n\n### Capability Matching Examples\n\n| User Request | Check For | Delegate To |\n|--------------|-----------|-------------|\n| \"Check my battery\" | Android Control Agent | `delegate_to_android_agent` |\n| \"Send a WhatsApp\" | Social Media Agent | `delegate_to_social_agent` |\n| \"Calculate this\" | Coding Agent | `delegate_to_coding_agent` |\n| \"Find restaurants nearby\" | Travel Agent | `delegate_to_travel_agent` |\n| \"Make an HTTP request\" | Web Control Agent | `delegate_to_web_agent` |\n| \"Set a reminder\" | Task Management Agent | `delegate_to_task_agent` |\n\n## How Delegation Works\n\n### Fire-and-Forget Pattern\nWhen you delegate a task:\n1. The sub-agent receives the task and starts working immediately\n2. You continue your conversation - delegation is non-blocking\n3. The sub-agent works independently with its own tools and memory\n4. When complete, a `task_completed` event is fired\n\n### What You Receive Back\n- **Task ID**: Unique identifier (e.g., `delegated_abc123_xyz`)\n- **Status**: `completed` or `error`\n- **Agent Name**: Which sub-agent completed the work\n- **Result/Error**: The outcome or error message\n\n## Delegation Best Practices\n\n### When to Delegate\n- User requests something outside your direct tools\n- Task requires specialized capabilities (Android, WhatsApp, code execution, etc.)\n- Task is time-consuming and can run in background\n- Task matches a sub-agent's specialty area\n\n### When NOT to Delegate\n- Simple questions you can answer directly from knowledge\n- Tasks that need immediate response AND you have the direct tool\n- When the same task is already running (avoid duplicates)\n\n### Delegation Format\nWhen delegating, provide clear instructions:\n```\nTask: [Clear description of what needs to be done]\nContext: [Any relevant background information]\nExpected Output: [What format/information you need back]\n```\n\n## Handling Task Completion\n\n### Successful Completion\nWhen a delegated task completes successfully:\n\n1. **DO NOT delegate again** - The task is finished\n2. **Extract key information** from the result\n3. **Report to the user** naturally and conversationally\n4. **Suggest next steps** if appropriate\n\n**Example Response:**\n\"The Android agent has checked your battery status. Your device is at 78% with approximately 5 hours of usage remaining. Would you like me to enable power-saving mode?\"\n\n### Failed Tasks\nWhen a delegated task fails:\n\n1. **DO NOT retry automatically** - Let the user decide\n2. **Explain what went wrong** clearly\n3. **Suggest alternatives** or troubleshooting steps\n\n**Example Response:**\n\"I wasn't able to send the WhatsApp message because the contact wasn't found. Could you verify the phone number? Alternatively, I can try searching for the contact by name.\"\n\n## Multi-Agent Coordination\n\n### Sequential Delegation\nFor tasks requiring multiple steps:\n1. Delegate first task to appropriate agent\n2. Wait for completion via task trigger\n3. Use result to delegate next task\n4. Continue until workflow complete\n\n### Parallel Delegation\nFor independent tasks:\n- Delegate multiple tasks to different agents\n- Each runs independently\n- Collect results as they complete\n\n## Critical Rules\n\n1. **ALWAYS check sub-agents before saying \"I can't\"** - They extend your capabilities\n2. **NEVER re-delegate after receiving a result** - Report it instead\n3. **NEVER retry failed tasks automatically** - Ask user first\n4. **ALWAYS acknowledge task completion** to the user\n5. **ALWAYS match task to agent specialty** for best results\n\n## Error Handling\n\n| Error Type | Action |\n|------------|--------|\n| Agent not connected | Inform user which agent is needed and how to connect it |\n| Task timeout | Report to user, suggest retry |\n| Invalid parameters | Clarify requirements with user |\n| Agent error | Report error details, suggest alternatives |\n\n## Example Workflows\n\n### Battery Check Workflow\n```\nUser: \"Check my phone battery\"\nYou: [See Android Control Agent in tools]\nYou: Delegate to Android Control Agent with task \"Get battery status\"\nAgent: Returns {status: 'completed', result: 'Battery at 78%, charging'}\nYou: \"Your phone battery is at 78% and currently charging.\"\n```\n\n### Message Sending Workflow\n```\nUser: \"Send a WhatsApp to John saying I'll be late\"\nYou: [See Social Media Agent in tools]\nYou: Delegate to Social Media Agent with message details\nAgent: Returns {status: 'completed', result: 'Message sent to John'}\nYou: \"Done! I've sent the message to John letting him know you'll be late.\"\n```\n\n### No Agent Available\n```\nUser: \"Check my phone battery\"\nYou: [No Android Control Agent in tools]\nYou: \"I don't have an Android Control Agent connected right now. To check your battery, please connect an Android Control Agent to my tools input, then ask again.\"\n```\n",
+          "isCustomized": false
+        },
+        "write-todos-skill": {
+          "enabled": true,
+          "instructions": "# Task Planning with write_todos\n\nYou have access to the `write_todos` tool. Use it to plan, track, and update a structured task list when working on complex objectives.\n\n## When to Use\n\nUse `write_todos` when the task requires **3 or more steps**. Do NOT use it for trivial requests that you can complete in 1-2 tool calls.\n\n## How to Use\n\nFollow this loop for every complex task:\n\n### 1. Plan First\n\nBefore doing any work, call `write_todos` to create your plan. Break the objective into specific, actionable steps. Mark the first task `in_progress` immediately.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"in_progress\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"pending\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 2. Work, Then Update\n\nAfter completing a step, call `write_todos` again with the updated list. Mark the finished task `completed` and the next task `in_progress`. Do this after **every** step -- do not batch updates.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"completed\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"in_progress\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 3. Revise as You Go\n\nIf you discover new work or a step becomes irrelevant, update the list. Add new tasks, remove unnecessary ones, or reword tasks to be more accurate.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"completed\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"completed\"},\n    {\"content\": \"Fix unexpected edge case in parser\", \"status\": \"in_progress\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 4. Complete All Tasks\n\nKeep working until every task is `completed`. Always have at least one task `in_progress` unless all are done.\n\n## Rules\n\n- **Always plan before acting** on complex tasks.\n- **Update after every step** -- the user sees your progress in real time.\n- **One `write_todos` call per turn** -- never call it multiple times in parallel.\n- **Mark `in_progress` before starting** a task, `completed` after finishing it.\n- **Never mark a task `completed`** if there are unresolved errors or the work is partial.\n- **Do not change completed tasks** -- only update pending and in_progress items.\n- **Remove irrelevant tasks** rather than leaving them pending.\n- **Be specific** -- \"Fix the null check in validate_input()\" is better than \"Fix bug\".\n- **Each call sends the full list** -- include all tasks every time, not just changes.\n\n## Schema\n\n| Field | Type | Description |\n|-------|------|-------------|\n| todos | array | Full list of todo items |\n| todos[].content | string | Specific, actionable task description |\n| todos[].status | string | `pending`, `in_progress`, or `completed` |\n",
+          "isCustomized": false
+        },
+        "process-manager-skill": {
+          "enabled": true,
+          "instructions": "# Process Manager Tool\n\nManage long-running processes with **full system PATH access**. Use this for anything that needs `npm`, `python`, `node`, or runs as a persistent server/watcher.\n\n## Security\n\nThe process manager **blocks destructive file commands** to prevent accidental deletion outside the agent's workspace. Use `shell_execute` for file operations instead (sandboxed, no PATH, confined to workspace).\n\n**Blocked commands:** `rm`, `rmdir`, `del`, `rd`, `Remove-Item`, `format`, `mkfs`, `dd`, `shred`, `chmod 777`\n\n**Allowed:** `npm`, `python`, `node`, `pip`, `cargo`, `go`, servers, build tools, installers\n\n## Operations\n\n### start\nLaunch a process. Output streams to the Terminal tab and is saved to log files.\n```json\n{\"operation\": \"start\", \"name\": \"dev-server\", \"command\": \"python -m http.server 8080\"}\n```\n\n### stop\nKill a process and its entire process tree.\n```json\n{\"operation\": \"stop\", \"name\": \"dev-server\"}\n```\n\n### restart\nStop then re-launch with the same command.\n```json\n{\"operation\": \"restart\", \"name\": \"dev-server\"}\n```\n\n### list\nShow all running processes for this workflow.\n```json\n{\"operation\": \"list\"}\n```\n\n### get_output\nRead output from a process's log file. Use `tail` to get last N lines, `stream` to choose stdout or stderr.\n```json\n{\"operation\": \"get_output\", \"name\": \"dev-server\", \"stream\": \"stdout\", \"tail\": 20}\n```\nReturns `{\"lines\": [...], \"total\": 150, \"file\": \"/path/to/stdout.log\"}`.\n\n### send_input\nWrite text to a process's stdin (newline appended automatically).\n```json\n{\"operation\": \"send_input\", \"name\": \"dev-server\", \"text\": \"quit\"}\n```\n\n## Shell vs Process Manager\n\n| Need | Tool | Why |\n|------|------|-----|\n| `ls`, `cat`, `find`, `grep` | **shell_execute** | Sandboxed, fast, no PATH |\n| `rm`, `mv`, `cp`, file ops | **shell_execute** | Sandboxed, confined to workspace |\n| `npm install`, `pip install` | **process_manager** | Needs PATH |\n| `python script.py` | **process_manager** | Needs PATH |\n| `npm run dev`, `flask run` | **process_manager** | Long-running, streams output |\n| Dev servers, watchers | **process_manager** | Persistent, log files |\n\n## Output Log Files\n\nEach process writes to its own log files in the agent's workspace:\n```\n{workspace}/{agent_node_id}/.processes/{process_name}/\n  stdout.log    # Standard output\n  stderr.log    # Error output\n```\n\nUse `get_output` to read them selectively. The agent can also read these files directly with the `file_read` tool.\n\n## OS-Specific Commands\n\nCommands differ by platform. Refer to:\n- **bash-skill** -- Linux/macOS (apt, brew, lsof, kill, curl)\n- **powershell-skill** -- Windows (Get-Process, Stop-Process, Invoke-WebRequest)\n- **wsl-skill** -- Running Linux tools on Windows (prefix with `wsl`)\n\nDetect the OS first:\n```json\n{\"operation\": \"start\", \"name\": \"os\", \"command\": \"python -c \\\"import platform; print(platform.system())\\\"\"}\n```\nReturns `Windows`, `Linux`, or `Darwin` (macOS).\n\n## Guidelines\n\n- Always give processes a meaningful **name** so you can stop/check them later\n- Use **get_output** after starting to verify the process launched correctly\n- Use **stop** to clean up processes when done -- don't leave servers running\n- **Do NOT use process_manager for file deletion** -- use shell_execute instead\n- Processes are automatically killed when the server shuts down\n- Max concurrent processes: configurable in Settings (default: 10)\n- Output streams to the Terminal tab in real-time\n",
+          "isCustomized": false
+        }
+      }
+    },
+    "321151185156422f965c63a299945da7:browser:1": {
       "operation": "navigate",
       "url": "",
       "selector": "",
@@ -1370,7 +1551,14 @@
       "timeout": 30,
       "label": "Browser"
     },
-    "2:masterSkill:1": {
+    "321151185156422f965c63a299945da7:chatAgent:1": {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "prompt": "{{chattrigger.message}} {{telegramreceive.text}}",
+      "system_message": "",
+      "label": "Zeenie"
+    },
+    "321151185156422f965c63a299945da7:masterSkill:2": {
       "skill_folder": "terminal",
       "skills_config": {
         "compaction-skill": {
@@ -1418,44 +1606,44 @@
           "instructions": "# Process Manager Tool\n\nManage long-running processes with **full system PATH access**. Use this for anything that needs `npm`, `python`, `node`, or runs as a persistent server/watcher.\n\n## Security\n\nThe process manager **blocks destructive file commands** to prevent accidental deletion outside the agent's workspace. Use `shell_execute` for file operations instead (sandboxed, no PATH, confined to workspace).\n\n**Blocked commands:** `rm`, `rmdir`, `del`, `rd`, `Remove-Item`, `format`, `mkfs`, `dd`, `shred`, `chmod 777`\n\n**Allowed:** `npm`, `python`, `node`, `pip`, `cargo`, `go`, servers, build tools, installers\n\n## Operations\n\n### start\nLaunch a process. Output streams to the Terminal tab and is saved to log files.\n```json\n{\"operation\": \"start\", \"name\": \"dev-server\", \"command\": \"python -m http.server 8080\"}\n```\n\n### stop\nKill a process and its entire process tree.\n```json\n{\"operation\": \"stop\", \"name\": \"dev-server\"}\n```\n\n### restart\nStop then re-launch with the same command.\n```json\n{\"operation\": \"restart\", \"name\": \"dev-server\"}\n```\n\n### list\nShow all running processes for this workflow.\n```json\n{\"operation\": \"list\"}\n```\n\n### get_output\nRead output from a process's log file. Use `tail` to get last N lines, `stream` to choose stdout or stderr.\n```json\n{\"operation\": \"get_output\", \"name\": \"dev-server\", \"stream\": \"stdout\", \"tail\": 20}\n```\nReturns `{\"lines\": [...], \"total\": 150, \"file\": \"/path/to/stdout.log\"}`.\n\n### send_input\nWrite text to a process's stdin (newline appended automatically).\n```json\n{\"operation\": \"send_input\", \"name\": \"dev-server\", \"text\": \"quit\"}\n```\n\n## Shell vs Process Manager\n\n| Need | Tool | Why |\n|------|------|-----|\n| `ls`, `cat`, `find`, `grep` | **shell_execute** | Sandboxed, fast, no PATH |\n| `rm`, `mv`, `cp`, file ops | **shell_execute** | Sandboxed, confined to workspace |\n| `npm install`, `pip install` | **process_manager** | Needs PATH |\n| `python script.py` | **process_manager** | Needs PATH |\n| `npm run dev`, `flask run` | **process_manager** | Long-running, streams output |\n| Dev servers, watchers | **process_manager** | Persistent, log files |\n\n## Output Log Files\n\nEach process writes to its own log files in the agent's workspace:\n```\n{workspace}/{agent_node_id}/.processes/{process_name}/\n  stdout.log    # Standard output\n  stderr.log    # Error output\n```\n\nUse `get_output` to read them selectively. The agent can also read these files directly with the `file_read` tool.\n\n## OS-Specific Commands\n\nCommands differ by platform. Refer to:\n- **bash-skill** -- Linux/macOS (apt, brew, lsof, kill, curl)\n- **powershell-skill** -- Windows (Get-Process, Stop-Process, Invoke-WebRequest)\n- **wsl-skill** -- Running Linux tools on Windows (prefix with `wsl`)\n\nDetect the OS first:\n```json\n{\"operation\": \"start\", \"name\": \"os\", \"command\": \"python -c \\\"import platform; print(platform.system())\\\"\"}\n```\nReturns `Windows`, `Linux`, or `Darwin` (macOS).\n\n## Guidelines\n\n- Always give processes a meaningful **name** so you can stop/check them later\n- Use **get_output** after starting to verify the process launched correctly\n- Use **stop** to clean up processes when done -- don't leave servers running\n- **Do NOT use process_manager for file deletion** -- use shell_execute instead\n- Processes are automatically killed when the server shuts down\n- Max concurrent processes: configurable in Settings (default: 10)\n- Output streams to the Terminal tab in real-time\n",
           "isCustomized": false
         }
-      },
-      "skillsConfig": {
-        "write-todos-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        }
       }
     },
-    "2:coding_agent:1": {
+    "321151185156422f965c63a299945da7:coding_agent:1": {
       "prompt": "",
       "provider": "gemini",
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.5-flash",
       "system_message": "You are a helpful assistant",
       "label": "Coding Agent"
     },
-    "2:productivity_agent:1": {
+    "321151185156422f965c63a299945da7:productivity_agent:1": {
       "prompt": "",
       "provider": "gemini",
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.5-flash",
       "system_message": "You are a helpful assistant",
       "label": "Productivity Agent"
     },
-    "2:web_agent:1": {
+    "321151185156422f965c63a299945da7:travel_agent:1": {
       "prompt": "",
       "provider": "gemini",
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.5-flash",
+      "system_message": "You are a helpful assistant",
+      "label": "Travel Agent"
+    },
+    "321151185156422f965c63a299945da7:web_agent:1": {
+      "prompt": "",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
       "system_message": "You are a helpful assistant",
       "label": "Web Agent"
     },
-    "2:social_agent:1": {
+    "321151185156422f965c63a299945da7:social_agent:1": {
       "prompt": "",
       "provider": "gemini",
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.5-flash",
       "system_message": "You are a helpful assistant",
       "label": "Social Agent"
     },
-    "2:masterSkill:2": {
+    "321151185156422f965c63a299945da7:masterSkill:3": {
       "skill_folder": "productivity_agent",
       "skills_config": {
         "assistant-personality": {
@@ -1508,16 +1696,10 @@
           "instructions": "# Google Sheets Skill\n\nRead and write data to Google Sheets spreadsheets.\n\n## Tool: google_sheets\n\nConsolidated Google Sheets tool with `operation` parameter.\n\n### Operations\n\n| Operation | Description | Required Fields |\n|-----------|-------------|-----------------|\n| `read` | Read data from a range | spreadsheet_id, range |\n| `write` | Write data to a range | spreadsheet_id, range, values |\n| `append` | Append rows to a table | spreadsheet_id, range, values |\n\n### read - Read spreadsheet data\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| operation | string | Yes | Must be `\"read\"` |\n| spreadsheet_id | string | Yes | Spreadsheet ID from URL |\n| range | string | Yes | A1 notation range (e.g., \"Sheet1!A1:D10\") |\n\n**How to find Spreadsheet ID:**\nFrom URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`\n\n**Range Notation (A1):**\n- `Sheet1!A1:D10` - Specific range on Sheet1\n- `Sheet1!A:D` - Entire columns A through D\n- `Sheet1!1:10` - Rows 1 through 10\n- `A1:D10` - Default sheet, specific range\n- `Sheet1` - Entire sheet\n\n**Example:**\n```json\n{\n  \"operation\": \"read\",\n  \"spreadsheet_id\": \"1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms\",\n  \"range\": \"Sheet1!A1:E10\"\n}\n```\n\n### write - Write data to a range\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| operation | string | Yes | Must be `\"write\"` |\n| spreadsheet_id | string | Yes | Spreadsheet ID |\n| range | string | Yes | A1 notation range |\n| values | array | Yes | 2D array of values |\n| value_input_option | string | No | `\"USER_ENTERED\"` or `\"RAW\"` (default: USER_ENTERED) |\n\n**Example - Write data:**\n```json\n{\n  \"operation\": \"write\",\n  \"spreadsheet_id\": \"1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms\",\n  \"range\": \"Sheet1!A1:C3\",\n  \"values\": [\n    [\"Name\", \"Score\", \"Grade\"],\n    [\"Alice\", 95, \"A\"],\n    [\"Bob\", 87, \"B\"]\n  ]\n}\n```\n\n**Example - Write formula:**\n```json\n{\n  \"operation\": \"write\",\n  \"spreadsheet_id\": \"1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms\",\n  \"range\": \"Sheet1!D2\",\n  \"values\": [[\"=SUM(B2:C2)\"]],\n  \"value_input_option\": \"USER_ENTERED\"\n}\n```\n\n### append - Append rows to a table\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| operation | string | Yes | Must be `\"append\"` |\n| spreadsheet_id | string | Yes | Spreadsheet ID |\n| range | string | Yes | Table range (e.g., \"Sheet1!A:E\") |\n| values | array | Yes | 2D array of rows to append |\n| value_input_option | string | No | `\"USER_ENTERED\"` or `\"RAW\"` (default: USER_ENTERED) |\n| insert_data_option | string | No | `\"INSERT_ROWS\"` or `\"OVERWRITE\"` (default: INSERT_ROWS) |\n\n**Example:**\n```json\n{\n  \"operation\": \"append\",\n  \"spreadsheet_id\": \"1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms\",\n  \"range\": \"Sheet1!A:E\",\n  \"values\": [\n    [\"Charlie\", \"charlie@example.com\", \"Sales\", \"2024-02-01\", \"Active\"],\n    [\"Diana\", \"diana@example.com\", \"HR\", \"2024-02-15\", \"Active\"]\n  ]\n}\n```\n\n## Common Formulas\n\n| Formula | Description |\n|---------|-------------|\n| `=SUM(A1:A10)` | Sum of range |\n| `=AVERAGE(B1:B10)` | Average of range |\n| `=COUNT(A:A)` | Count numbers in column |\n| `=COUNTA(A:A)` | Count non-empty cells |\n| `=VLOOKUP(E1,A:C,2,FALSE)` | Vertical lookup |\n| `=IF(A1>90,\"A\",\"B\")` | Conditional logic |\n| `=TODAY()` | Current date |\n| `=NOW()` | Current date and time |\n\n## Common Workflows\n\n1. **Import data**: Write headers, then append data rows\n2. **Update records**: Read to find row, write to specific cells\n3. **Generate reports**: Read data, process, write summary\n4. **Log entries**: Append new rows with timestamps\n\n## Tips\n\n- Always check spreadsheet exists before writing\n- Use `USER_ENTERED` for formulas to work\n- Range must match data dimensions\n- Append is safer than write for adding data\n\n## Setup Requirements\n\n1. Connect Sheets node to AI Agent's `input-tools` handle\n2. Authenticate with Google Workspace in Credentials Modal\n3. Ensure Sheets API scopes are authorized\n4. Spreadsheet must be accessible to authenticated account\n",
           "isCustomized": false
         }
-      },
-      "skillsConfig": {
-        "google-sheets-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        }
       }
     },
-    "2:masterSkill:3": {
+    "321151185156422f965c63a299945da7:masterSkill:4": {
+      "skill_folder": "terminal",
       "skills_config": {
         "assistant-personality": {
           "enabled": true,
@@ -1571,7 +1753,7 @@
         }
       }
     },
-    "2:masterSkill:4": {
+    "321151185156422f965c63a299945da7:masterSkill:5": {
       "skill_folder": "coding_agent",
       "skills_config": {
         "memory-skill": {
@@ -1626,22 +1808,22 @@
         }
       }
     },
-    "2:processManager:2": {
+    "321151185156422f965c63a299945da7:processManager:2": {
       "label": "Process Manager 1"
     },
-    "2:processManager:3": {
+    "321151185156422f965c63a299945da7:processManager:3": {
       "label": "Process Manager 2"
     },
-    "2:processManager:4": {
+    "321151185156422f965c63a299945da7:processManager:4": {
       "label": "Process Manager 3"
     },
-    "2:processManager:5": {
+    "321151185156422f965c63a299945da7:processManager:5": {
       "label": "Process Manager 4"
     },
-    "2:processManager:6": {
+    "321151185156422f965c63a299945da7:processManager:6": {
       "label": "Process Manager 6"
     },
-    "2:googleGmail:1": {
+    "321151185156422f965c63a299945da7:googleGmail:1": {
       "operation": "send",
       "to": "",
       "cc": "",
@@ -1656,22 +1838,22 @@
       "format": "full",
       "label": "Gmail"
     },
-    "2:writeTodos:2": {
+    "321151185156422f965c63a299945da7:writeTodos:2": {
       "label": "Write Todos 1"
     },
-    "2:writeTodos:3": {
+    "321151185156422f965c63a299945da7:writeTodos:3": {
       "label": "Write Todos 2"
     },
-    "2:writeTodos:4": {
+    "321151185156422f965c63a299945da7:writeTodos:4": {
       "label": "Write Todos 3"
     },
-    "2:writeTodos:5": {
+    "321151185156422f965c63a299945da7:writeTodos:5": {
       "label": "Write Todos 4"
     },
-    "2:writeTodos:6": {
+    "321151185156422f965c63a299945da7:writeTodos:6": {
       "label": "Write Todos 6"
     },
-    "2:googleSheets:1": {
+    "321151185156422f965c63a299945da7:googleSheets:1": {
       "operation": "read",
       "spreadsheet_id": "",
       "range": "A1:Z1000",
@@ -1681,7 +1863,7 @@
       "major_dimension": "ROWS",
       "label": "Sheets"
     },
-    "2:googleDrive:1": {
+    "321151185156422f965c63a299945da7:googleDrive:1": {
       "operation": "list",
       "file_id": null,
       "filename": null,
@@ -1701,7 +1883,7 @@
       "message": null,
       "label": "Drive"
     },
-    "2:googleCalendar:1": {
+    "321151185156422f965c63a299945da7:googleCalendar:1": {
       "operation": "list",
       "calendar_id": "primary",
       "event_id": null,
@@ -1726,56 +1908,12 @@
       "update_location": null,
       "label": "Calendar"
     },
-    "2:console:2": {
-      "label": "Console 1",
-      "log_mode": "field",
-      "field_path": "{{socialagent.response}}",
-      "expression": "",
-      "format": "json"
-    },
-    "2:console:3": {
-      "label": "Console 2",
-      "log_mode": "field",
-      "field_path": "{{productivityagent.response}}",
-      "expression": "",
-      "format": "json"
-    },
-    "2:console:4": {
-      "label": "Console 3",
-      "log_mode": "field",
-      "field_path": "{{webagent.response}}",
-      "expression": "",
-      "format": "json"
-    },
-    "2:console:5": {
-      "label": "Console 4",
-      "log_mode": "field",
-      "field_path": "{{codingagent.response}}",
-      "expression": "",
-      "format": "json"
-    },
-    "2:console:6": {
-      "label": "Console 6",
-      "log_mode": "field",
-      "field_path": "{{travelagent.response}}",
-      "expression": "",
-      "format": "json"
-    },
-    "2:masterSkill:5": {
+    "321151185156422f965c63a299945da7:masterSkill:6": {
+      "skill_folder": "terminal",
       "skills_config": {
-        "process-manager-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        },
-        "write-todos-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        },
         "assistant-personality": {
           "enabled": true,
-          "instructions": "# Assistant Personality\n\nYou are a helpful, harmless, and honest AI assistant. Your goal is to assist users with their requests while being truthful and avoiding harmful content.\n\n## Core Principles\n\n1. **Helpfulness**: Provide clear, accurate, and useful information\n2. **Honesty**: Be truthful about your capabilities and limitations\n3. **Safety**: Avoid generating harmful, illegal, or unethical content\n\n## Task Planning\n\nWhen a request involves **3 or more steps**, use the `write_todos` tool to plan and track your work before acting:\n\n1. **Plan first** -- call `write_todos` with a list of actionable steps, mark the first `in_progress`\n2. **Work, then update** -- after each step, call `write_todos` again to mark it `completed` and the next `in_progress`\n3. **Revise as you go** -- add new tasks, remove irrelevant ones, reword as needed\n4. **Complete all** -- keep working until every task is `completed`\n\nFor simple requests (1-2 steps), skip the todo list and respond directly.\n\n## Advisor\n\nIf a chat-model is wired as a tool (`anthropic_chat_model` / `openai_chat_model` / `gemini_chat_model`), it's a stronger advisor model. Call it at the start of any complex task for a plan, when stuck, and before declaring done. Pass only `prompt`; the operator configured `model` and `api_key`. See the `advisor` skill for the full playbook.\n\n## Communication Style\n\n- Be concise but thorough\n- Use clear, simple language\n- Break down complex topics into understandable parts\n- Ask clarifying questions when needed\n- Admit when you don't know something\n\n## Response Guidelines\n\nWhen responding to users:\n1. Understand the intent behind their question\n2. For complex tasks: plan with `write_todos` first, then execute step by step\n3. For simple questions: respond directly\n4. Include relevant context or caveats\n5. Suggest follow-up actions if appropriate\n",
+          "instructions": "# Assistant Personality\n\nYou are a helpful, harmless, and honest AI assistant. Your goal is to assist users with their requests while being truthful and avoiding harmful content.\n\n## Core Principles\n\n1. **Helpfulness**: Provide clear, accurate, and useful information\n2. **Honesty**: Be truthful about your capabilities and limitations\n3. **Safety**: Avoid generating harmful, illegal, or unethical content\n\n## Task Planning\n\nWhen a request involves **3 or more steps**, use the `write_todos` tool to plan and track your work before acting:\n\n1. **Plan first** -- call `write_todos` with a list of actionable steps, mark the first `in_progress`\n2. **Work, then update** -- after each step, call `write_todos` again to mark it `completed` and the next `in_progress`\n3. **Revise as you go** -- add new tasks, remove irrelevant ones, reword as needed\n4. **Complete all** -- keep working until every task is `completed`\n\nFor simple requests (1-2 steps), skip the todo list and respond directly.\n\n## Communication Style\n\n- Be concise but thorough\n- Use clear, simple language\n- Break down complex topics into understandable parts\n- Ask clarifying questions when needed\n- Admit when you don't know something\n\n## Response Guidelines\n\nWhen responding to users:\n1. Understand the intent behind their question\n2. For complex tasks: plan with `write_todos` first, then execute step by step\n3. For simple questions: respond directly\n4. Include relevant context or caveats\n5. Suggest follow-up actions if appropriate\n",
           "isCustomized": false
         },
         "compaction-skill": {
@@ -1783,136 +1921,79 @@
           "instructions": "# Memory Compaction Skill\n\nYou have the ability to compact conversation memory when it grows too large. Compaction transforms verbose conversation history into a structured summary that preserves essential context while reducing token usage.\n\n## When to Compact\n\nCompact memory when:\n- The system indicates token threshold is approaching\n- Conversation history becomes repetitive or verbose\n- You need to preserve important context but reduce size\n- Starting a new phase of work after completing a major task\n\n## Compaction Summary Structure\n\nWhen compacting, create a summary with these 5 sections:\n\n### 1. Task Overview\nWhat the user is trying to accomplish. Include:\n- Primary goal or objective\n- Key constraints or requirements\n- Scope of the work\n\n### 2. Current State\nWhat's been completed and what's in progress:\n- Completed tasks and their outcomes\n- Work currently in flight\n- Pending decisions or blockers\n\n### 3. Important Discoveries\nKey findings, decisions, or problems encountered:\n- Technical discoveries or insights\n- Decisions made and their rationale\n- Problems encountered and solutions applied\n- User preferences learned\n\n### 4. Next Steps\nWhat needs to happen next:\n- Immediate actions required\n- Planned approach for remaining work\n- Dependencies or prerequisites\n\n### 5. Context to Preserve\nCritical details that must be retained:\n- Specific values, IDs, or references\n- User preferences or constraints\n- Technical details needed for continuity\n- Any warnings or caveats\n\n## Compaction Format\n\nOutput the compacted summary in this format:\n\n```markdown\n# Conversation Summary (Compacted)\n*Generated: [ISO timestamp]*\n\n## Task Overview\n[1-3 sentences describing the goal]\n\n## Current State\n- [Completed item 1]\n- [Completed item 2]\n- [In progress: description]\n\n## Important Discoveries\n- [Discovery 1 with context]\n- [Decision made: rationale]\n- [Problem solved: approach]\n\n## Next Steps\n1. [Next action]\n2. [Following action]\n\n## Context to Preserve\n- [Critical detail 1]\n- [Critical detail 2]\n```\n\n## Best Practices\n\n1. **Be Concise**: Each section should be brief but complete\n2. **Preserve Specifics**: Keep exact values, names, and references\n3. **Capture Decisions**: Record WHY decisions were made, not just WHAT\n4. **Include Failures**: Document what didn't work to avoid repetition\n5. **Maintain Continuity**: Summary should allow seamless continuation\n\n## What NOT to Include\n\n- Verbose back-and-forth dialogue\n- Redundant information\n- Superseded decisions (only keep final decisions)\n- Exploratory tangents that didn't lead anywhere\n- Standard pleasantries or acknowledgments\n\n## Example Compaction\n\n**Before** (verbose history):\n```\nHuman: Can you help me debug this Python function?\nAI: Of course! Please share the function.\nHuman: Here's the function: def calculate(x): return x * 2\nAI: I see the function. What issue are you experiencing?\nHuman: It returns None sometimes\nAI: That's interesting. Can you show me an example input?\nHuman: calculate(\"5\") returns None\nAI: Ah, I see the issue! When you pass a string...\n[continues for 50+ messages]\n```\n\n**After** (compacted):\n```markdown\n# Conversation Summary (Compacted)\n*Generated: 2025-02-13T10:30:00Z*\n\n## Task Overview\nDebug Python function `calculate(x)` that returns None for some inputs.\n\n## Current State\n- Identified root cause: string inputs cause implicit None return\n- Implemented fix with type checking and conversion\n- Tests passing for int, float, and string inputs\n\n## Important Discoveries\n- Original function had no type validation\n- String multiplication in Python doesn't raise error but behaves unexpectedly\n- User prefers explicit error messages over silent failures\n\n## Next Steps\n1. Add input validation for edge cases (None, empty string)\n2. Write unit tests for the fixed function\n\n## Context to Preserve\n- Function location: `utils/math_helpers.py:45`\n- User wants to maintain backward compatibility\n- Prefer raising ValueError over returning None\n```\n\n## Integration with Memory System\n\nWhen compaction is triggered:\n1. The compacted summary replaces the current memory content\n2. New conversation messages are appended after the summary\n3. The summary header indicates when compaction occurred\n\nThis allows conversation to continue naturally while maintaining reduced token usage.\n",
           "isCustomized": false
         },
-        "humanify-skill": {
-          "enabled": true,
-          "instructions": "# Humanify Output Skill\n\nFormat your responses for human readability. Output clean, pretty text that's easy to scan and understand - not raw markdown syntax or code-heavy formatting.\n\n## Core Principles\n\n1. **Plain Language First**: Write naturally, as if speaking to someone\n2. **Visual Clarity**: Use spacing, indentation, and structure for scannability\n3. **No Raw Syntax**: Avoid showing markdown symbols, JSON, or code unless specifically requested\n4. **Progressive Detail**: Lead with key information, details follow\n\n## Formatting Guidelines\n\n### Instead of Markdown Headers\n```\nBad:  ## Section Title\nGood: SECTION TITLE\n      -------------\n```\n\n### Instead of Bullet Lists with Symbols\n```\nBad:  - Item one\n      - Item two\n\nGood: Item one\n      Item two\n\n  or: * Item one\n      * Item two\n```\n\n### Instead of Code Blocks for Data\n```\nBad:  ```json\n      {\"name\": \"John\", \"age\": 30}\n      ```\n\nGood: Name: John\n      Age: 30\n```\n\n### Instead of Tables with Pipes\n```\nBad:  | Name | Value |\n      |------|-------|\n      | Foo  | 123   |\n\nGood: Name     Value\n      ----     -----\n      Foo      123\n```\n\n### Instead of Raw URLs\n```\nBad:  Check https://example.com/very/long/path/to/resource\n\nGood: Check the resource page (link available)\n  or: Resource: example.com\n```\n\n## Response Patterns\n\n### For Status Updates\n```\nStatus: Complete\nTime: 2.3 seconds\nResult: Successfully processed 15 items\n\nDetails:\n  Processed: 15\n  Skipped: 2\n  Errors: 0\n```\n\n### For Lists of Items\n```\nFound 3 matching files:\n\n  1. config.json\n     Location: /app/settings\n     Modified: Today\n\n  2. config.backup.json\n     Location: /app/backups\n     Modified: Yesterday\n\n  3. config.old.json\n     Location: /archive\n     Modified: Last week\n```\n\n### For Explanations\n```\nThe function calculates the total by:\n\n  First, it gathers all input values\n  Then, it filters out any invalid entries\n  Finally, it sums the remaining numbers\n\nNote: Empty inputs are treated as zero.\n```\n\n### For Errors or Warnings\n```\nCould not complete the request.\n\nReason: The file was not found at the specified location.\n\nSuggestions:\n  Check if the file path is correct\n  Verify the file exists\n  Ensure you have read permissions\n```\n\n### For Confirmations\n```\nDone! Created new user account.\n\n  Username: jsmith\n  Email: john@example.com\n  Role: Editor\n\nNext: The user will receive a welcome email shortly.\n```\n\n## When to Use Each Style\n\n### Use Pretty Formatting When:\n- Showing results or status\n- Explaining concepts\n- Listing options or items\n- Providing instructions\n- Displaying data summaries\n\n### Keep Technical Formatting When:\n- User explicitly requests code/markdown\n- Showing code that needs to be copied\n- Displaying configuration files\n- Technical documentation\n- API responses that need exact format\n\n## Typography Tips\n\n### Visual Separators\n```\nSection breaks:    ---------------\nLight dividers:    . . . . . . . .\nBox drawing:       +-------------+\n                   |  Content    |\n                   +-------------+\n```\n\n### Emphasis Without Markdown\n```\nInstead of **bold**:     Use CAPS or spacing\nInstead of *italic*:     Use quotes or context\nInstead of `code`:       Use clear naming\n```\n\n### Spacing for Clarity\n```\nGroup related items with spacing:\n\n  Primary Actions\n    Save changes\n    Submit form\n\n  Secondary Actions\n    Cancel\n    Reset\n```\n\n## Examples\n\n### Bad (Raw Markdown)\n```\n### Results\n- **Found**: 5 files\n- **Size**: 2.3MB\n- **Status**: `complete`\n\nSee [documentation](https://docs.example.com) for more info.\n```\n\n### Good (Humanified)\n```\nRESULTS\n-------\nFound: 5 files\nSize: 2.3 MB\nStatus: Complete\n\nSee the documentation for more details.\n```\n\n## Remember\n\nThe goal is communication, not formatting. Choose the clearest way to convey information to a human reader. When in doubt, write it as you would explain it to a colleague standing next to you.\n",
-          "isCustomized": false
-        },
         "memory-skill": {
           "enabled": true,
           "instructions": "# Memory Management Skill\n\nThis skill enables you to manage conversation memory using the SimpleMemory node's markdown-based storage system.\n\n## Memory Architecture\n\n### Short-Term Memory (Markdown)\n- Visible and editable in the SimpleMemory node's UI\n- Stored as markdown with timestamped entries\n- Window-based: keeps last N message pairs (configurable)\n- Format: `### **Human** (timestamp)` and `### **Assistant** (timestamp)`\n\n### Long-Term Memory (Vector DB)\n- Automatically archives messages that exceed the window\n- Semantic search for relevant past conversations\n- Enabled via `longTermEnabled` in SimpleMemory node\n\n## Capabilities\n\n1. **View History**: See recent conversation in markdown format\n2. **Save Notes**: Add explicit notes/memories to the conversation\n3. **Search Memory**: Find relevant past conversations semantically\n4. **Clear Memory**: Reset conversation history\n\n## When to Use\n\n**Save information when:**\n- User says \"remember this\" or \"don't forget\"\n- Important context is shared for future use\n- User wants to note something specific\n\n**Recall information when:**\n- User asks \"do you remember...\"\n- Context from earlier is needed\n- User references previous discussions\n\n**View history when:**\n- User wants to see conversation log\n- Debugging or reviewing past exchanges\n\n## Tool Reference\n\n### memory-save\nAdd a note or memory entry to the conversation history.\n\nParameters:\n- `content` (required): Information to remember\n- `role` (optional): \"note\" (default) or \"context\"\n\nExample:\n```json\n{\n  \"content\": \"User's favorite color is blue\",\n  \"role\": \"note\"\n}\n```\n\n### memory-get\nGet recent conversation history or search for specific content.\n\nParameters:\n- `count` (optional): Number of recent messages (default: 10)\n- `search` (optional): Search term to find specific memories\n\nExample - Recent history:\n```json\n{\n  \"count\": 5\n}\n```\n\nExample - Search:\n```json\n{\n  \"search\": \"favorite color\"\n}\n```\n\n### memory-clear\nClear conversation history.\n\nParameters:\n- `confirm` (required): Must be true to clear\n\nExample:\n```json\n{\n  \"confirm\": true\n}\n```\n\n### memory-view\nView the current conversation history in markdown format.\n\nParameters: None\n\nReturns the full markdown content of the conversation history.\n\n### memory-search\nSemantic search in long-term memory (if enabled).\n\nParameters:\n- `query` (required): Search query\n- `count` (optional): Number of results (default: 3)\n\nExample:\n```json\n{\n  \"query\": \"what did we discuss about the project\",\n  \"count\": 5\n}\n```\n\n## Markdown Format\n\nThe conversation history uses this format:\n\n```markdown\n# Conversation History\n\n### **Human** (2025-01-30 10:15:32)\nHello, how are you?\n\n### **Assistant** (2025-01-30 10:15:35)\nI'm doing well! How can I help you today?\n\n### **Note** (2025-01-30 10:16:00)\nUser prefers formal language.\n```\n\n## Integration with SimpleMemory Node\n\nWhen connected to a Zeenie:\n1. Conversation is automatically logged to markdown\n2. Window size limits short-term memory\n3. Overflow archives to vector DB (if long-term enabled)\n4. You can view/edit the markdown in the node's parameter panel\n\n## Best Practices\n\n1. Use memory-save for explicit user requests to remember\n2. Use memory-search for semantic recall of past discussions\n3. Don't save sensitive information without user consent\n4. The markdown is editable - users can manually curate their history\n",
           "isCustomized": false
         },
-        "subagent-skill": {
+        "humanify-skill": {
           "enabled": true,
-          "instructions": "# Sub-Agent Management Skill\n\nYou are a parent agent that can delegate tasks to specialized sub-agents. This skill helps you understand, delegate to, and handle results from sub-agents effectively.\n\n## CRITICAL: Always Check Sub-Agents First\n\n**NEVER say \"I don't have that tool\" or \"I can't do that\" without first checking your connected sub-agents.**\n\nWhen a user requests something you don't have a direct tool for:\n\n1. **Check your connected sub-agents** - Look at what agents are available in your tools\n2. **Delegate to the appropriate sub-agent** - They have their own tools and capabilities\n3. **Only say you can't** if NO sub-agent can handle it\n\n**Wrong approach:**\n```\nUser: \"Check my phone battery\"\nYou: \"I don't have access to Android tools, so I can't check your battery.\"\n```\n\n**Correct approach:**\n```\nUser: \"Check my phone battery\"\nYou: [Check if Android Control Agent is connected]\nYou: [Delegate to Android Control Agent: \"Get battery status\"]\nYou: \"Let me check that for you...\" [waits for result]\n```\n\n## Available Sub-Agent Types\n\nYou can delegate tasks to these specialized agents (when connected to your tools):\n\n### Domain-Specific Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Android Control Agent** | 📱 | Android device automation | Battery checks, WiFi control, app launching, location tracking, sensor data |\n| **Coding Agent** | 💻 | Code execution | Python/JavaScript execution, calculations, data processing |\n| **Web Control Agent** | 🌐 | Browser automation | Web scraping, HTTP requests, form filling |\n| **Social Media Agent** | 📱 | Social messaging | WhatsApp, Telegram, multi-platform messaging |\n| **Travel Agent** | ✈️ | Travel planning | Itineraries, location lookups, travel recommendations |\n\n### Task & Workflow Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Task Management Agent** | 📋 | Task automation | Scheduling, reminders, to-do management |\n| **Tool Agent** | 🔧 | Tool orchestration | Multi-tool workflows, complex task execution |\n| **Productivity Agent** | ⏰ | Productivity | Time management, note-taking, workflow automation |\n\n### Business Agents\n\n| Agent | Icon | Specialty | Best For |\n|-------|------|-----------|----------|\n| **Payments Agent** | 💳 | Payment processing | Payment workflows, invoices, financial operations |\n| **Consumer Agent** | 🛒 | Consumer support | Customer service, product recommendations, order management |\n\n## How to Check Sub-Agent Capabilities\n\nBefore responding \"I can't do that\":\n\n1. **List your available tools** - Sub-agents appear as delegation tools\n2. **Match the request to an agent specialty** - Use the table above\n3. **Delegate if a match exists** - The sub-agent has its own tools\n4. **Only decline if truly impossible** - No matching agent connected\n\n### Capability Matching Examples\n\n| User Request | Check For | Delegate To |\n|--------------|-----------|-------------|\n| \"Check my battery\" | Android Control Agent | `delegate_to_android_agent` |\n| \"Send a WhatsApp\" | Social Media Agent | `delegate_to_social_agent` |\n| \"Calculate this\" | Coding Agent | `delegate_to_coding_agent` |\n| \"Find restaurants nearby\" | Travel Agent | `delegate_to_travel_agent` |\n| \"Make an HTTP request\" | Web Control Agent | `delegate_to_web_agent` |\n| \"Set a reminder\" | Task Management Agent | `delegate_to_task_agent` |\n\n## How Delegation Works\n\n### Fire-and-Forget Pattern\nWhen you delegate a task:\n1. The sub-agent receives the task and starts working immediately\n2. You continue your conversation - delegation is non-blocking\n3. The sub-agent works independently with its own tools and memory\n4. When complete, a `task_completed` event is fired\n\n### What You Receive Back\n- **Task ID**: Unique identifier (e.g., `delegated_abc123_xyz`)\n- **Status**: `completed` or `error`\n- **Agent Name**: Which sub-agent completed the work\n- **Result/Error**: The outcome or error message\n\n## Delegation Best Practices\n\n### When to Delegate\n- User requests something outside your direct tools\n- Task requires specialized capabilities (Android, WhatsApp, code execution, etc.)\n- Task is time-consuming and can run in background\n- Task matches a sub-agent's specialty area\n\n### When NOT to Delegate\n- Simple questions you can answer directly from knowledge\n- Tasks that need immediate response AND you have the direct tool\n- When the same task is already running (avoid duplicates)\n\n### Delegation Format\nWhen delegating, provide clear instructions:\n```\nTask: [Clear description of what needs to be done]\nContext: [Any relevant background information]\nExpected Output: [What format/information you need back]\n```\n\n## Handling Task Completion\n\n### Successful Completion\nWhen a delegated task completes successfully:\n\n1. **DO NOT delegate again** - The task is finished\n2. **Extract key information** from the result\n3. **Report to the user** naturally and conversationally\n4. **Suggest next steps** if appropriate\n\n**Example Response:**\n\"The Android agent has checked your battery status. Your device is at 78% with approximately 5 hours of usage remaining. Would you like me to enable power-saving mode?\"\n\n### Failed Tasks\nWhen a delegated task fails:\n\n1. **DO NOT retry automatically** - Let the user decide\n2. **Explain what went wrong** clearly\n3. **Suggest alternatives** or troubleshooting steps\n\n**Example Response:**\n\"I wasn't able to send the WhatsApp message because the contact wasn't found. Could you verify the phone number? Alternatively, I can try searching for the contact by name.\"\n\n## Multi-Agent Coordination\n\n### Sequential Delegation\nFor tasks requiring multiple steps:\n1. Delegate first task to appropriate agent\n2. Wait for completion via task trigger\n3. Use result to delegate next task\n4. Continue until workflow complete\n\n### Parallel Delegation\nFor independent tasks:\n- Delegate multiple tasks to different agents\n- Each runs independently\n- Collect results as they complete\n\n## Critical Rules\n\n1. **ALWAYS check sub-agents before saying \"I can't\"** - They extend your capabilities\n2. **NEVER re-delegate after receiving a result** - Report it instead\n3. **NEVER retry failed tasks automatically** - Ask user first\n4. **ALWAYS acknowledge task completion** to the user\n5. **ALWAYS match task to agent specialty** for best results\n\n## Error Handling\n\n| Error Type | Action |\n|------------|--------|\n| Agent not connected | Inform user which agent is needed and how to connect it |\n| Task timeout | Report to user, suggest retry |\n| Invalid parameters | Clarify requirements with user |\n| Agent error | Report error details, suggest alternatives |\n\n## Example Workflows\n\n### Battery Check Workflow\n```\nUser: \"Check my phone battery\"\nYou: [See Android Control Agent in tools]\nYou: Delegate to Android Control Agent with task \"Get battery status\"\nAgent: Returns {status: 'completed', result: 'Battery at 78%, charging'}\nYou: \"Your phone battery is at 78% and currently charging.\"\n```\n\n### Message Sending Workflow\n```\nUser: \"Send a WhatsApp to John saying I'll be late\"\nYou: [See Social Media Agent in tools]\nYou: Delegate to Social Media Agent with message details\nAgent: Returns {status: 'completed', result: 'Message sent to John'}\nYou: \"Done! I've sent the message to John letting him know you'll be late.\"\n```\n\n### No Agent Available\n```\nUser: \"Check my phone battery\"\nYou: [No Android Control Agent in tools]\nYou: \"I don't have an Android Control Agent connected right now. To check your battery, please connect an Android Control Agent to my tools input, then ask again.\"\n```\n",
+          "instructions": "# Humanify Output Skill\n\nFormat your responses for human readability. Output clean, pretty text that's easy to scan and understand - not raw markdown syntax or code-heavy formatting.\n\n## Core Principles\n\n1. **Plain Language First**: Write naturally, as if speaking to someone\n2. **Visual Clarity**: Use spacing, indentation, and structure for scannability\n3. **No Raw Syntax**: Avoid showing markdown symbols, JSON, or code unless specifically requested\n4. **Progressive Detail**: Lead with key information, details follow\n\n## Formatting Guidelines\n\n### Instead of Markdown Headers\n```\nBad:  ## Section Title\nGood: SECTION TITLE\n      -------------\n```\n\n### Instead of Bullet Lists with Symbols\n```\nBad:  - Item one\n      - Item two\n\nGood: Item one\n      Item two\n\n  or: * Item one\n      * Item two\n```\n\n### Instead of Code Blocks for Data\n```\nBad:  ```json\n      {\"name\": \"John\", \"age\": 30}\n      ```\n\nGood: Name: John\n      Age: 30\n```\n\n### Instead of Tables with Pipes\n```\nBad:  | Name | Value |\n      |------|-------|\n      | Foo  | 123   |\n\nGood: Name     Value\n      ----     -----\n      Foo      123\n```\n\n### Instead of Raw URLs\n```\nBad:  Check https://example.com/very/long/path/to/resource\n\nGood: Check the resource page (link available)\n  or: Resource: example.com\n```\n\n## Response Patterns\n\n### For Status Updates\n```\nStatus: Complete\nTime: 2.3 seconds\nResult: Successfully processed 15 items\n\nDetails:\n  Processed: 15\n  Skipped: 2\n  Errors: 0\n```\n\n### For Lists of Items\n```\nFound 3 matching files:\n\n  1. config.json\n     Location: /app/settings\n     Modified: Today\n\n  2. config.backup.json\n     Location: /app/backups\n     Modified: Yesterday\n\n  3. config.old.json\n     Location: /archive\n     Modified: Last week\n```\n\n### For Explanations\n```\nThe function calculates the total by:\n\n  First, it gathers all input values\n  Then, it filters out any invalid entries\n  Finally, it sums the remaining numbers\n\nNote: Empty inputs are treated as zero.\n```\n\n### For Errors or Warnings\n```\nCould not complete the request.\n\nReason: The file was not found at the specified location.\n\nSuggestions:\n  Check if the file path is correct\n  Verify the file exists\n  Ensure you have read permissions\n```\n\n### For Confirmations\n```\nDone! Created new user account.\n\n  Username: jsmith\n  Email: john@example.com\n  Role: Editor\n\nNext: The user will receive a welcome email shortly.\n```\n\n## When to Use Each Style\n\n### Use Pretty Formatting When:\n- Showing results or status\n- Explaining concepts\n- Listing options or items\n- Providing instructions\n- Displaying data summaries\n\n### Keep Technical Formatting When:\n- User explicitly requests code/markdown\n- Showing code that needs to be copied\n- Displaying configuration files\n- Technical documentation\n- API responses that need exact format\n\n## Typography Tips\n\n### Visual Separators\n```\nSection breaks:    ---------------\nLight dividers:    . . . . . . . .\nBox drawing:       +-------------+\n                   |  Content    |\n                   +-------------+\n```\n\n### Emphasis Without Markdown\n```\nInstead of **bold**:     Use CAPS or spacing\nInstead of *italic*:     Use quotes or context\nInstead of `code`:       Use clear naming\n```\n\n### Spacing for Clarity\n```\nGroup related items with spacing:\n\n  Primary Actions\n    Save changes\n    Submit form\n\n  Secondary Actions\n    Cancel\n    Reset\n```\n\n## Examples\n\n### Bad (Raw Markdown)\n```\n### Results\n- **Found**: 5 files\n- **Size**: 2.3MB\n- **Status**: `complete`\n\nSee [documentation](https://docs.example.com) for more info.\n```\n\n### Good (Humanified)\n```\nRESULTS\n-------\nFound: 5 files\nSize: 2.3 MB\nStatus: Complete\n\nSee the documentation for more details.\n```\n\n## Remember\n\nThe goal is communication, not formatting. Choose the clearest way to convey information to a human reader. When in doubt, write it as you would explain it to a colleague standing next to you.\n",
           "isCustomized": false
         },
-        "task-manager-skill": {
+        "write-todos-skill": {
           "enabled": true,
-          "instructions": "# Task Manager Tool\n\nManage and track delegated agent tasks.\n\n## How It Works\n\nThis skill provides instructions for the **Task Manager** tool node. Connect the **Task Manager** node to Zeenie's `input-tools` handle to enable task management operations.\n\n## task_manager Tool\n\nList, check, and manage delegated tasks.\n\n### Schema Fields\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| operation | string | Yes | `\"list_tasks\"`, `\"get_task\"`, or `\"mark_done\"` |\n| task_id | string | For get_task, mark_done | Specific task ID to query |\n| status_filter | string | No | Filter by status: `\"running\"`, `\"completed\"`, `\"error\"` |\n\n### Operations\n\n| Operation | Description | Required Fields |\n|-----------|-------------|-----------------|\n| `list_tasks` | List all tracked tasks | status_filter (optional) |\n| `get_task` | Get details for specific task | task_id |\n| `mark_done` | Remove task from tracking | task_id |\n\n### Task States\n\n| Status | Description |\n|--------|-------------|\n| `running` | Task is currently executing |\n| `completed` | Task finished successfully |\n| `error` | Task failed with error |\n| `cancelled` | Task was cancelled |\n\n### Examples\n\n**List all tasks:**\n```json\n{\n  \"operation\": \"list_tasks\"\n}\n```\n\n**List only running tasks:**\n```json\n{\n  \"operation\": \"list_tasks\",\n  \"status_filter\": \"running\"\n}\n```\n\n**List completed tasks:**\n```json\n{\n  \"operation\": \"list_tasks\",\n  \"status_filter\": \"completed\"\n}\n```\n\n**Get specific task details:**\n```json\n{\n  \"operation\": \"get_task\",\n  \"task_id\": \"delegated_agent_abc12345\"\n}\n```\n\n**Mark task as done:**\n```json\n{\n  \"operation\": \"mark_done\",\n  \"task_id\": \"delegated_agent_abc12345\"\n}\n```\n\n### Response Formats\n\n**list_tasks response:**\n```json\n{\n  \"success\": true,\n  \"operation\": \"list_tasks\",\n  \"tasks\": [\n    {\n      \"task_id\": \"delegated_coding_agent_abc12345\",\n      \"status\": \"completed\",\n      \"agent_name\": \"Coding Agent\",\n      \"result_summary\": \"Generated Python function for data processing...\",\n      \"active\": false\n    },\n    {\n      \"task_id\": \"delegated_web_agent_def67890\",\n      \"status\": \"running\",\n      \"active\": true\n    }\n  ],\n  \"count\": 2,\n  \"running\": 1,\n  \"completed\": 1,\n  \"errors\": 0\n}\n```\n\n**get_task response (completed):**\n```json\n{\n  \"success\": true,\n  \"operation\": \"get_task\",\n  \"task_id\": \"delegated_coding_agent_abc12345\",\n  \"status\": \"completed\",\n  \"agent_name\": \"Coding Agent\",\n  \"result\": \"Here is the Python function you requested:\\n\\ndef process_data(items):\\n    return [x * 2 for x in items]\"\n}\n```\n\n**get_task response (running):**\n```json\n{\n  \"success\": true,\n  \"operation\": \"get_task\",\n  \"task_id\": \"delegated_web_agent_def67890\",\n  \"status\": \"running\",\n  \"agent_name\": \"Web Agent\"\n}\n```\n\n**get_task response (error):**\n```json\n{\n  \"success\": true,\n  \"operation\": \"get_task\",\n  \"task_id\": \"delegated_agent_xyz99999\",\n  \"status\": \"error\",\n  \"agent_name\": \"Social Agent\",\n  \"error\": \"Failed to connect to WhatsApp service\"\n}\n```\n\n**mark_done response:**\n```json\n{\n  \"success\": true,\n  \"operation\": \"mark_done\",\n  \"task_id\": \"delegated_coding_agent_abc12345\",\n  \"removed\": true,\n  \"message\": \"Task delegated_coding_agent_abc12345 marked as done and removed from tracking\"\n}\n```\n\n### Error Response\n\n```json\n{\n  \"success\": false,\n  \"error\": \"task_id is required for get_task operation\"\n}\n```\n\n```json\n{\n  \"success\": false,\n  \"error\": \"Task delegated_agent_notfound not found\",\n  \"task_id\": \"delegated_agent_notfound\"\n}\n```\n\n## Use Cases\n\n| Use Case | Operation | Description |\n|----------|-----------|-------------|\n| Monitor progress | list_tasks | See all active delegations |\n| Check result | get_task | Get completed task output |\n| Verify completion | get_task | Confirm task finished |\n| Clean up | mark_done | Remove processed tasks |\n| Error handling | list_tasks + filter | Find failed tasks |\n\n## Common Workflows\n\n### Check on delegated work\n\n1. Delegate task to sub-agent\n2. Wait or continue with other work\n3. Use `list_tasks` to see status\n4. Use `get_task` to retrieve result\n\n### Process all completed tasks\n\n1. Use `list_tasks` with `status_filter: \"completed\"`\n2. For each task, use `get_task` to get full result\n3. Process the results\n4. Use `mark_done` to clean up\n\n### Handle errors\n\n1. Use `list_tasks` with `status_filter: \"error\"`\n2. Review failed tasks\n3. Decide to retry or mark_done\n4. Optionally re-delegate failed work\n\n## Integration with Agent Delegation\n\nWhen a parent agent delegates work:\n\n1. `delegate_to_<agent>` tool returns `task_id`\n2. Child agent runs in background\n3. Parent can check status with `task_manager`\n4. Results persist until `mark_done`\n\n### Task ID Format\n\nTask IDs follow the pattern:\n```\ndelegated_<node_id>_<random_hex>\n```\n\nExample: `delegated_coding_agent_1_abc12345`\n\n## Best Practices\n\n1. **Track task IDs**: Store returned task_ids for later reference\n2. **Poll appropriately**: Don't check too frequently\n3. **Handle all states**: Account for running, completed, and error\n4. **Clean up**: Use mark_done after processing results\n5. **Check errors**: Review failed tasks before marking done\n\n## Limitations\n\n- Tasks not persistent across server restarts (in-memory)\n- Results may be truncated if very large (4000 char limit in responses)\n- Cannot cancel running tasks (only track status)\n\n## Setup Requirements\n\n1. Connect the **Task Manager** node to Zeenie's `input-tools` handle\n2. Works with any agent that uses delegation\n3. Task IDs are returned when delegating to sub-agents\n",
+          "instructions": "# Task Planning with write_todos\n\nYou have access to the `write_todos` tool. Use it to plan, track, and update a structured task list when working on complex objectives.\n\n## When to Use\n\nUse `write_todos` when the task requires **3 or more steps**. Do NOT use it for trivial requests that you can complete in 1-2 tool calls.\n\n## How to Use\n\nFollow this loop for every complex task:\n\n### 1. Plan First\n\nBefore doing any work, call `write_todos` to create your plan. Break the objective into specific, actionable steps. Mark the first task `in_progress` immediately.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"in_progress\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"pending\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 2. Work, Then Update\n\nAfter completing a step, call `write_todos` again with the updated list. Mark the finished task `completed` and the next task `in_progress`. Do this after **every** step -- do not batch updates.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"completed\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"in_progress\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 3. Revise as You Go\n\nIf you discover new work or a step becomes irrelevant, update the list. Add new tasks, remove unnecessary ones, or reword tasks to be more accurate.\n\n```json\n{\n  \"todos\": [\n    {\"content\": \"Identify the relevant source files\", \"status\": \"completed\"},\n    {\"content\": \"Implement the core logic\", \"status\": \"completed\"},\n    {\"content\": \"Fix unexpected edge case in parser\", \"status\": \"in_progress\"},\n    {\"content\": \"Add error handling\", \"status\": \"pending\"},\n    {\"content\": \"Verify the changes work\", \"status\": \"pending\"}\n  ]\n}\n```\n\n### 4. Complete All Tasks\n\nKeep working until every task is `completed`. Always have at least one task `in_progress` unless all are done.\n\n## Rules\n\n- **Always plan before acting** on complex tasks.\n- **Update after every step** -- the user sees your progress in real time.\n- **One `write_todos` call per turn** -- never call it multiple times in parallel.\n- **Mark `in_progress` before starting** a task, `completed` after finishing it.\n- **Never mark a task `completed`** if there are unresolved errors or the work is partial.\n- **Do not change completed tasks** -- only update pending and in_progress items.\n- **Remove irrelevant tasks** rather than leaving them pending.\n- **Be specific** -- \"Fix the null check in validate_input()\" is better than \"Fix bug\".\n- **Each call sends the full list** -- include all tasks every time, not just changes.\n\n## Schema\n\n| Field | Type | Description |\n|-------|------|-------------|\n| todos | array | Full list of todo items |\n| todos[].content | string | Specific, actionable task description |\n| todos[].status | string | `pending`, `in_progress`, or `completed` |\n",
           "isCustomized": false
         },
-        "task-manager": {
+        "nearby-places-skill": {
           "enabled": true,
-          "instructions": "",
+          "instructions": "# Nearby Places Tool\n\nSearch for places near a location using Google Places API.\n\n## How It Works\n\nThis skill provides instructions for the **Show Nearby Places** (gmaps_nearby_places) tool node. Connect the **Show Nearby Places** node to Zeenie's `input-tools` handle to enable place search.\n\n## show_nearby_places Tool\n\nSearch for places near GPS coordinates.\n\n### Schema Fields\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| lat | float | Yes | Center latitude for search |\n| lng | float | Yes | Center longitude for search |\n| radius | int | No | Search radius in meters (default: 500, max: 50000) |\n| type | string | No | Place type to search for (default: \"restaurant\") |\n| keyword | string | No | Keyword to filter results |\n\n### Place Types\n\n**Food & Drink:**\n- `restaurant` - Restaurants\n- `cafe` - Coffee shops\n- `bar` - Bars and pubs\n- `bakery` - Bakeries\n- `meal_takeaway` - Takeout restaurants\n\n**Shopping:**\n- `store` - General stores\n- `supermarket` - Grocery stores\n- `shopping_mall` - Shopping centers\n- `clothing_store` - Clothing shops\n- `convenience_store` - Convenience stores\n\n**Services:**\n- `bank` - Banks\n- `atm` - ATMs\n- `gas_station` - Gas/petrol stations\n- `pharmacy` - Pharmacies\n- `post_office` - Post offices\n\n**Health:**\n- `hospital` - Hospitals\n- `doctor` - Doctor's offices\n- `dentist` - Dental clinics\n\n**Transport:**\n- `bus_station` - Bus stations\n- `train_station` - Train stations\n- `airport` - Airports\n- `taxi_stand` - Taxi stands\n- `parking` - Parking lots\n\n**Entertainment:**\n- `movie_theater` - Cinemas\n- `gym` - Fitness centers\n- `park` - Parks\n- `museum` - Museums\n- `zoo` - Zoos\n\n**Accommodation:**\n- `hotel` - Hotels\n- `lodging` - All lodging types\n\n### Examples\n\n**Find nearby restaurants:**\n```json\n{\n  \"lat\": 40.7484,\n  \"lng\": -73.9857,\n  \"radius\": 500,\n  \"type\": \"restaurant\"\n}\n```\n\n**Find coffee shops:**\n```json\n{\n  \"lat\": 37.7749,\n  \"lng\": -122.4194,\n  \"type\": \"cafe\",\n  \"radius\": 1000\n}\n```\n\n**Find specific chain:**\n```json\n{\n  \"lat\": 37.7749,\n  \"lng\": -122.4194,\n  \"type\": \"cafe\",\n  \"keyword\": \"starbucks\"\n}\n```\n\n**Find gas stations:**\n```json\n{\n  \"lat\": 34.0522,\n  \"lng\": -118.2437,\n  \"type\": \"gas_station\",\n  \"radius\": 2000\n}\n```\n\n**Find hotels:**\n```json\n{\n  \"lat\": 51.5074,\n  \"lng\": -0.1278,\n  \"type\": \"hotel\",\n  \"radius\": 1000\n}\n```\n\n### Response Format\n\n```json\n{\n  \"success\": true,\n  \"type\": \"restaurant\",\n  \"search_parameters\": {\n    \"location\": {\"lat\": 40.7484, \"lng\": -73.9857},\n    \"radius\": 500,\n    \"type\": \"restaurant\"\n  },\n  \"results\": [\n    {\n      \"name\": \"Example Restaurant\",\n      \"vicinity\": \"123 Main St, New York\",\n      \"rating\": 4.5,\n      \"user_ratings_total\": 150,\n      \"price_level\": 2,\n      \"geometry\": {\n        \"location\": {\"lat\": 40.7485, \"lng\": -73.9860}\n      },\n      \"types\": [\"restaurant\", \"food\", \"establishment\"],\n      \"opening_hours\": {\"open_now\": true}\n    }\n  ],\n  \"total_results\": 10,\n  \"status\": \"OK\"\n}\n```\n\n### Response Fields\n\n| Field | Description |\n|-------|-------------|\n| name | Place name |\n| vicinity | Address or location description |\n| rating | Average rating (1-5) |\n| user_ratings_total | Number of reviews |\n| price_level | Price level (0-4, 0=free, 4=very expensive) |\n| geometry.location | Place coordinates |\n| types | Place type categories |\n| opening_hours.open_now | Whether currently open |\n\n### Error Response\n\n```json\n{\n  \"error\": \"lat and lng are required for nearby places search\"\n}\n```\n\n## Price Level Guide\n\n| Level | Meaning |\n|-------|---------|\n| 0 | Free |\n| 1 | Inexpensive ($) |\n| 2 | Moderate ($$) |\n| 3 | Expensive ($$$) |\n| 4 | Very Expensive ($$$$) |\n\n## Common Workflows\n\n### Find places near an address\n\n1. Use `geocoding` tool to convert address to coordinates\n2. Use `nearby_places` with the lat/lng from step 1\n\n### Find best-rated places\n\n1. Search with appropriate type and radius\n2. Sort results by rating in response\n3. Filter by minimum rating threshold\n\n### Find open places now\n\n1. Search with desired type\n2. Check `opening_hours.open_now` in results\n\n## Radius Guidelines\n\n| Radius | Use Case |\n|--------|----------|\n| 100-500m | Walking distance |\n| 500-1000m | Short walk |\n| 1000-2000m | 5-10 min walk |\n| 2000-5000m | Driving distance |\n| 5000-50000m | City-wide search |\n\n## Tips\n\n1. **Use specific types**: \"cafe\" not \"coffee\"\n2. **Add keywords**: Filter by chain name or cuisine\n3. **Adjust radius**: Start small, expand if needed\n4. **Check ratings**: Higher ratings usually mean better quality\n5. **Verify open_now**: Important for time-sensitive searches\n\n## Setup Requirements\n\n1. Connect the **Show Nearby Places** (gmaps_nearby_places) node to Zeenie's `input-tools` handle\n2. Google Maps API key must be configured in Credentials\n3. Places API must be enabled in Google Cloud Console\n",
           "isCustomized": false
         },
-        "subagent-orchestration": {
+        "geocoding-skill": {
           "enabled": true,
-          "instructions": "# Durable Subagent Orchestration\n\nConnected teammates extend the team lead's capabilities. Before declining a\nrequest, inspect the connected teammate list and match the work to an agent's\nlabel, type, and capability description.\n\n## Mandatory delegation path\n\nAll teammate work must be created with `task_manager` using\n`operation=\"assign_task\"`. Never call `delegate_to_*` directly. The runtime\nkeeps those delegate identities private and uses them only after Task Manager\nhas authorized and persisted the assignment.\n\nFor every assignment provide:\n\n- `title`: short human-readable task name;\n- `mission`: one bounded outcome;\n- `assignee_node_id`: an exact connected teammate ID;\n- `context`: only relevant inputs and constraints;\n- `acceptance_criteria`: observable conditions for approval;\n- `depends_on`: task IDs when sequencing is required.\n\nIndependent `assign_task` calls may be emitted together. All tasks persist\nbefore execution and enter a deterministic queue. At most three descendants,\nincluding grandchildren, run concurrently; excess work remains `queued`.\n\n## Capability matching\n\n- Android agents: connected Android device services.\n- Coding agents: implementation, code analysis, tests, and computation.\n- Web agents: browsing, HTTP, extraction, and web interaction.\n- Social agents: messaging and social-platform operations.\n- Travel agents: location and itinerary work.\n- Task agents: scheduling and task-domain operations.\n- Custom `aiAgent` teammates: use their visible label and description.\n\nOnly assign agents connected to this lead's `input-teammates` handle. Never\ninvent an agent ID, use an ordinary tool-edge agent, or target another team's\nmember.\n\n## Review lifecycle\n\nTask states are `blocked`, `queued`, `running`, `submitted`, `accepted`,\n`failed`, and `cancelled`.\n\nA worker completion produces `submitted`, not Done. When signalled:\n\n1. Inspect the result and acceptance criteria with `get_task` or `list_tasks`.\n2. Copy `task.id` into `task_id` and `task.revision` into\n   `expected_revision`.\n3. Choose one outcome:\n   - `accept_task` when the work satisfies the criteria;\n   - `retry_task` for another attempt with the same assignee;\n   - `reassign_task` to a different connected teammate;\n   - `modify_task` only while blocked or queued;\n   - `cancel_task` when work should stop or be waived.\n\nWhen exactly one submitted task exists, `accept_task` may omit identifiers and\nthe runtime resolves it safely. With multiple submissions, always identify the\ntask explicitly. Revision conflicts mean the task changed: refresh it and make\na new decision instead of overwriting newer state.\n\n## Completion gate\n\nCall `finish_team` only when every required task is `accepted` or intentionally\n`cancelled`. Synthesize accepted results in the final answer. Team Monitor is a\nread-only view: it shows connected agents and lifecycle state, while all\nmutations belong to Task Manager.\n",
+          "instructions": "# Geocoding Tool\n\nConvert addresses to GPS coordinates or coordinates to addresses using Google Maps Geocoding API.\n\n## How It Works\n\nThis skill provides instructions for the **Add Locations** (gmaps_locations) tool node. Connect the **Add Locations** node to Zeenie's `input-tools` handle to enable geocoding operations.\n\n## add_locations Tool\n\nGeocode addresses or reverse geocode coordinates.\n\n### Schema Fields\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n| service_type | string | Yes | `\"geocode\"` (address to coordinates) or `\"reverse_geocode\"` (coordinates to address) |\n| address | string | If geocode | Address to convert to coordinates |\n| lat | float | If reverse_geocode | Latitude coordinate |\n| lng | float | If reverse_geocode | Longitude coordinate |\n\n### Operations\n\n| Service Type | Input | Output |\n|--------------|-------|--------|\n| `geocode` | Address string | Coordinates (lat, lng) |\n| `reverse_geocode` | Coordinates (lat, lng) | Formatted address |\n\n### Examples\n\n**Geocode an address:**\n```json\n{\n  \"service_type\": \"geocode\",\n  \"address\": \"1600 Amphitheatre Parkway, Mountain View, CA\"\n}\n```\n\n**Geocode a landmark:**\n```json\n{\n  \"service_type\": \"geocode\",\n  \"address\": \"Eiffel Tower, Paris\"\n}\n```\n\n**Geocode a city:**\n```json\n{\n  \"service_type\": \"geocode\",\n  \"address\": \"New York City, USA\"\n}\n```\n\n**Reverse geocode (coordinates to address):**\n```json\n{\n  \"service_type\": \"reverse_geocode\",\n  \"lat\": 48.8584,\n  \"lng\": 2.2945\n}\n```\n\n### Response Format\n\n**Geocode response:**\n```json\n{\n  \"success\": true,\n  \"service_type\": \"geocoding\",\n  \"input\": {\"address\": \"Eiffel Tower, Paris\"},\n  \"results\": [\n    {\n      \"formatted_address\": \"Champ de Mars, 5 Av. Anatole France, 75007 Paris, France\",\n      \"geometry\": {\n        \"location\": {\"lat\": 48.8583701, \"lng\": 2.2944813}\n      },\n      \"address_components\": [\n        {\"long_name\": \"5\", \"short_name\": \"5\", \"types\": [\"street_number\"]},\n        {\"long_name\": \"Avenue Anatole France\", \"short_name\": \"Av. Anatole France\", \"types\": [\"route\"]},\n        {\"long_name\": \"Paris\", \"short_name\": \"Paris\", \"types\": [\"locality\"]}\n      ]\n    }\n  ],\n  \"status\": \"OK\"\n}\n```\n\n**Reverse geocode response:**\n```json\n{\n  \"success\": true,\n  \"service_type\": \"reverse_geocoding\",\n  \"input\": {\"lat\": 48.8584, \"lng\": 2.2945},\n  \"results\": [\n    {\n      \"formatted_address\": \"Champ de Mars, 5 Av. Anatole France, 75007 Paris, France\",\n      \"geometry\": {\n        \"location\": {\"lat\": 48.8583701, \"lng\": 2.2944813}\n      },\n      \"address_components\": [...]\n    }\n  ],\n  \"status\": \"OK\"\n}\n```\n\n### Error Response\n\n```json\n{\n  \"error\": \"address is required for geocoding\"\n}\n```\n\n```json\n{\n  \"error\": \"Geocoding failed: ZERO_RESULTS\"\n}\n```\n\n## Use Cases\n\n| Use Case | Service Type | Description |\n|----------|--------------|-------------|\n| Find location | geocode | Get coordinates for an address |\n| Validate address | geocode | Get standardized address format |\n| Get address | reverse_geocode | Find address from GPS coordinates |\n| Location lookup | geocode | Search for landmarks, POIs |\n\n## Common Workflows\n\n### Get coordinates for sending location via WhatsApp\n\n1. Use `geocode` to convert address to coordinates\n2. Extract `lat` and `lng` from response\n3. Use `whatsapp_send` with message_type=\"location\"\n\n### Identify a GPS location\n\n1. Use `reverse_geocode` with lat/lng coordinates\n2. Get formatted address from response\n\n### Search for nearby places\n\n1. Use `geocode` to get coordinates from address\n2. Use `nearby_places` tool with those coordinates\n\n## Address Format Guidelines\n\n**Good address formats:**\n- `\"123 Main Street, New York, NY 10001\"`\n- `\"Eiffel Tower, Paris, France\"`\n- `\"Times Square, NYC\"`\n- `\"Tokyo Station, Japan\"`\n\n**Tips:**\n- Include city and country for better accuracy\n- Landmarks and POIs work well\n- Postal codes improve precision\n- Use local language or English\n\n## Coordinate Guidelines\n\n- Latitude range: -90 to 90\n- Longitude range: -180 to 180\n- More decimal places = higher precision\n- Standard precision: 6 decimal places\n\n## Setup Requirements\n\n1. Connect the **Add Locations** (gmaps_locations) node to Zeenie's `input-tools` handle\n2. Google Maps API key must be configured in Credentials\n3. Geocoding API must be enabled in Google Cloud Console\n",
           "isCustomized": false
-        }
-      }
-    },
-    "2:tool_agent:1": {
-      "prompt": "",
-      "provider": "gemini",
-      "model": "gemini-3.6-flash",
-      "system_message": "You are a helpful assistant",
-      "label": "Tool Agent"
-    },
-    "2:cloudflareAction:1": {
-      "operation": "whoami",
-      "zone": "",
-      "name_filter": "",
-      "account_id": "",
-      "record_body": "",
-      "record_id": "",
-      "command": "",
-      "label": "Cloudflare"
-    },
-    "2:vercelAction:1": {
-      "operation": "deploy",
-      "path": "",
-      "prod": false,
-      "prebuilt": false,
-      "archive": false,
-      "scope": "",
-      "extra_args": "",
-      "project": "",
-      "deployment": "",
-      "logs": false,
-      "wait": false,
-      "timeout": "3m",
-      "status": "",
-      "command": "",
-      "label": "Vercel"
-    },
-    "2:githubAction:1": {
-      "operation": "pr_list",
-      "repo": "",
-      "path": "",
-      "clone_repo": "",
-      "clone_dir": "",
-      "title": "",
-      "body": "",
-      "base": "",
-      "head": "",
-      "draft": false,
-      "fill": false,
-      "state": "open",
-      "limit": 30,
-      "pr": "",
-      "merge_method": "squash",
-      "delete_branch": false,
-      "labels": "",
-      "command": "",
-      "label": "GitHub"
-    },
-    "2:masterSkill:6": {
-      "skills_config": {
+        },
         "process-manager-skill": {
           "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        },
-        "cloudflare-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        },
-        "vercel-skill": {
-          "enabled": true,
-          "instructions": "",
-          "isCustomized": false
-        },
-        "github-skill": {
-          "enabled": true,
-          "instructions": "",
+          "instructions": "# Process Manager Tool\n\nManage long-running processes with **full system PATH access**. Use this for anything that needs `npm`, `python`, `node`, or runs as a persistent server/watcher.\n\n## Security\n\nThe process manager **blocks destructive file commands** to prevent accidental deletion outside the agent's workspace. Use `shell_execute` for file operations instead (sandboxed, no PATH, confined to workspace).\n\n**Blocked commands:** `rm`, `rmdir`, `del`, `rd`, `Remove-Item`, `format`, `mkfs`, `dd`, `shred`, `chmod 777`\n\n**Allowed:** `npm`, `python`, `node`, `pip`, `cargo`, `go`, servers, build tools, installers\n\n## Operations\n\n### start\nLaunch a process. Output streams to the Terminal tab and is saved to log files.\n```json\n{\"operation\": \"start\", \"name\": \"dev-server\", \"command\": \"python -m http.server 8080\"}\n```\n\n### stop\nKill a process and its entire process tree.\n```json\n{\"operation\": \"stop\", \"name\": \"dev-server\"}\n```\n\n### restart\nStop then re-launch with the same command.\n```json\n{\"operation\": \"restart\", \"name\": \"dev-server\"}\n```\n\n### list\nShow all running processes for this workflow.\n```json\n{\"operation\": \"list\"}\n```\n\n### get_output\nRead output from a process's log file. Use `tail` to get last N lines, `stream` to choose stdout or stderr.\n```json\n{\"operation\": \"get_output\", \"name\": \"dev-server\", \"stream\": \"stdout\", \"tail\": 20}\n```\nReturns `{\"lines\": [...], \"total\": 150, \"file\": \"/path/to/stdout.log\"}`.\n\n### send_input\nWrite text to a process's stdin (newline appended automatically).\n```json\n{\"operation\": \"send_input\", \"name\": \"dev-server\", \"text\": \"quit\"}\n```\n\n## Shell vs Process Manager\n\n| Need | Tool | Why |\n|------|------|-----|\n| `ls`, `cat`, `find`, `grep` | **shell_execute** | Sandboxed, fast, no PATH |\n| `rm`, `mv`, `cp`, file ops | **shell_execute** | Sandboxed, confined to workspace |\n| `npm install`, `pip install` | **process_manager** | Needs PATH |\n| `python script.py` | **process_manager** | Needs PATH |\n| `npm run dev`, `flask run` | **process_manager** | Long-running, streams output |\n| Dev servers, watchers | **process_manager** | Persistent, log files |\n\n## Output Log Files\n\nEach process writes to its own log files in the agent's workspace:\n```\n{workspace}/{agent_node_id}/.processes/{process_name}/\n  stdout.log    # Standard output\n  stderr.log    # Error output\n```\n\nUse `get_output` to read them selectively. The agent can also read these files directly with the `file_read` tool.\n\n## OS-Specific Commands\n\nCommands differ by platform. Refer to:\n- **bash-skill** -- Linux/macOS (apt, brew, lsof, kill, curl)\n- **powershell-skill** -- Windows (Get-Process, Stop-Process, Invoke-WebRequest)\n- **wsl-skill** -- Running Linux tools on Windows (prefix with `wsl`)\n\nDetect the OS first:\n```json\n{\"operation\": \"start\", \"name\": \"os\", \"command\": \"python -c \\\"import platform; print(platform.system())\\\"\"}\n```\nReturns `Windows`, `Linux`, or `Darwin` (macOS).\n\n## Guidelines\n\n- Always give processes a meaningful **name** so you can stop/check them later\n- Use **get_output** after starting to verify the process launched correctly\n- Use **stop** to clean up processes when done -- don't leave servers running\n- **Do NOT use process_manager for file deletion** -- use shell_execute instead\n- Processes are automatically killed when the server shuts down\n- Max concurrent processes: configurable in Settings (default: 10)\n- Output streams to the Terminal tab in real-time\n",
           "isCustomized": false
         }
       }
     },
-    "2:taskManager:1": {
-      "operation": "list_tasks",
-      "task_id": null,
-      "status_filter": null,
-      "label": "Task Manager"
+    "321151185156422f965c63a299945da7:console:2": {
+      "label": "Console 1",
+      "log_mode": "field",
+      "field_path": "{{socialagent.response}}",
+      "expression": "",
+      "format": "json"
     },
-    "2:taskTrigger:1": {
+    "321151185156422f965c63a299945da7:console:3": {
+      "label": "Console 2",
+      "log_mode": "field",
+      "field_path": "{{productivityagent.response}}",
+      "expression": "",
+      "format": "json"
+    },
+    "321151185156422f965c63a299945da7:console:4": {
+      "label": "Console 3",
+      "log_mode": "field",
+      "field_path": "{{webagent.response}}",
+      "expression": "",
+      "format": "json"
+    },
+    "321151185156422f965c63a299945da7:console:5": {
+      "label": "Console 4",
+      "log_mode": "field",
+      "field_path": "{{codingagent.response}}",
+      "expression": "",
+      "format": "json"
+    },
+    "321151185156422f965c63a299945da7:console:6": {
+      "label": "Console 6",
+      "log_mode": "field",
+      "field_path": "{{travelagent.response}}",
+      "expression": "",
+      "format": "json"
+    },
+    "321151185156422f965c63a299945da7:taskTrigger:1": {
       "task_id": "",
       "agent_name": "",
       "status_filter": "all",
       "parent_node_id": "",
       "label": "Task Completed"
-    },
-    "2:ai_employee:1": {
-      "prompt": "",
-      "provider": "gemini",
-      "model": "gemini-3.6-flash",
-      "system_message": "You are a helpful assistant",
-      "label": "AI Employee"
     }
   },
   "requirements": {
@@ -1921,19 +2002,16 @@
         "provider_id": "perplexity"
       },
       {
+        "provider_id": "google_maps"
+      },
+      {
+        "provider_id": "telegram"
+      },
+      {
         "provider_id": "twitter"
       },
       {
         "provider_id": "google"
-      },
-      {
-        "provider_id": "cloudflare"
-      },
-      {
-        "provider_id": "vercel"
-      },
-      {
-        "provider_id": "github"
       }
     ],
     "nodes": [
@@ -1986,7 +2064,23 @@
         "version": 1
       },
       {
+        "type": "gmaps_nearby_places",
+        "version": 1
+      },
+      {
+        "type": "gmaps_locations",
+        "version": 1
+      },
+      {
         "type": "pythonExecutor",
+        "version": 1
+      },
+      {
+        "type": "telegramReceive",
+        "version": 1
+      },
+      {
+        "type": "telegramSend",
         "version": 1
       },
       {
@@ -2002,7 +2096,15 @@
         "version": 1
       },
       {
+        "type": "masterSkill",
+        "version": 1
+      },
+      {
         "type": "browser",
+        "version": 1
+      },
+      {
+        "type": "chatAgent",
         "version": 1
       },
       {
@@ -2015,6 +2117,10 @@
       },
       {
         "type": "productivity_agent",
+        "version": 1
+      },
+      {
+        "type": "travel_agent",
         "version": 1
       },
       {
@@ -2094,59 +2200,31 @@
         "version": 1
       },
       {
-        "type": "console",
-        "version": 1
-      },
-      {
-        "type": "console",
-        "version": 1
-      },
-      {
-        "type": "console",
-        "version": 1
-      },
-      {
-        "type": "console",
-        "version": 1
-      },
-      {
-        "type": "console",
-        "version": 1
-      },
-      {
         "type": "masterSkill",
         "version": 1
       },
       {
-        "type": "tool_agent",
+        "type": "console",
         "version": 1
       },
       {
-        "type": "cloudflareAction",
+        "type": "console",
         "version": 1
       },
       {
-        "type": "vercelAction",
+        "type": "console",
         "version": 1
       },
       {
-        "type": "githubAction",
+        "type": "console",
         "version": 1
       },
       {
-        "type": "masterSkill",
-        "version": 1
-      },
-      {
-        "type": "taskManager",
+        "type": "console",
         "version": 1
       },
       {
         "type": "taskTrigger",
-        "version": 1
-      },
-      {
-        "type": "ai_employee",
         "version": 1
       },
       {
