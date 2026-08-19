@@ -457,23 +457,22 @@ The other nine support skills and durable delegation:
 | `agent.finish_delegation` | Idempotently records a delegated child's terminal result and usage. |
 | `agent.finalize_team` | Finalizes a team after its required tasks reach accepted or terminal states. |
 
-The Context journal surface adds `agent.prepare_context` (resolves the thread;
-journals nothing, because it runs before the request exists),
-`agent.reconstruct_context_messages`, `agent.append_context` and
-`agent.compact_context`.
-
-**`agent.reconstruct_context_messages` is the only place the journal is read
-back on the execution path.** `AgentWorkflow` rolls over under history pressure
-*only when `context_ref` is set*, and a rollover carries references rather than
-the conversation — so without a replay step, attaching a Context node is what
-makes a long run silently forget everything it had said. The resumed run calls
-this activity before its first LLM step and seeds `messages` from the result. It
-degrades rather than raising: an opaque provider checkpoint or an unreadable
-thread returns `restored: False` with a reason and the run continues from the
-rebuilt system + memory + prompt, since a rehydration miss must not turn an
-unreadable thread into a dead agent. This does **not** weaken the rule that the
-request is always built from `messages` — nothing reconstructs mid-loop, only at
-the rollover boundary.
+**Context needs no dedicated activities.** The plain conversation store
+(see [agent_context_flow.md](./agent_context_flow.md)) rides the existing
+pipeline: `agent.prepare_payload` loads the stored conversation for
+`(workflow_id, generation, agent_node_id)` and returns it with the
+`conversation_key` (load failures are LOUD — `ConversationLoadFailed`
+retryable / `ConversationTooLarge` non-retryable at 1 MB), and
+`agent.execute_llm_step` saves `[...sent, assistant]` best-effort after each
+provider call. A continue-as-new rollover carries the live transcript in its
+resume marker, so nothing reconstructs from the store mid-run. The
+journal-era activities (`agent.prepare_context`,
+`agent.reconstruct_context_messages`, `agent.append_context`) are retired;
+`agent.compact_context` (the shared client-side summarizer that bounds the
+carried transcript) remains.
+Tool calls scheduled by the workflow carry the model's unmerged `tool_args`
+in the per-type activity payload so ToolNodes validate against their
+`ToolInput` via `execute_as_tool` (see `tests/nodes/test_tool_call_dispatch.py`).
 
 The F4.B compaction threshold is prepared from the model context length and
 the ratio configuration. It currently does not read

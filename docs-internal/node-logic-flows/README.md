@@ -34,7 +34,8 @@ match its doc here, and each doc must still describe what the code does.
 
 - [AI Agent (`aiAgent`)](./ai_agents/aiAgent.md)
 - [Zeenie (`chatAgent`)](./ai_agents/chatAgent.md)
-- [Simple Memory (`simpleMemory`)](./ai_agents/simpleMemory.md)
+- [Memory (`simpleMemory`)](./ai_agents/simpleMemory.md)
+- [Context (`context`)](./ai_agents/context.md)
 
 ### ai_chat_models
 

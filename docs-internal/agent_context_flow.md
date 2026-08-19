@@ -35,7 +35,7 @@ remember/recall — and plays no automatic part in continuity.
 | Function | Contract |
 |---|---|
 | `load_conversation(db, *, workflow_id, generation, agent_node_id) → List[Dict]` | The stored wires, `[]` when the key has no row. |
-| `save_conversation(db, *, …, messages)` | Whole-list upsert under a per-key asyncio lock; notifies listeners **after** the commit. |
+| `save_conversation(db, *, …, messages)` | Whole-list upsert under a per-key asyncio lock; stamps each message with a `ts` (UTC ISO — kept for the unchanged prefix, minted for the appended turn, view-only: `message_from_wire` ignores it); notifies listeners **after** the commit. |
 | `clear_conversation(db, *, workflow_id, generation=None, agent_node_id=None) → int` | Deletes rows, optionally narrowed; returns the count. |
 | `list_conversations(db, *, workflow_id)` | Panel metadata (`generation`, `agent_node_id`, `message_count`, `updated_at`), newest generation first. |
 
@@ -105,7 +105,32 @@ The carried transcript caps at ~1 MB serialized
 2 MiB for the whole continue-as-new argument; over-cap degrades to the
 opening prompt with a warning — never a failure.
 
-## Loading is loud; saving is best-effort
+## Compaction: one system prompt, summary as a user message
+
+When the loop's token total crosses the threshold, `agent.compact_context`
+summarizes the live transcript and the workflow swaps `messages` for
+`[original system (verbatim), user("## Compacted conversation summary" +
+summary + current request)]`. Two rules are load-bearing (locked by
+`TestConversationIdentity::test_compaction_preserves_the_system_prompt_and_summary_survival`):
+
+- **The system prompt is never modified or duplicated.** It is the agent's
+  contract (personality + tool/delegation guidance) and must stay
+  byte-stable — for provider prompt caching, and because the next firing's
+  seeding drops stored system messages so policy changes take effect.
+  Anything compaction stores under the system role therefore silently
+  vanishes on the next firing; that is exactly how an earlier
+  second-system-message design lost the summary on the next chat message
+  while the noisy tool tail (non-system) outlived it.
+- **The summary rides a user message**, so the compacted knowledge persists
+  through seeding and crosses firings with the conversation it summarizes.
+
+Prior tool calls/results are dropped from the live list at the swap — they
+survive only inside the summary text. Tool messages that appear *after* the
+summary in the panel are **new work the agent did post-compaction**, not
+survivors (their `ts` stamps postdate the summary). Both the trigger
+(`tokens >= threshold`, live message count) and the applied swap (before →
+after counts, summary size) log at INFO, as does the activity (rendered
+chars in, summary chars + summarizer usage out).
 
 - **Load failures raise.** `agent.prepare_payload` raises
   `ApplicationError("ConversationLoadFailed")` (retryable) when the row
@@ -141,17 +166,35 @@ time, and a same-generation panel Clear terminates them explicitly
 ## The Context node and panel
 
 `nodes/context/` owns the opt-in descriptor (`_descriptor.py`), two WS
-handlers (`get_agent_context` returns
+handlers (`get_agent_context` returns the **live generation only** —
 `{conversations, generation, agent_node_id, updated_at, message_count,
-messages}`; `clear_agent_context` deletes rows and fences warm claude
+messages}`, with an `agent_node_id` selector for nodes shared by several
+agents; `clear_agent_context` deletes rows and fences warm claude
 processes), and one CloudEvents broadcast (`context.updated`, fired from the
 registered save listener; payload is identity + count only — the panel
 refetches through the authorized handler). The node declares **no
-parameters**; the connection is the whole configuration. Reset rotates
-nothing: the new generation's key is simply empty, and prior generations
-remain readable history until the workflow is deleted (which clears every
-row via the existing archive-outbox drain in
-`services/workflow_storage/handlers.py`).
+parameters**; the connection is the whole configuration.
+
+The panel ([`ContextPanel.tsx`](../client/src/components/parameterPanel/ContextPanel.tsx))
+renders role-tinted message cards with per-message `ts` timestamps, routes
+JSON-shaped payloads (tool calls, tool results) through the themed JSON
+tree on the per-theme `--code-*` surface, and offers a **Raw** tab showing
+the stored wires verbatim. It declares `refetchOnMount: 'always'` because
+the app's global `refetchOnMount: false` default would render stale cache
+when the panel opens after a run that mutated the conversation while no
+observer was mounted.
+
+**Reset wipes.** `AgentContextNode.reset_execution_state` clears every
+stored conversation for the workflow, terminates warm claude subprocesses
+holding the wiped transcript, and broadcasts `context.updated` so open
+panels refresh. The generation bump alone is NOT enough: the panel shows
+the newest STORED generation, so surviving rows would keep rendering the
+pre-Reset conversation as the live context and Reset would look like a
+no-op. A plain Stop → Start (new generation without Reset) leaves prior
+rows in the store as inert history — deliberately **not browsable from
+the panel**, which shows only the agent's current context — until the
+workflow is deleted (the archive-outbox drain in
+`services/workflow_storage/handlers.py`) or Reset runs.
 
 ## Invariants (do not break)
 
@@ -162,7 +205,7 @@ row via the existing archive-outbox drain in
 | 3 | Seeding precedence: carried transcript > stored conversation > bare build. | Rollover mid-run truth beats the store; the store beats cold start. |
 | 4 | Load failures are LOUD (`ConversationLoadFailed` / `ConversationTooLarge`); save failures are best-effort. | Never burn tokens on an amnesiac prompt; never fail a billed turn over bookkeeping. |
 | 5 | Save the exact sent list, after the provider call. Nothing writes to the store before a request exists. | The journal's `prepare_context` wrote fabricated requests assembled from configuration. |
-| 6 | Reset = new generation = new key. No epoch machinery; old rows are inert history. | Reset must be a real reset, with zero lifecycle choreography to miss. |
+| 6 | Reset = new generation = new key, AND the Context node's reset hook clears the workflow's stored rows. | The panel shows the newest stored generation, so surviving rows make Reset look like a no-op. |
 | 7 | `input-memory` is retired; the conversation store is the continuity carrier. Do not resurrect markdown seeding. | `normalize_workflow_graph` migrates it away and the validator rejects it; two carriers would drift. |
 | 8 | Specialized bridges record the ORIGINAL prompt, never the augmented one. | Recording the rendered transcript nests the conversation inside itself and grows without bound. |
 | 9 | The store never imports `nodes/`; the plugin registers its broadcaster via `register_conversation_listener`, and a listener failure can never fail a save. | Same layering rule as every plugin registry; a UI notification must not break execution. |

@@ -1,210 +1,102 @@
-# Simple Memory (`simpleMemory`)
+# Memory (`simpleMemory`)
 
 | Field | Value |
 |------|-------|
-| **Category** | ai_agents / memory (group: `('tool', 'memory')`, `component_kind = "model"`) |
-| **Backend handler** | [`server/nodes/skill/simple_memory/__init__.py`](../../../server/nodes/skill/simple_memory/__init__.py) — dispatched via `BaseNode.execute()` + the `@Operation("read")` method (`read`). Agent-side consumption via [`edge_walker.py::collect_agent_connections`](../../../server/services/plugin/edge_walker.py) / `_build_memory_entry`. |
-| **Tests** | [`server/tests/nodes/test_ai_agents.py`](../../../server/tests/nodes/test_ai_agents.py) |
-| **Skill (if any)** | n/a |
-| **Dual-purpose tool** | no |
+| **Category** | tool / memory (config node on `input-tools`) |
+| **Backend handler** | [`server/nodes/tool/simple_memory/__init__.py::SimpleMemoryNode.memory`](../../../server/nodes/tool/simple_memory/__init__.py) |
+| **Tests** | [`server/tests/services/memory/test_tool_store.py`](../../../server/tests/services/memory/test_tool_store.py), [`server/tests/nodes/test_tool_call_dispatch.py`](../../../server/tests/nodes/test_tool_call_dispatch.py) |
+| **Skill (if any)** | - |
+| **Dual-purpose tool** | ToolNode only — tool name `memory` |
+
+> The wire type stays `simpleMemory` (stored verbatim in graphs, claude pool
+> keys and migrations); only the display name is "Memory". The pre-RFC-0002
+> markdown-transcript model this card once described is retired —
+> conversation history lives in the plain conversation store (see the
+> `context` card and [agent_context_flow.md](../../agent_context_flow.md)).
 
 ## Purpose
 
-`simpleMemory` is a **passive configuration node** that holds conversation
-history for connected agents. It has no inputs and is not meant to be run on
-its own — `ui_hints.hideRunButton` is set. When an `aiAgent` / `chatAgent`
-(or any specialized agent) executes, `edge_walker.collect_agent_connections`
-reads this node's saved parameters (`memory_content`, `window_size`,
-`long_term_enabled`, etc.) via `_build_memory_entry` and forwards them to
-`AIService.execute_agent` / `execute_chat_agent`. The service parses the
-markdown into native provider-neutral `Message` values, feeds them to the
-shared native agent loop, appends the new exchange, trims to window, and saves
-the updated markdown back to the memory node through the atomic memory
-persistence helper.
-
-The plugin's own `@Operation("read")` method is only invoked when a user
-explicitly hits Run (or via direct dispatch); it returns an inspector-style
-snapshot of the `services.memory_store` in-memory session, **which is a
-separate store from the markdown `memory_content` pipeline used by the
-agents**. See "Edge cases" below.
-
-## Workflow Reset semantics
-
-`simpleMemory` configuration is durable, but its conversation state follows the
-workflow generation. Resetting the Temporal workflow:
-
-- archives the current memory parameters under the old generation;
-- resets `memory_content`, `memory_jsonl`, `last_session_id`, and provider
-  continuation identifiers while preserving configuration such as window size;
-- clears connected agent sessions, long-term vector caches, direct memory-store
-  sessions, conversation rows, and token/compaction counters;
-- broadcasts the cleared node parameters so the open panel updates immediately;
-- makes the next workflow generation start from an empty conversation.
-
-The explicit **Clear Memory** action remains available for clearing memory
-without resetting the whole workflow. Workflow Reset invokes the same
-cross-store clear contract only after its archival write succeeds.
-
-Implementation is plugin-owned: `SimpleMemoryNode.reset_execution_state`
-implements the generic `BaseNode` lifecycle hook. The deployment/reset service
-does not recognize the `simpleMemory` type or know its session topology.
+Durable, explicitly-invoked long-term memory for agents: stable facts,
+preferences and decisions the model chooses to `remember`, later retrieved
+with `recall`/`list`/`get` and maintained with `update`/`forget`. It is NOT
+conversation history (that is the Context node's store) and nothing is
+injected automatically — retrieval is always a tool call. The LLM-facing
+`tool_description` is deliberately imperative ("check memory before answering
+anything about the user; never claim ignorance without checking") because
+with passive wording models answered from priors while the answer sat one
+recall away.
 
 ## Inputs (handles)
 
-_None._ `simpleMemory` has no incoming handles.
+| Handle | Connection type | Required | Purpose |
+|--------|-----------------|----------|---------|
+| `output-tool` → agent `input-tools` | tools | yes | Exposes the `memory` tool to the connected agent |
 
 ## Parameters
 
-Source: `SimpleMemoryParams` in
-[`simple_memory/__init__.py`](../../../server/nodes/skill/simple_memory/__init__.py).
-All field names are snake_case (Pydantic params are the post-Wave-11 source of
-truth; the old `memoryType` / `clearOnRun` / buffer-vs-window split was removed
-— trimming is always windowed and the UI exposes a manual "Clear Memory"
-button).
+| Name | Type | Default | Required | Description |
+|------|------|---------|----------|-------------|
+| `reset_policy` | `preserve` \| `clear` | `preserve` | no | Whether Workflow Reset clears this node's namespace. In `server_controlled_fields`, so the model cannot override it through tool arguments. |
 
-| Name | Type | Default | Required | displayOptions.show | Description |
-|------|------|---------|----------|---------------------|-------------|
-| `session_id` | string | `""` | no | - | Session override. Empty -> agent node_id is used by the agent-side collection; the `read` op resolves empty to `"default"`. |
-| `window_size` | int | `100` | no | - | Message *pairs* to keep in short-term memory; 1-100. |
-| `memory_content` | string (code editor, markdown, rows 15) | `# Conversation History\n\n*No messages yet.*\n` | no | - | Markdown body (`### **Human** (ts)` / `### **Assistant** (ts)` blocks). Edited in-place in the UI. |
-| `long_term_enabled` | boolean | `false` | no | - | When true, trimmed messages are archived to a per-session `NativeMemoryVectorStore`. |
-| `retrieval_count` | int | `3` | no | `long_term_enabled=[true]` | Relevant messages to retrieve at query time (1-10). |
-| `embedding_provider` | options | `huggingface` | no | `long_term_enabled=[true]` | `huggingface`, `openai`, or `ollama`. |
-| `embedding_model` | string | `""` | no | `long_term_enabled=[true]` | Empty selects the provider default (`BAAI/bge-small-en-v1.5`, `text-embedding-3-small`, or `nomic-embed-text`). |
-| `embedding_endpoint` | string | `""` | no | `long_term_enabled=[true]` | Optional OpenAI base URL or Ollama host. Never contains credentials. |
-| `last_session_id` | string (optional, **hidden**) | `None` | no | - | Internal/display-only: last Claude session UUID. `claude_code_agent` no longer reads it; cleared when memory is wiped. |
+`SimpleMemoryParams` uses `extra="ignore"` so leftover legacy keys
+(`memory_content`, `session_id`, ...) on migrated graphs are inert.
 
-Parameters consumed when an agent pulls the memory:
+## Tool input (`SimpleMemoryToolInput`, `tool_schema_locked = True`)
 
-| Name | Where it comes from | Where it is read |
-|------|---------------------|------------------|
-| `memory_content`, `window_size`, `long_term_enabled`, `retrieval_count`, `embedding_provider`, `embedding_model`, `embedding_endpoint`, `last_session_id` | `database.get_node_parameters(source_node_id)` inside `edge_walker._build_memory_entry` | Packed into the `memory_data` dict and forwarded to the agent runtime. |
+One locked multi-operation schema: `operation` ∈ `remember | recall | list |
+get | update | forget`, plus `content`/`title`/`category`/`tags`/`expires_at`
+(remember/update patch), `query`/`categories`/`limit`/`cursor`
+(recall/list), `memory_id`/`expected_version` (get/update/forget). The lock
+means the plugin's schema and description always win over stale `ToolSchema`
+DB rows.
 
-Parameters consumed when the node is run directly (`@Operation("read")`):
+## Storage
 
-| Name | Default | Description |
-|------|---------|-------------|
-| `session_id` | resolves to `"default"` when empty | Session key used for `services.memory_store.get_messages`. |
-| `window_size` | `100` | Windowing applied to the message log. |
+`MemoryToolStore` ([`services/memory/tool_store.py`](../../../server/services/memory/tool_store.py)) —
+namespaced by `MemoryScope(owner_id, workflow_id, memory_node_id)`
+(`agent_memory_namespaces` / `agent_memory_items` tables + FTS index).
+Neither the client nor the model can supply a namespace; the tool derives it
+from `NodeContext`, the panel handlers derive it from the authenticated
+socket + persisted graph.
 
-## Outputs (handles)
+## Execution paths
 
-| Handle | Shape | Description |
-|--------|-------|-------------|
-| `output-memory` (output, top, role `memory`) | object | Snapshot of the in-memory session (see below). |
-
-### Output payload (`SimpleMemoryOutput` from the `read` op)
-
-```ts
-{
-  memory_content?: string;   // echoes the editable markdown param
-  message_count?: number;
-  session_id?: string;
-  messages?: any[];          // from services.memory_store.get_messages
-  window_size?: number;
-  // model_config extra="allow"
-}
-```
-
-Serialized through `BaseNode._serialize_result` and wrapped in the standard
-envelope: `{ success: true, result: <payload>, execution_time }`.
-
-## Logic Flow
-
-```mermaid
-flowchart TD
-  subgraph passiveUse["Passive use (agent collection)"]
-    P1[edge_walker scans edges] --> P2{target=input-memory<br/>source type=simpleMemory?}
-    P2 -- yes --> P3[database.get_node_parameters source_id]
-    P3 --> P4[memory_session_id = node_id<br/>unless session_id explicit]
-    P4 --> P5[_build_memory_entry: memory_data dict<br/>memory_content/window_size/...]
-    P5 --> P6[Forward to AIService]
-  end
-
-  subgraph directRun["Direct run (Operation read)"]
-    D1[read op] --> D2[session_id = session_id or default<br/>window_size]
-    D2 --> D5[memory_store.get_messages<br/>session_id window_size]
-    D5 --> D6[Return SimpleMemoryOutput envelope]
-  end
-```
-
-## Decision Logic
-
-- **Passive collection session key**: if the memory node's `session_id` is
-  empty (or `"default"`), the agent's own `node_id` is used as the session key.
-  This is what makes two agents wired to the same memory node keep **separate**
-  histories unless the user explicitly overrides `session_id`.
-- **Instruction source of truth**: `memory_content` in the DB is authoritative.
-  UI edits persist there via `save_node_parameters`. The agent side
-  re-serialises after each turn through
-  `services.memory.append_to_memory_markdown` + `trim_markdown_window`.
-- **Window semantics**: `window_size` counts *pairs* (Human + Assistant), so
-  `trim_markdown_window` keeps `window_size * 2` blocks. Trimmed blocks are
-  returned as raw text for optional vector-store archival.
-- **Long-term retrieval**: async
-  `services.memory.get_memory_vector_store(...)` creates a
-  `NativeMemoryVectorStore` backed by the selected direct SDK. OpenAI keys are
-  resolved from `AuthService`; cache keys retain only a credential
-  fingerprint. Missing optional `sentence-transformers` support returns
-  `None`, so the agent skips archival without failing.
-- **Direct-run memory store is different**: the `read` op pulls from
-  `services.memory_store` (via `get_messages`), **not** from the markdown
-  `memory_content`. A user who clicks Run on a `simpleMemory` node actively
-  used by an agent sees the `memory_store` view, which may be empty even though
-  `memory_content` contains history.
+- **In-process agent**: `handlers/tools.py::execute_tool` →
+  `execute_as_tool(tool_args, node_params, ctx)` (ToolInput validation).
+- **Temporal agent**: the AgentWorkflow schedules `node.simpleMemory.v1`
+  with the model's unmerged `tool_args` in the payload; the legacy handler
+  routes ToolNodes through `execute_as_tool`. Without that, args validated
+  against `Params` (`extra="ignore"`) and every `remember` silently degraded
+  to a `list` (locked by `test_tool_call_dispatch.py`).
+- **Panel**: WS handlers in
+  [`_handlers.py`](../../../server/nodes/tool/simple_memory/_handlers.py)
+  (`list_memory_items` / `get_memory_item` / `remember_memory` /
+  `update_memory_item` / `forget_memory_item` / `clear_memory_items`),
+  authorized against the persisted graph; external sockets only.
 
 ## Side Effects
 
-- **Database writes**: none in the `read` op. The agent pipeline writes the
-  updated markdown back to this node's `node_parameters` row via
-  `database.save_node_parameters` after each turn.
-- **Broadcasts**: none. The node is passive.
-- **External API calls**: none in the `read` op. Agent archival may call
-  OpenAI embeddings, Ollama, or load a local SentenceTransformer according to
-  the selected provider.
-- **File I/O**: none after the embedding model has loaded. The native vector
-  index is not persisted to disk and is lost on process restart.
-- **Subprocess**: none.
-
-## External Dependencies
-
-- **Credentials**: OpenAI long-term memory resolves the stored OpenAI key
-  through `AuthService`. Plaintext keys are not persisted in memory-node
-  parameters or vector-store cache keys.
-- **Services**: `services.memory_store` (direct-run path), `AIService` (via
-  agents), `Database` (for parameter persistence).
-- **Python packages**: `sentence-transformers` via the optional
-  `local-embeddings` extra (long-term vector store only).
-- **Environment variables**: none.
+- **Database writes**: `agent_memory_items` (+ namespace row, FTS).
+- **Broadcasts**: every durable mutation (both writers) fires the
+  identity-only `memory.updated` CloudEvent
+  ([`_events.py`](../../../server/nodes/tool/simple_memory/_events.py));
+  the frontend invalidates `['memoryItems']` / `['memoryItem']`.
+- **Workflow Reset**: `reset_execution_state` honors `reset_policy` —
+  `clear` wipes only this node's namespace.
 
 ## Edge cases & known limits
 
-- **Two storage systems for one node**. The markdown `memory_content` (used
-  by agents) and the `services.memory_store` session log (used by the
-  `read` op) are **independent**. Clicking Run on the node does not
-  reflect what the agents see, and vice-versa. This is a known architectural
-  seam noted in the CLAUDE.md overview.
-- **Vector store is in-memory only**. Its cache is keyed by session, provider,
-  model, endpoint, and a non-secret credential fingerprint. A server restart
-  empties it; long-term memory is not actually durable without external
-  persistence.
-- **Optional embedder import is silent-catch**. If `sentence-transformers` is
-  missing at runtime, `get_memory_vector_store` logs a warning and returns
-  `None`; the agent continues without archival and the user never learns.
-- **No token budgeting**. `window_size` is a message-pair count, not a token
-  count. A long history below the window threshold can still exceed the
-  model's context window; see the "Prompt Too Long" note in CLAUDE.md.
-- **Markdown parser is regex-based**. `parse_memory_markdown` matches
-  `### **Human**` / `### **Assistant**` exactly. If a user edits the UI
-  content to a non-conforming header the messages will silently be dropped.
-- **`window_size` is Pydantic-clamped 1-100** by the field constraint; the
-  agent-side `trim_markdown_window` trusts whatever value is passed.
-- **Passive node, no envelope on read paths**. When consumed by an agent,
-  this node never produces its own envelope - it only supplies parameters.
+- Retrieval is lexical (FTS) with optional embedding projections; recall
+  quality depends on the model writing useful `content`/`tags`.
+- `update`/`forget` require the item's `expected_version` (optimistic
+  concurrency) — a stale version returns a user-correctable error.
+- The panel declares `refetchOnMount: 'always'` because the agent mutates
+  memory while the panel is closed (see CLAUDE.md notes).
 
 ## Related
 
-- **Consumer nodes**: [`aiAgent`](./aiAgent.md), [`chatAgent`](./chatAgent.md),
-  every specialized agent that routes through `execute_chat_agent`.
-- **Architecture docs**: [Memory Compaction](../../memory_compaction.md),
-  [Agent Architecture](../../agent_architecture.md)
+- **Sibling**: the `context` node — conversation history (plain
+  conversation store), deliberately separate from durable facts.
+- **Architecture docs**: [agent_context_flow.md](../../agent_context_flow.md),
+  [RFC-0002](../../../RFC-0002-AGENT-CONTEXT-AND-MEMORY.md) (Memory
+  sections current; Context implementation superseded).

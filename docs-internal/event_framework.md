@@ -232,9 +232,10 @@ See RFC §6.4 for the classification rule + the canonical
 in-process as a side effect. That query is only worth paying for when some node
 type registered the event via `register_canary_trigger_type`.
 
-The Context lifecycle events (`context.updated` / `context.compacted` /
-`context.epoch.started`, in `nodes/context/_events.py`) have no canary consumer,
-so the query is guaranteed to match nothing — once per journal append. They call
+The Context conversation event (`context.updated`, in
+`nodes/context/_events.py`) and the Memory mutation event (`memory.updated`,
+in `nodes/tool/simple_memory/_events.py`) have no canary consumer, so the
+query is guaranteed to match nothing — once per save/mutation. They call
 `get_status_broadcaster().broadcast({...})` directly instead, which is the same
 pattern `nodes/telegram/_events.py` uses for status. The CloudEvents envelope,
 `source`, `type`, `subject` and `data` are identical either way, so the wire
@@ -248,39 +249,37 @@ the reasoning without tripping the assertion).
 
 ### Context events are emitted at the persistence boundary
 
-`AgentContextStore` is the one place every Context writer passes through — the
-in-process agent loop, the Temporal LLM activity, and the CLI-agent bridge all
-reach durable state through it. So the "thread advanced" notification is emitted
-there rather than at each call site, via a fanout registry in
+`save_conversation` (`services/agent_context/conversation.py`) is the one
+place every Context writer passes through — the in-process agent loop, the
+Temporal LLM activity, and the specialized-provider bridge all persist
+through it. So the "conversation advanced" notification is emitted there
+rather than at each call site, via a fanout registry in
 `services/agent_context/listeners.py`:
 
 ```python
-register_context_commit_listener(async_fn)   # nodes/context/__init__.py
-await notify_context_commit(ref, provider=..., active_token_count=..., sequence=...)
+register_conversation_listener(async_fn)   # nodes/context/__init__.py
+await notify_conversation_saved(workflow_id=..., generation=..., agent_node_id=..., message_count=...)
 ```
 
 Same shape as the plugin registries in `plugin_system.md`, and for the same
 reason: the store must never import `nodes/`. A new writer gets live updates for
 free, and no caller carries broadcast code.
 
-Three properties are load-bearing and have tests in
-`tests/services/agent_context/test_commit_listeners.py`:
+Two properties are load-bearing and have tests in
+`tests/services/agent_context/test_conversation.py`:
 
-- **After commit, after reload.** The notification carries the post-commit
-  revision and can never be observed ahead of the state it describes.
-- **Replays emit nothing.** `append_transition` returns early on a reused
-  `operation_id` without committing; broadcasting there would wake every open
-  panel for something that did not happen.
-- **A listener can never fail a commit.** `notify_context_commit` swallows and
-  logs. These commits run inside the Temporal LLM activity's post-send window,
-  which is heartbeat-silent under a 60 s `heartbeat_timeout` on a
-  `maximum_attempts=1` retry policy — a throwing or slow listener there would
-  fail a run over a UI notification.
+- **After commit.** The notification fires only after the durable upsert, so
+  it can never be observed ahead of the state it describes.
+- **A listener can never fail a save.** `notify_conversation_saved` swallows
+  and logs at WARNING (visible at the default log level — a silently failing
+  listener is how "the panel never updates live" becomes undiagnosable).
+  Saves run inside the Temporal LLM activity's post-send window, after the
+  provider has been called and billed — a throwing listener there would fail
+  a run over a UI notification.
 
-Epoch rotation is deliberately **not** routed through the store listener:
-`start_epoch`'s callers already emit `context.epoch.started` with a `reason`
-(`clear` / `fork` / `workflow_reset`) the store cannot know, so emitting from
-the store would both duplicate the broadcast and lose the reason.
+Clears are deliberately **not** routed through the store listener: the
+clear handler and the Context node's Reset hook dispatch `context.updated`
+themselves (a delete is not a save, and only the caller knows it happened).
 
 ## Verification
 

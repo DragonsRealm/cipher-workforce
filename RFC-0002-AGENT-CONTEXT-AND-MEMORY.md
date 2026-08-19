@@ -1,8 +1,23 @@
 # RFC-0002 — Agent Context V2 and Tool-Based Memory
 
-Status: Implementing  
+Status: Partly superseded (August 2026)  
 Graph version: 2  
 Compatibility boundary: new workflow generations only
+
+> ## ⚠ Context implementation superseded
+>
+> The Context/Memory **separation** this RFC argues for stands, and the
+> Memory sections remain accurate. But the Context *implementation* it
+> specifies — the append-only journal with threads, epochs, hash-chained
+> events, checkpoints, blobs, provider bindings, and session > task >
+> execution thread resolution — was replaced in August 2026 by the **plain
+> conversation store**: one `agent_conversations` row per
+> `(workflow_id, generation, agent_node_id)` → messages JSON, loaded at run
+> start and saved per turn. There are no threads, epochs, or operation ids
+> to resolve; every firing of an agent continues the one conversation.
+> **[docs-internal/agent_context_flow.md](./docs-internal/agent_context_flow.md)
+> is the normative Context reference.** Sections below describing the
+> journal are historical rationale, not the running system.
 
 ## 1. Summary
 

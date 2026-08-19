@@ -143,22 +143,23 @@ Broadcasts are sent to all connected clients without a request-response correlat
 | `token_usage_update` | AI execution updates token counters | `{session_id, data: {total, threshold, needs_compaction}}` |
 | `compaction_starting` | Memory compaction begins | `{session_id, node_id}` |
 | `compaction_completed` | Memory compaction ends | `{session_id, success, tokens_before, tokens_after}` |
-| `context.updated` | `AgentContextStore` durably advanced a Context thread (journal append or pressure write) — emitted from the store's commit boundary via `register_context_commit_listener`, so every writer (in-process loop, Temporal LLM activity, CLI-agent bridge) is covered without call-site code. Frontend invalidates `['agentContext']`. | `{specversion: "1.0", id, source: "opencompany://nodes/context", type: "com.opencompany.context.updated", subject: context_node_id, time, data: {workflow_id, context_node_id, thread_id, epoch, revision, provider, active_token_count, sequence?}}` |
-| `context.compacted` | Context checkpoint activated (in-process finalize) | as above plus `{strategy, covers_through_sequence}` |
-| `context.epoch.started` | Epoch rotated — emitted by `start_epoch`'s **callers**, not the store, because only they know the `reason` (`clear` / `fork` / `workflow_reset`) | as above plus `{reason}` |
+| `context.updated` | A conversation durably saved (`save_conversation` upsert), or cleared from the panel / workflow Reset — emitted from the store's save boundary via `register_conversation_listener`, so every writer (in-process loop, Temporal LLM activity, specialized-provider bridge) is covered without call-site code. Frontend invalidates `['agentContext']`. | `{specversion: "1.0", id, source: "opencompany://nodes/context", type: "com.opencompany.context.updated", subject: agent_node_id, time, data: {workflow_id, generation, agent_node_id, message_count}}` |
+| `memory.updated` | A durable Memory mutation (remember / update / forget / clear) from either writer — the agent's tool call or the panel handlers. Frontend invalidates `['memoryItems']` + `['memoryItem']`. | `{specversion: "1.0", id, source: "opencompany://nodes/simple_memory", type: "com.opencompany.memory.updated", subject: memory_node_id, time, data: {workflow_id, memory_node_id, operation}}` |
 
-The three `context.*` events call `get_status_broadcaster().broadcast(...)`
-directly rather than `services.events.dispatch.emit`. `emit` exists to reach
-Temporal consumers and pays a Visibility `ListWorkflowExecutions` query to find
-them; no node type registers a canary consumer for `com.opencompany.context.*`,
-so that query can only ever match nothing — once per journal append. Same
-pattern as `nodes/telegram/_events.py`. See
+`context.updated` and `memory.updated` call
+`get_status_broadcaster().broadcast(...)` directly rather than
+`services.events.dispatch.emit`. `emit` exists to reach Temporal consumers and
+pays a Visibility `ListWorkflowExecutions` query to find them; no node type
+registers a canary consumer for `com.opencompany.context.*` /
+`com.opencompany.memory.*`, so that query can only ever match nothing — once
+per save. Same pattern as `nodes/telegram/_events.py`. See
 [event_framework.md → UI-only lifecycle events](./event_framework.md).
 
-Payloads are identity + revision only — no message bodies, no provider state —
+Payloads are identity + count only — no message bodies, no item content —
 because `_broadcast_in_process` fans out to **every** connected socket with no
-per-workflow filtering. The Context panel refetches through the authorized
-`get_agent_context` handler, which is where ownership is enforced.
+per-workflow filtering. The panels refetch through the authorized
+`get_agent_context` / `list_memory_items` handlers, which is where ownership
+is enforced.
 
 ## Execution correlation IDs
 

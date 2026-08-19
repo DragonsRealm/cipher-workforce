@@ -5,9 +5,13 @@
 > This document describes the pre-RFC-0002 model, in which `simpleMemory` hung
 > off an agent's `input-memory` handle and held the conversation transcript as
 > Markdown. **That model no longer exists.** Conversation state is now the
-> backend-owned Context journal (`server/nodes/context/`, `input-context`), and
-> `simpleMemory` is a `ToolNode` on `input-tools` holding durable facts the
-> agent explicitly remembers — it has no transcript and no markdown surface.
+> plain conversation store (`agent_conversations`, keyed by
+> `(workflow_id, generation, agent_node_id)` — see
+> [agent_context_flow.md](./agent_context_flow.md); the intermediate
+> "Context journal" described in RFC-0002 was itself replaced), and
+> `simpleMemory` (displayed as "Memory") is a `ToolNode` on `input-tools`
+> holding durable facts the agent explicitly remembers — it has no
+> transcript and no markdown surface.
 >
 > **Still accurate here:** §2 (the `services/memory/` markdown + JSONL helper
 > API), §3 (`services.memory` canonicality, `append_memory_turns_atomic`), §4
