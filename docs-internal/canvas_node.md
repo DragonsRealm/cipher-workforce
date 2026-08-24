@@ -243,8 +243,10 @@ prefix `['canvasBoard']` for broadcast-driven invalidation.
 - **[`CanvasDock.tsx`](../client/src/components/ui/CanvasDock.tsx)** — the
   new docked surface, mounted as the last flex child of Dashboard's
   main-content row (rightmost edge). Left-edge drag handle via the shared
-  `usePanelResize` (dragging left widens; clamped 280–1200 px and ≤ 60 % of
-  the viewport), `transition-[width]` disabled while dragging. Header: node
+  `usePanelResize` (dragging left widens; floor 280 px, ceiling nearly the
+  full window — `innerWidth - 160` so the handle stays reachable, with a
+  4000 px sanity bound on persisted values), `transition-[width]` disabled
+  while dragging. Header: node
   selector (a Select when the workflow has more than one Canvas node —
   ConsolePanel's node-selector precedent; nodes are found by
   `resolveNodeDescription(type)?.uiHints?.isCanvasPanel`, never by the type

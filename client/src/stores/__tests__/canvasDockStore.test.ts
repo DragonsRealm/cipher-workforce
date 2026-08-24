@@ -70,7 +70,7 @@ describe('canvasDockStore prefs', () => {
 
   it('persists open/width/autoOpen/followMode and clamps width', () => {
     useCanvasDockStore.getState().setWidth(5000);
-    expect(useCanvasDockStore.getState().widthPx).toBe(1200);
+    expect(useCanvasDockStore.getState().widthPx).toBe(4000);
     useCanvasDockStore.getState().setWidth(10);
     expect(useCanvasDockStore.getState().widthPx).toBe(280);
 

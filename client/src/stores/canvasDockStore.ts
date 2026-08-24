@@ -19,7 +19,7 @@ import type { CanvasItem } from '../lib/canvasBoard';
 
 const dockPrefsSchema = z.object({
   open: z.boolean().default(false),
-  widthPx: z.number().min(280).max(1200).default(380),
+  widthPx: z.number().min(280).max(4000).default(380),
   autoOpen: z.boolean().default(true),
   followMode: z.boolean().default(false),
 });
@@ -27,7 +27,10 @@ type CanvasDockPrefs = z.infer<typeof dockPrefsSchema>;
 const DOCK_PREFS_KEY = 'canvas_dock_prefs_v1';
 
 export const DOCK_MIN_WIDTH = 280;
-export const DOCK_MAX_WIDTH = 1200;
+// Sanity bound for persisted/corrupt values only — NOT a UX limit. The live
+// ceiling while dragging is viewport-relative (CanvasDock's onMove), so the
+// dock can take nearly the whole window.
+export const DOCK_MAX_WIDTH = 4000;
 
 function loadDockPrefs(): CanvasDockPrefs {
   try {

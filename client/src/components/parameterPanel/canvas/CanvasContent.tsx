@@ -339,4 +339,28 @@ const CanvasContent: React.FC<Props> = ({
   );
 };
 
-export default CanvasContent;
+/**
+ * `React.memo` equality for the board renderer — the `nodePropsEqual`
+ * pattern (nodeMemoEquality.ts): compare only the props that affect the
+ * rendered output. The dock re-renders on every drag tick (widthPx) and on
+ * every broadcast-driven parent render during workflow runs; without this
+ * the whole board (markdown parse, JSON tree, iframes) re-reconciled per
+ * mousemove, which is what made the drag stutter while a workflow ran.
+ *
+ * Callback props (`onRemove` / `onFollowLatestChange`) are deliberately
+ * skipped, like `xPos`/`yPos` there: they are fresh closures each render
+ * over stable stores/mutations, and any change that makes them target a
+ * different board also changes `items`. Items compare element-wise so the
+ * dock's ephemeral single-item array stays equal across renders.
+ */
+function canvasContentPropsEqual(prev: Props, next: Props): boolean {
+  return (
+    prev.workflowId === next.workflowId &&
+    prev.followLatestDefault === next.followLatestDefault &&
+    prev.emptyHint === next.emptyHint &&
+    prev.items.length === next.items.length &&
+    prev.items.every((item, index) => item === next.items[index])
+  );
+}
+
+export default React.memo(CanvasContent, canvasContentPropsEqual);

@@ -85,10 +85,10 @@ const CanvasDock: React.FC<CanvasDockProps> = ({ nodes }) => {
     cursor: 'ew-resize',
     onMove: (deltaPx, startValue) => {
       // The handle sits on the dock's LEFT edge — dragging left widens.
-      const viewportCap = Math.min(
-        DOCK_MAX_WIDTH,
-        Math.round(window.innerWidth * 0.6),
-      );
+      // Ceiling is viewport-relative and deliberately generous: the dock may
+      // take nearly the whole window; the 160px remainder keeps the handle
+      // and a sliver of canvas reachable to drag it back.
+      const viewportCap = Math.min(DOCK_MAX_WIDTH, window.innerWidth - 160);
       setWidth(
         Math.min(viewportCap, Math.max(DOCK_MIN_WIDTH, startValue - deltaPx)),
       );
@@ -105,14 +105,25 @@ const CanvasDock: React.FC<CanvasDockProps> = ({ nodes }) => {
       aria-hidden={!open}
     >
       <div
-        className="h-full w-1.5 shrink-0 cursor-ew-resize bg-transparent hover:bg-bg-hover"
+        className={`h-full w-1.5 shrink-0 cursor-ew-resize transition-colors ${
+          resize.isResizing
+            ? 'bg-node-agent transition-none'
+            : 'bg-border hover:bg-node-agent-soft'
+        }`}
         onMouseDown={resize.start}
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize canvas panel"
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* pointer-events-none while dragging: an embedded iframe (web/PDF
+          items) would otherwise swallow the document mousemove and freeze
+          the resize the moment the cursor crosses it. */}
+      <div
+        className={`flex min-h-0 min-w-0 flex-1 flex-col ${
+          resize.isResizing ? 'pointer-events-none' : ''
+        }`}
+      >
         <div className="flex shrink-0 items-center gap-2 border-b border-border-default px-3 py-2">
           <Monitor className="h-4 w-4 shrink-0 text-fg-muted" />
           <span className="shrink-0 text-sm font-semibold text-fg-default">Canvas</span>
