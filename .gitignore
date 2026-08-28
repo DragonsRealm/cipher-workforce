@@ -170,3 +170,4 @@ server/tests/_test_opencompany_root/
 # Experiments (work in progress)
 # =============================================================================
 server/experiments/
+.env.cipher

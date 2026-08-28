@@ -29,10 +29,6 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "bin": {
-    "company": "./bin/cli.js",
-    "machina": "./bin/machina.js"
-  },
   "engines": {
     "node": ">=22.0.0"
   },
@@ -68,10 +64,6 @@
     "client"
   ],
   "scripts": {
-    "start": "python -m cli start",
-    "dev": "python -m cli dev",
-    "serve": "python -m cli serve",
-    "start:temporal": "cross-env TEMPORAL_ENABLED=true python -m cli start",
     "client:start": "cd client && npm run start",
     "python:start": "cd server && uv run python main.py",
     "python:daemon": "cd server && cross-env HOST=0.0.0.0 uv run python main.py",
@@ -79,26 +71,11 @@
     "temporal:stop": "temporal stop",
     "temporal:status": "temporal status",
     "temporal:worker": "cd server && uv run python -m services.temporal.worker",
-    "build": "python -m cli build",
-    "clean": "python -m cli clean",
-    "stop": "python -m cli stop",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd server && uv run pytest tests/ -v",
     "test:frontend": "cd client && npm run test",
     "test:nodes": "cd server && uv run pytest tests/nodes/ -v --cov=services.handlers --cov-report=term-missing",
-    "docs:nodes": "python -m cli docs nodes",
-    "docs:nodes:check": "python -m cli docs nodes --check",
-    "deploy": "python -m cli deploy",
-    "daemon:start": "python -m cli daemon start",
-    "daemon:stop": "python -m cli daemon stop",
-    "daemon:status": "python -m cli daemon status",
-    "daemon:restart": "python -m cli daemon restart",
-    "version:sync": "python -m cli version sync",
-    "typecheck": "tsc --noEmit -p client/tsconfig.json",
-    "prepublishOnly": "python -m cli version sync && node -e \"const p=require('./package.json'); if(!p.bin||!p.version){process.exit(1)}\"",
-    "preinstall": "node scripts/preinstall.js",
-    "postinstall": "node scripts/postinstall.js",
-    "preuninstall": "node scripts/preinstall.js"
+    "typecheck": "tsc --noEmit -p client/tsconfig.json"
   },
   "dependencies": {
     "cross-env": "^10.1.0"

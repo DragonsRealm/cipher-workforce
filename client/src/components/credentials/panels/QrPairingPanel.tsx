@@ -22,7 +22,7 @@ const QrPairingPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = (
   const panel = useCredentialPanel(config, visible);
   const status = useProviderStatus(config.statusHook);
   const { startConnection, restartConnection, getStatus: refreshWa } = useWhatsApp();
-  const { sendRequest, setAndroidStatus } = useWebSocket();
+  useWebSocket();
   const qr = config.qr!;
   const connected = qr.isConnected(status);
   const qrData = status?.[qr.qrField];
@@ -33,15 +33,11 @@ const QrPairingPanel: React.FC<{ config: ProviderConfig; visible: boolean }> = (
     start: () => panel.execute('start', startConnection),
     restart: () => panel.execute('restart', restartConnection),
     refresh: () => panel.execute('refresh', refreshWa),
-    connect: () => panel.execute('connect', async () => {
-      const key = panel.form.getFieldValue('android_remote')?.trim();
-      if (!key) { panel.setError('No API key configured'); return; }
-      const res = await sendRequest('android_relay_connect', { url: (import.meta as any).env?.VITE_ANDROID_RELAY_URL || '', api_key: key });
-      if (res.qr_data) setAndroidStatus((prev: any) => ({ ...prev, connected: true, paired: false, qr_data: res.qr_data }));
-      return res;
-    }),
-    disconnect: () => panel.execute('disconnect', () => sendRequest('android_relay_disconnect', {})),
-  }), [panel, startConnection, restartConnection, refreshWa, sendRequest, setAndroidStatus]);
+    // CIPHER cut list (ADR §7 item 3): the Android relay is removed. These two
+    // handlers are stubbed rather than deleted because WhatsApp shares this panel.
+    connect: () => panel.setError('Android relay is disabled in CIPHER OS.'),
+    disconnect: () => panel.setError('Android relay is disabled in CIPHER OS.'),
+  }), [panel, startConnection, restartConnection, refreshWa]);
 
   const actions: ActionDef[] = (config.actions ?? []).map(a => ({
     key: a.key,
