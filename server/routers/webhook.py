@@ -106,35 +106,9 @@ async def handle_webhook(path: str, request: Request):
         logger.info("[Webhook] %s %s -> %s", request.method, path, type(source).__name__)
         return JSONResponse({"status": "received", "path": path}, status_code=200)
 
-    body = await request.body()
-    json_body = None
-    content_type = request.headers.get("content-type", "")
-
-    if "application/json" in content_type and body:
-        try:
-            json_body = await request.json()
-        except Exception:
-            pass
-
-    webhook_data = {
-        "method": request.method,
-        "path": path,
-        "headers": dict(request.headers),
-        "query": dict(request.query_params),
-        "body": body.decode("utf-8") if isinstance(body, bytes) else (body if body else ""),
-        "json": json_body,
-    }
-
-    logger.info(f"[Webhook] Received: {request.method} /webhook/{path}")
-
-    # Wave 12 B9: route through plugin _events.py wrapper.
-    from nodes.trigger.webhook_trigger._events import broadcast_webhook_received
-
-    await broadcast_webhook_received(webhook_data)
-
-    return JSONResponse(
-        content={"status": "received", "path": path, "message": "Webhook received and dispatched to workflow"}, status_code=200
-    )
+    # Argus gate: unregistered paths are rejected — no unauthenticated broadcast.
+    logger.warning("[Webhook] %s %s -> 404 unregistered path", request.method, path)
+    return JSONResponse({"error": "webhook_path_not_found"}, status_code=404)
 
 
 @router.get("/")
