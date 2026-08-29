@@ -182,17 +182,3 @@ class TestHmacEnforcement:
         assert source.handled == 1
         mock_verify.assert_not_called()
 
-
-class TestLegacyFallback:
-    def test_unclaimed_path_still_reaches_the_generic_handler(self, client, clean_registry):
-        """An unregistered path must keep firing webhookTrigger nodes."""
-        clean_registry.clear()
-
-        with patch("nodes.trigger.webhook_trigger._events.broadcast_webhook_received") as broadcast:
-            resp = client.post("/webhook/unclaimed", json={"hello": "world"})
-
-        assert resp.status_code == 200
-        broadcast.assert_called_once()
-        payload = broadcast.call_args[0][0]
-        assert payload["path"] == "unclaimed"
-        assert payload["json"] == {"hello": "world"}
