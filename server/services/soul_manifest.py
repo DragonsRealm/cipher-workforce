@@ -165,6 +165,10 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 2: browser harness for E2E tests and visual QA
             _cap("browser"),
             _cap("browserHarness"),
+            # Phase 2: search tools + GitHub (QA needs web research + repo access)
+            _cap("braveSearch"),
+            _cap("perplexitySearch"),
+            _cap("githubAction"),
         ),
         _manifest(
             "reeve",
