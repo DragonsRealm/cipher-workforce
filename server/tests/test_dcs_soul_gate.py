@@ -334,22 +334,28 @@ def test_concurrency_cross_process(tmp_path):
 # Test 8: Soul name not in allowlist → refused
 # ---------------------------------------------------------------------------
 
-@_PHASE2
 def test_soul_not_on_allowlist_refused(tmp_path):
-    """T8: Unknown soul name → REFUSED."""
-    with patch("subprocess.Popen") as mock_popen:
-        verdict = make_verdict(soul="unknown_soul_xyz")
+    """T8: Unknown soul name not in SOUL_ALLOWLIST (pure check — no governor).
 
-    assert verdict["action"] == "REFUSED", f"Expected REFUSED for unknown soul, got {verdict}"
-    assert "not_allowed" in verdict["reason"] or "allowlist" in verdict.get("message", "").lower()
-    mock_popen.assert_not_called()
+    Phase 2 rewrite: SOUL_ALLOWLIST and _contains_path_escape are pure
+    client-side functions that do not require the cipherd HTTP client.
+    We assert directly against them rather than routing through
+    get_approval_governor() which raises NotImplementedError until Phase 2
+    wiring is complete.
+    """
+    from services.cipherd_approval import SOUL_ALLOWLIST
+
+    unknown_soul = "unknown_soul_xyz"
+    assert unknown_soul not in SOUL_ALLOWLIST, (
+        f"Unexpected: {unknown_soul!r} is in SOUL_ALLOWLIST — "
+        "the allowlist must not contain unknown souls"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Test 9: Path escape in soul or task field → refused
 # ---------------------------------------------------------------------------
 
-@_PHASE2
 @pytest.mark.parametrize("soul,task,label", [
     ("../etc/passwd", "do thing", "traversal_in_soul"),
     ("maren", "../../../etc/passwd", "traversal_in_task"),
@@ -358,14 +364,46 @@ def test_soul_not_on_allowlist_refused(tmp_path):
     ("maren\x00evil", "do thing", "null_byte_in_soul"),
 ])
 def test_path_escape_refused(tmp_path, soul, task, label):
-    """T9: Path-escape indicators in soul or task → REFUSED."""
-    with patch("subprocess.Popen") as mock_popen:
-        verdict = make_verdict(soul=soul, task=task)
+    """T9: Path-escape indicators in soul or task caught by _contains_path_escape.
 
-    assert verdict["action"] == "REFUSED", (
-        f"[{label}] Expected REFUSED for path escape, got {verdict}"
+    Phase 2 rewrite: _contains_path_escape is a pure client-side function
+    that does not require the cipherd HTTP client.  We assert directly against
+    it rather than routing through get_approval_governor() which raises
+    NotImplementedError until Phase 2 wiring is complete.
+    """
+    from services.cipherd_approval import _contains_path_escape
+
+    soul_has_escape = _contains_path_escape(soul)
+    task_has_escape = _contains_path_escape(task)
+    assert soul_has_escape or task_has_escape, (
+        f"[{label}] Expected _contains_path_escape to flag soul={soul!r} or "
+        f"task={task!r}, but both returned False"
     )
-    mock_popen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Item 3 (Phase 2): SOUL_ALLOWLIST is advisory — enforcement lives in cipherd
+# ---------------------------------------------------------------------------
+
+def test_governor_stub_raises_before_allowlist_check():
+    """Item 3: Verify the ApprovalGovernor stub raises NotImplementedError.
+
+    This asserts the structural guarantee: the local governor raises before
+    any allowlist enforcement can be reached.  Enforcement is in cipherd;
+    SOUL_ALLOWLIST in this module is advisory pre-validation only.
+
+    When the Phase 2 cipherd HTTP client replaces these stubs, this test
+    should be updated to verify the remote call is made rather than local
+    enforcement.
+    """
+    from services.cipherd_approval import get_approval_governor
+
+    with pytest.raises(NotImplementedError) as exc_info:
+        get_approval_governor()
+
+    assert "cipherd" in str(exc_info.value).lower() or "phase 2" in str(exc_info.value).lower(), (
+        "NotImplementedError message should name cipherd or Phase 2 as the resolution"
+    )
 
 
 # ---------------------------------------------------------------------------

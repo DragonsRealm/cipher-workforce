@@ -25,8 +25,17 @@ from typing import Any, Dict, Iterator, Optional, Tuple
 # Static constants — safe to keep client-side
 # ---------------------------------------------------------------------------
 
-#: Authorized DCS soul profile-ids.  Mirrors the cipherd allowlist.
-#: Adding a soul requires a code change + Argus sign-off.
+#: Authorized DCS soul profile-ids.  ADVISORY PRE-VALIDATION ONLY.
+#:
+#: This is a client-side cache that must match cipherd's authoritative
+#: allowlist.  It gates dispatch early (before a network call) but is NOT
+#: the enforcement boundary — cipherd enforces at the authoritative gate.
+#:
+#: Keeping it in sync:
+#:   - Adding or removing a soul here requires a matching change in cipherd.
+#:   - Argus sign-off required for any change to this set.
+#:   - The Phase 2 cipherd HTTP client must verify against cipherd's live
+#:     allowlist, not solely against this local copy.
 SOUL_ALLOWLIST: frozenset = frozenset({
     "orion",
     "maren",
@@ -57,16 +66,25 @@ _NOT_WIRED = (
 # ---------------------------------------------------------------------------
 
 def _contains_path_escape(value: str) -> bool:
-    """Return True if value contains path traversal or absolute-path indicators.
+    r"""Return True if value contains path traversal or absolute-path indicators.
 
     Pure function — no DB or FS access.  Kept client-side so dcs_soul/__init__.py
     can validate inputs before calling the remote gate.
+
+    Checks performed (case-insensitive on traversal tokens):
+      - Unix traversal:  "../"
+      - Windows traversal: "..\\" (os.sep) and the literal "..\" sequence
+      - Percent-encoded variants: %2e (dot), %2f (slash), %5c (backslash)
+      - Null byte: "\x00"
+      - Absolute paths: leading "/" or "\"
+      - Leading-whitespace absolute paths: value.strip() starting with "/" or "\"
     """
     if not isinstance(value, str):
         return True
     traversal_checks = (
         "../",
         ".." + os.sep,
+        "..\\" ,           # Windows literal traversal (Argus F2 M1)
         "\x00",
         "%2e",
         "%2f",
@@ -75,7 +93,12 @@ def _contains_path_escape(value: str) -> bool:
     lower = value.lower()
     if any(c in lower for c in traversal_checks):
         return True
+    # Check both raw and stripped value so " /etc/passwd" (leading space) is caught
+    # (Argus F2 M2)
+    stripped = value.strip()
     if value.startswith("/") or value.startswith("\\"):
+        return True
+    if stripped.startswith("/") or stripped.startswith("\\"):
         return True
     return False
 
