@@ -59,7 +59,8 @@ _startup_log("Importing DI container + all services...")
 from core.container import container
 
 _startup_log("Importing routers...")
-from routers import workflow, database, websocket, webhook, auth, credentials, schemas, workspace
+from routers import workflow, database, websocket, webhook, auth, credentials, schemas, workspace, approvals
+from services.approval.api import router as approval_router
 
 _startup_log("All imports complete")
 
@@ -530,6 +531,7 @@ app.add_middleware(
 # ``services.ws_handler_registry.register_router`` from their plugin
 # folder's ``__init__.py`` and are mounted via the loop below — main.py
 # never imports a migrated plugin module by name.
+app.include_router(approval_router)  # Human approval surface (Argus Gate 3 — auth-gated, fail-closed)
 app.include_router(auth.router)  # Auth routes (login, register, logout, status)
 app.include_router(workflow.router)
 app.include_router(database.router)
@@ -537,6 +539,7 @@ app.include_router(websocket.router)
 app.include_router(credentials.router)  # Credentials panel - lazy per-tile icon endpoint (n8n pattern)
 app.include_router(schemas.router)  # Per-node output schema endpoint (GET /api/schemas/nodes/{type}.json)
 app.include_router(workspace.router)  # Per-workflow workspace file serving + uploads
+app.include_router(approvals.router)  # Human approval panel (GET /approvals) + API (GET|POST /api/approvals/…)
 
 # Routers awaiting migration into their plugin folders. As each plugin
 # moves to the self-contained pattern (nodes/<plugin>/_router.py +
