@@ -62,8 +62,14 @@ def _cap(node_type: str, enabled: bool = True, note: Optional[str] = None) -> Ca
 
 
 # ---------------------------------------------------------------------------
-# Soul manifests — Phase 3 capabilities
+# Soul manifests — Phase 3 + Phase 1 capabilities
 # ---------------------------------------------------------------------------
+
+# Phase 1 (cipher-workforce capability upgrade): simpleMemory is wired as a
+# default tool for ALL souls so every soul has persistent recall across
+# sessions.  taskManager is added to reeve (PM) so cross-soul task
+# coordination is durable.  telegramSend is added to all souls so they can
+# send outbound Telegram messages (e.g. status updates back to Dragon).
 
 _REGISTRY: dict[str, SoulManifest] = {
     m.soul_id: m
@@ -81,6 +87,12 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
+            # Phase 2: search tools
+            _cap("braveSearch"),
+            _cap("perplexitySearch"),
         ),
         _manifest(
             "maren",
@@ -96,6 +108,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
             _cap("gcloud", enabled=False, note="Dragon-gated: GCP write scopes — requires sign-off"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
+            # Phase 2: GitHub (backend/infra VCS)
+            _cap("githubAction"),
         ),
         _manifest(
             "cael",
@@ -109,6 +126,12 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("emailSend"),
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
+            # Phase 2: GitHub + Vercel (frontend VCS + deploy context); no code executor added
+            _cap("githubAction"),
+            _cap("vercelAction"),
         ),
         _manifest(
             "argus",
@@ -122,6 +145,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("cronScheduler"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
         ),
         _manifest(
             "vera",
@@ -133,6 +159,16 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("ragQuery"),
             _cap("emailRead"),
             _cap("emailSend"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
+            # Phase 2: browser harness for E2E tests and visual QA
+            _cap("browser"),
+            _cap("browserHarness"),
+            # Phase 2: search tools + GitHub (QA needs web research + repo access)
+            _cap("braveSearch"),
+            _cap("perplexitySearch"),
+            _cap("githubAction"),
         ),
         _manifest(
             "reeve",
@@ -145,6 +181,10 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
             _cap("cronScheduler"),
+            # Phase 1: persistent recall + durable task coordination + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("taskManager"),
+            _cap("telegramSend"),
         ),
         _manifest(
             "zane",
@@ -159,6 +199,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
+            # Phase 1: persistent recall + outbound Telegram
+            _cap("simpleMemory"),
+            _cap("telegramSend"),
         ),
     ]
 }

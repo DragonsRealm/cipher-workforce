@@ -33,6 +33,19 @@ def _default_ws_url() -> str:
     return f"ws://{settings.host}:{settings.port}/ws/internal"
 
 
+def _internal_ws_headers() -> Dict[str, str]:
+    """Credential for the gated ``/ws/internal`` handshake.
+
+    Same-host shared token resolved by ``services.authz.ws_gate``. Returns an
+    empty mapping when the token cannot be resolved; the server then refuses
+    the handshake, which is the intended fail-closed behaviour.
+    """
+    from services.authz.ws_gate import INTERNAL_TOKEN_HEADER, internal_ws_token
+
+    token = internal_ws_token()
+    return {INTERNAL_TOKEN_HEADER: token} if token else {}
+
+
 class WSConnectionPool:
     """WebSocket connection pool using aiohttp ClientSession.
 
@@ -89,6 +102,7 @@ class WSConnectionPool:
             self.url,
             heartbeat=20,
             receive_timeout=120,
+            headers=_internal_ws_headers(),
         ) as ws:
             yield ws
 

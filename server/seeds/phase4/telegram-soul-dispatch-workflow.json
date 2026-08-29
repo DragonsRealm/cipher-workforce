@@ -1,0 +1,74 @@
+{
+  "id": "telegram_soul_dispatch",
+  "name": "Telegram Soul Dispatch",
+  "description": "Dragon sends a Telegram message to trigger a DCS soul dispatch. The soul reply is sent back to Dragon over Telegram. Inbound: telegramReceive (self/owner only) -> dcsSoul. Outbound: dcsSoul output -> telegramSend (self).",
+  "nodes": [
+    {
+      "id": "telegram_receive_1",
+      "type": "telegramReceive",
+      "position": {
+        "x": 80,
+        "y": 240
+      },
+      "data": {
+        "label": "Dragon Telegram Trigger"
+      }
+    },
+    {
+      "id": "soul_1",
+      "type": "dcsSoul",
+      "position": {
+        "x": 380,
+        "y": 240
+      },
+      "data": {
+        "label": "Soul Dispatch"
+      }
+    },
+    {
+      "id": "telegram_send_1",
+      "type": "telegramSend",
+      "position": {
+        "x": 680,
+        "y": 240
+      },
+      "data": {
+        "label": "Send Reply to Dragon"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_trigger_soul",
+      "source": "telegram_receive_1",
+      "target": "soul_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_soul_send",
+      "source": "soul_1",
+      "target": "telegram_send_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    }
+  ],
+  "nodeParameters": {
+    "telegram_receive_1": {
+      "sender_filter": "self",
+      "content_type_filter": "text",
+      "ignore_bots": true
+    },
+    "soul_1": {
+      "soul": "reeve",
+      "task": "{{telegram_receive_1.text}}",
+      "autonomy": "write"
+    },
+    "telegram_send_1": {
+      "recipient_type": "self",
+      "message_type": "text",
+      "text": "{{soul_1.message}}"
+    }
+  },
+  "version": "0.0.36"
+}
