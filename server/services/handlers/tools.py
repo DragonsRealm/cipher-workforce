@@ -534,8 +534,8 @@ async def _execute_delegated_agent(
         "outputs": {},
         "parent_task_id": task_id,
         "execution_id": config.get("execution_id"),
-        "max_concurrent_subagents": config.get("max_concurrent_subagents", 3),
-        "max_delegation_depth": config.get("max_delegation_depth", 2),
+        "max_concurrent_subagents": max_concurrency,  # C3: resolved limits, not config fallback literals
+        "max_delegation_depth": max_depth,  # C3: resolved limits, not config fallback literals
         "ai_service": config.get("ai_service"),
         "database": config.get("database"),
         "root_execution_id": root_execution_id,
