@@ -463,6 +463,41 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
         )
         if key in data
     }
+    # Manifest gate — Argus conditions C1/C2/C3.
+    #
+    # C1: Read the authoritative soul_id from connection state bound at
+    #     /ws/internal handshake time, NEVER from the caller's message payload.
+    # C2: Propagate _is_soul_plane=True unconditionally so NodeExecutor runs
+    #     the manifest gate even when soul_id is None (fail-closed via
+    #     _UNKNOWN_MANIFEST rather than skipping the check).
+    # C3: Reject any message that carries _dispatch_soul_id in the payload
+    #     AND disagrees with the server-bound value.  Silent acceptance =
+    #     impersonation / privilege escalation.
+    _conn_soul_id = getattr(getattr(websocket, "state", None), "dispatch_soul_id", None)
+    _is_soul_plane = getattr(getattr(websocket, "state", None), "is_soul_plane", False)
+    _payload_soul_id = data.get("_dispatch_soul_id")
+    if _payload_soul_id and _payload_soul_id != _conn_soul_id:
+        # C3: caller is asserting a soul_id that differs from the server-bound
+        # identity — this is an impersonation / manifest-escalation attempt.
+        logger.warning(
+            "Manifest gate C3: payload _dispatch_soul_id rejected (impersonation attempt)",
+            payload_soul_id=_payload_soul_id,
+            conn_soul_id=_conn_soul_id,
+            node_id=node_id,
+        )
+        await broadcaster.update_node_status(
+            node_id,
+            "error",
+            {"error": "Payload _dispatch_soul_id rejected: identity mismatch (fail-closed)."},
+            workflow_id=workflow_id,
+        )
+        return
+    if _is_soul_plane:
+        # C2: always propagate soul plane context so the gate runs unconditionally.
+        invocation_extras["_is_soul_plane"] = True
+        invocation_extras["_dispatch_soul_id"] = _conn_soul_id  # may be None
+    elif _conn_soul_id:
+        invocation_extras["_dispatch_soul_id"] = _conn_soul_id
     user_id = execution_principal(data, websocket)
 
     await broadcaster.update_node_status(
@@ -1433,6 +1468,15 @@ from services.ws_handler_registry import get_ws_handlers
 
 
 from services.authz import execution_principal, resolve_internal_handler  # noqa: E402
+from services.authz.dispatch_token import (  # noqa: E402
+    DISPATCH_TOKEN_HEADER,
+    resolve_dispatch_token as _resolve_dispatch_token,
+)
+
+
+def _ws_header(websocket: WebSocket, name: str) -> Optional[str]:
+    """Read a single WebSocket upgrade-request header (case-insensitive)."""
+    return websocket.headers.get(name.lower())
 
 
 def _resolve_handler(msg_type: str):
@@ -1749,6 +1793,29 @@ async def websocket_internal_endpoint(websocket: WebSocket):
     if not authorize_internal_ws(websocket, int(settings.port)):
         await refuse(websocket, "unauthorized internal websocket")
         return
+
+    # Dispatch-token gate: if a soul process presents a dispatch token it was
+    # issued at _spawn_soul_dispatch time, validate and consume it, then bind
+    # the soul_id to connection state so handle_execute_node can read it
+    # without trusting anything in the message payload (B1 fix).
+    _presented_dispatch_token = _ws_header(websocket, DISPATCH_TOKEN_HEADER)
+    if _presented_dispatch_token:
+        _bound_soul_id = _resolve_dispatch_token(_presented_dispatch_token)
+        if not _bound_soul_id:
+            logger.warning("[WebSocket Internal] Refusing: dispatch token unresolvable or expired")
+            await refuse(websocket, "dispatch token unresolvable")
+            return
+        websocket.state.dispatch_soul_id = _bound_soul_id
+        logger.info("[WebSocket Internal] Soul connected soul_id=%s", _bound_soul_id)
+    else:
+        websocket.state.dispatch_soul_id = None
+
+    # C2 prerequisite: mark this connection as the soul plane so NodeExecutor
+    # knows to run the manifest gate unconditionally (fail-closed), even when
+    # no dispatch token was presented (soul_id=None → _UNKNOWN_MANIFEST → zero
+    # capabilities → every node_type refused).
+    websocket.state.is_soul_plane = True
+
 
     get_status_broadcaster()
     await websocket.accept()
