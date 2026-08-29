@@ -139,6 +139,39 @@ class NodeExecutor:
         execution_id = context.get("execution_id") or str(uuid.uuid4())[:8]
 
         try:
+            # ----------------------------------------------------------------
+            # Manifest gate (Condition 1 / Orion Phase-2 pre-condition).
+            # If this execution runs on behalf of a DCS soul, the soul's
+            # manifest is the authoritative capability allowlist.  Any
+            # node_type not explicitly listed is refused fail-closed.
+            #
+            # soul_id MUST come from the gate-authenticated dispatch record
+            # (_dispatch_soul_id), never from caller-supplied parameters.
+            # ----------------------------------------------------------------
+            _dispatch_soul_id = context.get("_dispatch_soul_id")
+            if _dispatch_soul_id:
+                from services.soul_manifest import get_manifest as _get_manifest
+                _manifest = _get_manifest(_dispatch_soul_id)
+                if node_type not in _manifest.enabled_node_types():
+                    logger.warning(
+                        "Manifest gate: node_type refused for soul",
+                        soul_id=_dispatch_soul_id,
+                        node_type=node_type,
+                        node_id=node_id,
+                    )
+                    return ExecutionResult(
+                        success=False,
+                        node_id=node_id,
+                        node_type=node_type,
+                        error=(
+                            f"Node type '{node_type}' is not in the capability manifest "
+                            f"for soul '{_dispatch_soul_id}'. Execution refused (fail-closed)."
+                        ),
+                        execution_id=execution_id,
+                        execution_time=time.time() - start_time,
+                        timestamp=datetime.now().isoformat(),
+                    ).to_dict()
+
             # Load, validate, enhance parameters
             params = await self._prepare_parameters(node_id, node_type, parameters, session_id)
 

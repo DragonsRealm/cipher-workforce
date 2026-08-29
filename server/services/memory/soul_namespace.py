@@ -42,6 +42,30 @@ def soul_namespace(soul_id: str) -> str:
     return soul_collection_name(soul_id)
 
 
+def reject_caller_soul_prefix(name: str) -> None:
+    """Raise ``ValueError`` if *name* starts with the reserved soul prefix.
+
+    Souls address their own ChromaDB collections via their bound soul_id
+    passed to :func:`soul_collection_name`; they must never construct the
+    ``soul_`` prefix themselves.  A caller-supplied collection name that
+    begins with ``soul_`` is treated as an impersonation attempt and
+    rejected here at the node level, satisfying the Orion Phase-2
+    Condition 2 guard.
+
+    Usage (inside any node that accepts a caller-supplied collection_name)::
+
+        from services.memory.soul_namespace import reject_caller_soul_prefix
+        reject_caller_soul_prefix(params.collection_name)
+    """
+    if name.startswith(_SOUL_PREFIX):
+        raise ValueError(
+            f"Collection name {name!r} begins with the reserved prefix "
+            f"{_SOUL_PREFIX!r}. Souls must address their collections via "
+            "their server-bound soul_id, not by constructing the prefix "
+            "directly. Use soul_collection_name(soul_id) instead."
+        )
+
+
 def soul_id_from_workflow_slug(slug: str) -> str | None:
     """Derive a soul_id from a workflow slug, if the slug follows the
     DCS soul-dispatch naming convention (``<soul_id>-<task_slug>``).
