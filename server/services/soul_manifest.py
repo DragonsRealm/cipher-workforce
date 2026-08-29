@@ -132,6 +132,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 2: GitHub + Vercel (frontend VCS + deploy context); no code executor added
             _cap("githubAction"),
             _cap("vercelAction"),
+            # Phase 5: vision — UI review from screenshots, visual design analysis.
+            # Image input uses FileRef transport, never inline base64.
+            _cap("visionAnalyze"),
         ),
         _manifest(
             "argus",
@@ -169,6 +172,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("braveSearch"),
             _cap("perplexitySearch"),
             _cap("githubAction"),
+            # Phase 5: vision — visual QA, screenshot comparison, visual regression.
+            # Image input uses FileRef transport, never inline base64.
+            _cap("visionAnalyze"),
         ),
         _manifest(
             "reeve",

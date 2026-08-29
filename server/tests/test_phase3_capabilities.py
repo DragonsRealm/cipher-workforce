@@ -343,3 +343,52 @@ class TestCodeSandboxEnvScrubbing:
         assert required.issubset(set(_BLOCKED_PREFIXES)), (
             f"Missing blocked prefixes: {required - set(_BLOCKED_PREFIXES)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 7. Phase 5: vision capability — cael and vera manifests
+# ---------------------------------------------------------------------------
+
+class TestPhase5VisionCapability:
+    """cael and vera must declare visionAnalyze; image input is FileRef, not base64."""
+
+    def test_cael_has_vision_capability(self):
+        from services.soul_manifest import get_manifest
+
+        m = get_manifest("cael")
+        assert "visionAnalyze" in m.enabled_node_types(), (
+            "cael manifest is missing visionAnalyze (Phase 5 vision capability)"
+        )
+
+    def test_vera_has_vision_capability(self):
+        from services.soul_manifest import get_manifest
+
+        m = get_manifest("vera")
+        assert "visionAnalyze" in m.enabled_node_types(), (
+            "vera manifest is missing visionAnalyze (Phase 5 vision capability)"
+        )
+
+    def test_vision_uses_fileref_not_base64(self):
+        """visionAnalyze node accepts FileRef as image input — never inline base64.
+
+        Confirmed by inspecting the node's Params model: the image parameter is
+        typed as a string path / FileRef reference, not a base64 bytes field.
+        """
+        from nodes.vision.vision_analyze import VisionAnalyzeParams
+
+        import inspect
+        src = inspect.getsource(VisionAnalyzeParams)
+        # The params model must NOT declare a base64 bytes field for image input.
+        assert "base64" not in src.lower(), (
+            "VisionAnalyzeParams appears to accept inline base64 — use FileRef transport instead"
+        )
+
+    def test_other_souls_do_not_gain_vision(self):
+        """Vision is scoped to cael and vera; other souls must not unexpectedly gain it."""
+        from services.soul_manifest import get_manifest
+
+        for soul_id in ("reeve", "argus", "zane"):
+            m = get_manifest(soul_id)
+            assert "visionAnalyze" not in m.enabled_node_types(), (
+                f"{soul_id} unexpectedly gained visionAnalyze — Phase 5 adds it only to cael and vera"
+            )
