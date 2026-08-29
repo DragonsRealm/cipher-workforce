@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
+from services.safe_env import build_safe_env
 from services.cipherd_approval import (
     ApprovalGovernor,
     SOUL_ALLOWLIST,
@@ -387,6 +388,7 @@ def _spawn_soul_dispatch(
             stderr=subprocess.DEVNULL,
             close_fds=True,
             start_new_session=True,
+            env=build_safe_env(),
         )
         logger.info("Dispatched soul=%s pid=%d task_id=%s", soul, proc.pid, task_id)
         proc.wait()

@@ -184,6 +184,33 @@ async def _dispatch_tool(tool_name: str, tool_args: Dict[str, Any], config: Dict
         return await execute_skill_tool(tool_args, config)
 
     # ----------------------------------------------------------------
+    # DCS Soul dispatch — Argus Gate 3 explicit wire.
+    #
+    # dcsSoul MUST always route through _execute_dcs_soul (which hits the
+    # ApprovalGovernor gate) regardless of AI_AGENT_TYPES membership.
+    # This guard is stated explicitly so future refactors cannot
+    # accidentally route soul dispatch through the generic fire-and-forget
+    # _execute_delegated_agent wrapper, which would bypass Gate 3.
+    # ----------------------------------------------------------------
+    if node_type == "dcsSoul":
+        from nodes.agent.dcs_soul import _execute_dcs_soul as _run_dcs_soul
+
+        return await _run_dcs_soul(
+            soul=tool_args.get("soul", ""),
+            task=tool_args.get("task", ""),
+            autonomy=tool_args.get("autonomy", "write"),
+            context=tool_args.get("context") or {},
+            delegation_depth=int(config.get("delegation_depth") or 0),
+            root_exec_id=str(
+                config.get("root_execution_id")
+                or config.get("execution_id")
+                or config.get("workflow_id")
+                or uuid.uuid4().hex
+            ),
+            approval_id=config.get("approval_id") or None,
+        )
+
+    # ----------------------------------------------------------------
     # Plugin fast-path (Wave 11.B.1): if this node_type is a
     # BaseNode subclass, invoke BaseNode.execute_as_tool() — the
     # plugin is the single source of truth for both workflow-node
