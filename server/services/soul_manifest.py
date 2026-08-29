@@ -90,6 +90,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 1: persistent recall + outbound Telegram
             _cap("simpleMemory"),
             _cap("telegramSend"),
+            # Phase 2: search tools
+            _cap("braveSearch"),
+            _cap("perplexitySearch"),
         ),
         _manifest(
             "maren",
@@ -108,6 +111,8 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 1: persistent recall + outbound Telegram
             _cap("simpleMemory"),
             _cap("telegramSend"),
+            # Phase 2: GitHub (backend/infra VCS)
+            _cap("githubAction"),
         ),
         _manifest(
             "cael",
@@ -124,6 +129,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 1: persistent recall + outbound Telegram
             _cap("simpleMemory"),
             _cap("telegramSend"),
+            # Phase 2: GitHub + Vercel (frontend VCS + deploy context); no code executor added
+            _cap("githubAction"),
+            _cap("vercelAction"),
         ),
         _manifest(
             "argus",
@@ -154,6 +162,9 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 1: persistent recall + outbound Telegram
             _cap("simpleMemory"),
             _cap("telegramSend"),
+            # Phase 2: browser harness for E2E tests and visual QA
+            _cap("browser"),
+            _cap("browserHarness"),
         ),
         _manifest(
             "reeve",
