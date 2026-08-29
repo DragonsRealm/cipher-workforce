@@ -258,38 +258,22 @@ class HumanApprovalQueue:
     def poll(self, approval_id: str) -> str:
         """Return the current state of an approval row.
 
-        Polls the pending list.  Returns PENDING, APPROVED, DENIED, CONSUMED,
-        or EXPIRED.  Raises RuntimeError if the store is unreachable.
-
-        Note: the current cipherd server only returns rows that are still
-        PENDING.  Rows that have moved to APPROVED/DENIED/CONSUMED are not
-        listed.  The governor treats an absence from the pending list as
-        PENDING (safe: triggers re-enqueue).  A dedicated /status endpoint
-        can be added in a future increment.
+        Calls GET /approvals/{approval_id} directly and returns the state
+        field from the response.  Returns PENDING on 404 (fail-closed: treat
+        unknown id as not-yet-approved).  Raises RuntimeError on any other
+        error.
         """
-        result = _http("GET", "/approvals/pending")
-        rows = result.get("rows", [])
-        for row in rows:
-            if row["approval_id"] == approval_id:
-                return row["state"]
-        # Not in pending list — unknown state; return PENDING to trigger
-        # re-enqueue (same semantics as local governor.py for unknown ids).
-        return STATE_PENDING
-
-    def approve(
-        self,
-        approval_id: str,
-        approver: str = "dragon",
-        task_id: Optional[str] = None,
-    ) -> bool:
-        """Mark an approval row APPROVED.  Returns True on success."""
-        result = _http("POST", f"/approvals/{approval_id}/approve")
-        return bool(result.get("ok"))
-
-    def deny(self, approval_id: str, approver: str = "dragon") -> bool:
-        """Mark an approval row DENIED.  Returns True on success."""
-        result = _http("POST", f"/approvals/{approval_id}/reject")
-        return bool(result.get("ok"))
+        try:
+            result = _http("GET", f"/approvals/{approval_id}")
+            return result["state"]
+        except RuntimeError as exc:
+            if "HTTP 404" in str(exc):
+                logger.warning(
+                    "poll(): approval_id %s not found (404); treating as PENDING",
+                    approval_id,
+                )
+                return STATE_PENDING
+            raise
 
     def atomic_consume(self, approval_id: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Atomic CAS APPROVED → CONSUMED.
