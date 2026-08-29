@@ -199,13 +199,17 @@ class TestWebhookHmac:
         with patch.object(webhook_store, "_load_hmac_secret", return_value=b"secret"):
             assert webhook_store.verify_hmac(b"body", None) is False
 
-    def test_no_secret_configured_accepts_all(self):
-        """If no HMAC secret is configured, all events are accepted (open path)."""
+    def test_no_secret_configured_fails_closed(self):
+        """If no HMAC secret is configured, all requests are rejected (fail closed).
+
+        Argus F2: the prior fail-open behavior was a HIGH security defect.
+        An unconfigured endpoint must never silently accept requests as verified.
+        """
         from services import webhook_store
 
         with patch.object(webhook_store, "_load_hmac_secret", return_value=None):
-            assert webhook_store.verify_hmac(b"body", None) is True
-            assert webhook_store.verify_hmac(b"body", "sha256=garbage") is True
+            assert webhook_store.verify_hmac(b"body", None) is False
+            assert webhook_store.verify_hmac(b"body", "sha256=garbage") is False
 
     def test_event_stored_in_db(self, tmp_path):
         from services import webhook_store

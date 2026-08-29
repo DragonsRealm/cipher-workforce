@@ -22,16 +22,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-# Keys that workforce_env is NEVER permitted to surface, even if they somehow
-# appear in the isolated file (belt-and-suspenders against a misconfigured file
-# that re-exports the process env via 'export' statements from another source).
-_BLOCKED_PREFIXES = (
-    "CIPHER_",
-    "ANTHROPIC_",
-    "STRIPE_",
-    "GOOGLE_",  # Google keys for UpStage/production — Dragon-gated; see D4
-    "OPENAI_",
-)
+# Only keys whose names start with WORKFORCE_ are permitted to enter the
+# capability plane.  Everything else — CIPHERD_*, CIPHER_*, ANTHROPIC_*,
+# TELEGRAM_*, API_KEY_*, STRIPE_*, GOOGLE_*, and any future credential — is
+# excluded by default.  An allowlist makes this structurally correct rather
+# than a deny-list that must be updated whenever a credential is renamed.
+_ALLOWED_PREFIX = "WORKFORCE_"
 
 _WORKFORCE_ENV_PATH = Path.home() / ".cipheros" / "workforce" / ".env"
 
@@ -71,12 +67,13 @@ def _load_env() -> dict[str, str]:
     Cache is invalidated by calling ``reload_workforce_env()``.
     """
     raw = _parse_dotenv(_WORKFORCE_ENV_PATH)
-    # Enforce blocked prefixes — fail closed, not silently
+    # Allowlist: only WORKFORCE_* keys enter the capability plane.
     safe: dict[str, str] = {}
     for k, v in raw.items():
-        if any(k.startswith(p) for p in _BLOCKED_PREFIXES):
-            continue  # silently drop; never surface
-        safe[k] = v
+        if k.startswith(_ALLOWED_PREFIX):
+            safe[k] = v
+        # All other keys (CIPHERD_*, CIPHER_*, ANTHROPIC_*, TELEGRAM_*,
+        # API_KEY_*, STRIPE_*, GOOGLE_*, etc.) are silently excluded.
     return safe
 
 

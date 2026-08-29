@@ -3,13 +3,14 @@
 Two dispatch paths:
 
 1. **Plugin-owned WebhookSource** (Wave 12 framework). Plugins register
-   a :class:`services.events.WebhookSource` for their path; the router
-   verifies the signature, shapes a :class:`WorkflowEvent`, and queues
-   it onto the source. The source's owning plugin pulls events via
-   ``source.emit()`` and dispatches into ``event_waiter``.
+   a :class:`services.events.WebhookSource` for their path and shape a
+   :class:`WorkflowEvent` envelope.  This router does NOT perform HMAC
+   verification — sources that need it must call
+   ``webhook_store.verify_hmac`` before invoking ``source.handle()``.
 2. **Legacy generic webhook** (pre-framework). Falls through to
-   ``broadcaster.send_custom_event("webhook_received", …)`` so existing
-   ``webhookTrigger`` nodes keep working untouched.
+   ``broadcast_webhook_received`` so existing ``webhookTrigger`` nodes
+   keep working untouched.  No signature verification is applied on this
+   path either.
 """
 
 from fastapi import APIRouter, HTTPException, Request

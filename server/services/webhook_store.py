@@ -76,10 +76,11 @@ def verify_hmac(payload: bytes, signature_header: Optional[str]) -> bool:
         ``False`` if a secret is configured and the signature is absent or wrong.
     """
     secret = _load_hmac_secret()
-    if secret is None:
-        # No secret configured — accept unauthenticated (consistent with
-        # upstream behaviour; callers may enforce via path-level registration)
-        return True
+    if not secret:
+        # No secret configured — fail closed.  An unconfigured endpoint must
+        # never accept requests; returning True here would silently convert a
+        # signed endpoint into accept-everything (Argus F2).
+        return False
     if not signature_header:
         return False
     expected = "sha256=" + hmac.new(secret, payload, hashlib.sha256).hexdigest()
