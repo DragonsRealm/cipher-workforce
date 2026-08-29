@@ -248,6 +248,7 @@ class HumanApprovalQueue:
         root_exec_id: str,
         autonomy: str = "write",
         context: Optional[Dict[str, Any]] = None,
+        requester_id: str = "cipher-workforce",
     ) -> str:
         """Enqueue a soul dispatch for human approval.  Returns approval_id."""
         result = _http("POST", "/approvals/submit", {
@@ -256,6 +257,7 @@ class HumanApprovalQueue:
             "root_exec_id": root_exec_id,
             "autonomy": autonomy,
             "context": context or {},
+            "requester_id": requester_id,
         })
         return result["approval_id"]
 
@@ -474,6 +476,7 @@ class ApprovalGovernor:
             root_exec_id=root_exec_id,
             autonomy=autonomy,
             context=context,
+            requester_id="cipher-workforce",
         )
         _audit({
             "decision": "PENDING",
@@ -481,6 +484,7 @@ class ApprovalGovernor:
             "soul": soul,
             "root_exec_id": root_exec_id,
             "approval_id": new_approval_id,
+            "requester_id": "cipher-workforce",
         })
         return {
             "action": "PENDING",

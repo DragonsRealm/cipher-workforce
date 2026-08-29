@@ -1,0 +1,41 @@
+{
+  "id": "argus_security_scan",
+  "name": "Argus Security Scan",
+  "description": "Daily/weekly security audit — DCS soul dispatch for Argus via cron trigger",
+  "nodes": [
+    {
+      "id": "cron_1",
+      "type": "cronScheduler",
+      "position": {"x": 250, "y": 150},
+      "data": {"label": "Daily Security Audit"}
+    },
+    {
+      "id": "soul_1",
+      "type": "dcsSoul",
+      "position": {"x": 500, "y": 150},
+      "data": {"label": "Argus Dispatch"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "cron_1",
+      "target": "soul_1",
+      "sourceHandle": "output_0",
+      "targetHandle": "input-main"
+    }
+  ],
+  "nodeParameters": {
+    "cron_1": {
+      "frequency": "days",
+      "timezone": "America/New_York",
+      "schedule_description": "Daily at 06:00"
+    },
+    "soul_1": {
+      "soul": "argus",
+      "task": "Run the DCS security audit: review recent cipherd approval logs, check workforce env credential isolation, scan for any new endpoints that bypass Gate 3, verify HMAC secrets are rotated per schedule. Report findings to soul-mail.",
+      "autonomy": "report-only"
+    }
+  },
+  "version": "0.0.36"
+}
