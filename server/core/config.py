@@ -553,7 +553,16 @@ class Settings(BaseSettings):
         return self._resolve_under_data(self.workspace_base_dir)
 
     model_config = {
-        "env_file": "../.env",
+        # Load order: base defaults first, then cipher-workforce isolated
+        # credentials (wins). The isolated env at ~/.cipheros/workforce/.env
+        # carries API_KEY_ENCRYPTION_KEY and other secrets and must NEVER be
+        # committed. The repo-root .env carries only ports, flags, and dev
+        # placeholders — it IS committed. Pydantic v2 applies env_file entries
+        # left-to-right with later entries overriding earlier ones.
+        "env_file": [
+            "../.env",
+            str(Path.home() / ".cipheros" / "workforce" / ".env"),
+        ],
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         # ``ignore`` lets stale ``.env`` files survive obsolete vars

@@ -280,6 +280,18 @@ class VectorStoreNode(ActionNode):
         backend = "chroma" if backend_raw in ("chroma", "chromadb") else backend_raw
         collection = params.collection_name
 
+        # Per-soul namespacing: if the workflow execution context carries a
+        # soul_id, override the collection name to ``soul_<soul_id>``.
+        # This enforces cross-soul isolation at the collection level.
+        # The soul_id is server-derived from ctx.raw (the raw execution context
+        # dict populated by the executor); model content never reaches this path.
+        soul_id: Optional[str] = None
+        if ctx.raw:
+            soul_id = ctx.raw.get("soul_id") or ctx.raw.get("soul")
+        if soul_id:
+            from services.memory.soul_namespace import soul_collection_name
+            collection = soul_collection_name(soul_id)
+
         if backend == "chroma":
             result = await _chroma_op(operation, p, collection)
         elif backend == "qdrant":

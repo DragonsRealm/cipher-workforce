@@ -1105,4 +1105,5 @@ def get_backend(
     )
     os.makedirs(root, exist_ok=True)
     get_logger(__name__).info("[Filesystem] root=%s", root)
-    return WorkspaceBackend(root_dir=root, inherit_env=True)
+    from services.safe_env import build_safe_env
+    return WorkspaceBackend(root_dir=root, inherit_env=False, env=build_safe_env())

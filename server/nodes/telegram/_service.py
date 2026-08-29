@@ -396,10 +396,12 @@ class TelegramService(ServiceSingleton):
     @property
     def owner_chat_id(self) -> Optional[int]:
         """Bot owner's chat ID (auto-captured on first private message).
-        Falls back to TELEGRAM_OWNER_CHAT_ID env var."""
+        Falls back to TELEGRAM_OWNER_CHAT_ID in the isolated credential env
+        (~/.cipheros/workforce/.env) — never reads os.environ directly."""
         if self._owner_chat_id:
             return self._owner_chat_id
-        env_owner = os.environ.get("TELEGRAM_OWNER_CHAT_ID")
+        from ._cw_env import telegram_owner_chat_id_default
+        env_owner = telegram_owner_chat_id_default() or os.environ.get("TELEGRAM_OWNER_CHAT_ID")
         if env_owner:
             try:
                 self._owner_chat_id = int(env_owner)
@@ -455,6 +457,12 @@ class TelegramService(ServiceSingleton):
                 token = secrets.get("api_key")
             except PermissionError:
                 pass
+        # Final fallback: isolated credential env (~/.cipheros/workforce/.env).
+        # This runs AFTER credentials.db so that a stored token always wins.
+        # Never reads os.environ directly for the bot token.
+        if not token:
+            from ._cw_env import telegram_bot_token_default
+            token = telegram_bot_token_default() or None
         if not token:
             return {"success": False, "error": "Bot token required"}
 
