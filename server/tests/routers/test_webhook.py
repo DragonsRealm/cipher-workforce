@@ -99,6 +99,7 @@ class TestGetHandshake:
         source = _RecordingSource()
         clean_registry[source.path] = source
 
+        # GET requests are exempt from HMAC enforcement (subscription handshakes).
         with patch("services.event_waiter.dispatch"):
             resp = client.get("/webhook/recording")
 
@@ -112,7 +113,10 @@ class TestGetHandshake:
         source = _HandshakeSource()
         clean_registry[source.path] = source
 
-        with patch("services.event_waiter.dispatch"):
+        # Patch verify_hmac to True so this test focuses on GET-vs-POST routing,
+        # not HMAC — HMAC enforcement is covered by TestHmacEnforcement.
+        with patch("services.event_waiter.dispatch"), \
+             patch("services.webhook_store.verify_hmac", return_value=True):
             resp = client.post("/webhook/handshake?hub.challenge=123", json={"a": 1})
 
         assert resp.status_code == 200
@@ -120,16 +124,61 @@ class TestGetHandshake:
         assert source.handled == 1
 
 
-class TestLegacyFallback:
-    def test_unclaimed_path_still_reaches_the_generic_handler(self, client, clean_registry):
-        """An unregistered path must keep firing webhookTrigger nodes."""
-        clean_registry.clear()
+class _NoSecretSource(_RecordingSource):
+    """Source with no HMAC secret configured (default-deny should reject)."""
+    type = "nosecret.hook"
+    path = "nosecret"
 
-        with patch("nodes.trigger.webhook_trigger._events.broadcast_webhook_received") as broadcast:
-            resp = client.post("/webhook/unclaimed", json={"hello": "world"})
+
+class _SkipSigSource(_RecordingSource):
+    """Source that declares skip_signature_check = True."""
+    type = "skipsig.hook"
+    path = "skipsig"
+    skip_signature_check = True
+
+
+class TestHmacEnforcement:
+    """Router-level HMAC default-deny (Argus Addendum 8)."""
+
+    def test_no_secret_configured_returns_401(self, client, clean_registry):
+        """When verify_hmac returns False (no secret), router must 401 before handle()."""
+        source = _NoSecretSource()
+        clean_registry[source.path] = source
+
+        with patch("services.webhook_store.verify_hmac", return_value=False):
+            resp = client.post("/webhook/nosecret", json={"event": "test"})
+
+        assert resp.status_code == 401
+        assert resp.json() == {"error": "webhook_signature_required"}
+        assert source.handled == 0, "handle() must NOT be called when HMAC fails"
+
+    def test_valid_signature_passes_through_to_handler(self, client, clean_registry):
+        """When verify_hmac returns True, handle() must be called normally."""
+        source = _NoSecretSource()
+        clean_registry[source.path] = source
+
+        with patch("services.webhook_store.verify_hmac", return_value=True):
+            resp = client.post(
+                "/webhook/nosecret",
+                json={"event": "test"},
+                headers={"x-hub-signature-256": "sha256=abc"},
+            )
 
         assert resp.status_code == 200
-        broadcast.assert_called_once()
-        payload = broadcast.call_args[0][0]
-        assert payload["path"] == "unclaimed"
-        assert payload["json"] == {"hello": "world"}
+        assert resp.json() == {"status": "received", "path": "nosecret"}
+        assert source.handled == 1
+
+    def test_skip_signature_check_bypasses_hmac(self, client, clean_registry):
+        """Sources with skip_signature_check=True must pass without any signature."""
+        source = _SkipSigSource()
+        clean_registry[source.path] = source
+
+        # verify_hmac is NOT called — if it were called (and returned False) the
+        # handler would return 401.  We assert the handler ran to prove it was skipped.
+        with patch("services.webhook_store.verify_hmac", return_value=False) as mock_verify:
+            resp = client.post("/webhook/skipsig", json={"event": "test"})
+
+        assert resp.status_code == 200
+        assert source.handled == 1
+        mock_verify.assert_not_called()
+

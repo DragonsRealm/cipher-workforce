@@ -1,0 +1,40 @@
+{
+  "id": "argus_incident_intake",
+  "name": "Argus Incident Intake",
+  "description": "Event-driven security incident intake — webhook triggers Argus dispatch",
+  "nodes": [
+    {
+      "id": "webhook_1",
+      "type": "webhookTrigger",
+      "position": {"x": 250, "y": 150},
+      "data": {"label": "Incident Webhook"}
+    },
+    {
+      "id": "soul_1",
+      "type": "dcsSoul",
+      "position": {"x": 500, "y": 150},
+      "data": {"label": "Argus Dispatch"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "webhook_1",
+      "target": "soul_1",
+      "sourceHandle": "output_0",
+      "targetHandle": "input-main"
+    }
+  ],
+  "nodeParameters": {
+    "webhook_1": {
+      "path": "dcs/incident",
+      "method": "POST"
+    },
+    "soul_1": {
+      "soul": "argus",
+      "task": "Security incident received via webhook. Triage the incident payload, assess severity, check for active exploitation, and recommend immediate containment steps. Report findings via soul-mail.",
+      "autonomy": "report-only"
+    }
+  },
+  "version": "0.0.36"
+}

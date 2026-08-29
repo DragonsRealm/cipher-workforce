@@ -121,6 +121,7 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("webhookTrigger"),
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
+            _cap("cronScheduler"),
         ),
         _manifest(
             "vera",
@@ -143,6 +144,7 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
+            _cap("cronScheduler"),
         ),
         _manifest(
             "zane",

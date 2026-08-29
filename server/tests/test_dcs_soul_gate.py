@@ -102,6 +102,12 @@ def test_no_approval_returns_pending_zero_spawned(tmp_path):
     assert "approval_id" in verdict
     mock_enqueue.assert_called_once()
     mock_popen.assert_not_called()
+    # M1: requester_id must appear in enqueue call kwargs
+    _, call_kwargs = mock_enqueue.call_args
+    assert "requester_id" in call_kwargs, (
+        "M1: enqueue() must include requester_id for audit trail"
+    )
+    assert call_kwargs["requester_id"] == "cipher-workforce"
 
 
 # ---------------------------------------------------------------------------

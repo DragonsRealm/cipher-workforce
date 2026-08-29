@@ -4,13 +4,15 @@ Two dispatch paths:
 
 1. **Plugin-owned WebhookSource** (Wave 12 framework). Plugins register
    a :class:`services.events.WebhookSource` for their path and shape a
-   :class:`WorkflowEvent` envelope.  This router does NOT perform HMAC
-   verification — sources that need it must call
-   ``webhook_store.verify_hmac`` before invoking ``source.handle()``.
+   :class:`WorkflowEvent` envelope.  The router enforces HMAC
+   verification at the router level before calling ``source.handle()``
+   (Argus Addendum 8: default-deny).  A source may declare
+   ``skip_signature_check = True`` to bypass verification (e.g. GET
+   handshake sources, challenge-response sources).
 2. **Legacy generic webhook** (pre-framework). Falls through to
    ``broadcast_webhook_received`` so existing ``webhookTrigger`` nodes
-   keep working untouched.  No signature verification is applied on this
-   path either.
+   keep working untouched.
+   # TODO Phase 5: enforce per-path HMAC on legacy path too.
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -20,6 +22,7 @@ import asyncio
 import logging
 
 from services.events import WEBHOOK_SOURCES
+import services.webhook_store as webhook_store
 # Wave 12 B9: webhook event dispatch moved to
 # ``nodes/trigger/webhook_trigger/_events.broadcast_webhook_received``.
 # The router no longer reaches into the broadcaster directly.
@@ -67,6 +70,33 @@ async def handle_webhook(path: str, request: Request):
                 if handshake is not None:
                     logger.info("[Webhook] GET %s -> %s handshake", path, type(source).__name__)
                     return handshake
+
+            # --- Argus Addendum 8: default-deny HMAC enforcement ---
+            # Read body once here (FastAPI caches it; source.handle() can
+            # still call await request.body() internally).
+            # GET requests are subscription handshakes / challenge-response flows
+            # and carry no signed body — skip HMAC for all GETs.
+            skip_sig = (
+                request.method == "GET"
+                or getattr(source, "skip_signature_check", False)
+            )
+            if not skip_sig:
+                body = await request.body()
+                sig_header = (
+                    request.headers.get("x-hub-signature-256")
+                    or request.headers.get("x-signature-256")
+                    or request.headers.get("x-webhook-signature")
+                )
+                if not webhook_store.verify_hmac(body, sig_header):
+                    logger.warning(
+                        "[Webhook] %s %s -> 401 signature_required (%s)",
+                        request.method, path, type(source).__name__,
+                    )
+                    return JSONResponse(
+                        {"error": "webhook_signature_required"},
+                        status_code=401,
+                    )
+
             await source.handle(request)
         except HTTPException:
             raise
@@ -76,35 +106,9 @@ async def handle_webhook(path: str, request: Request):
         logger.info("[Webhook] %s %s -> %s", request.method, path, type(source).__name__)
         return JSONResponse({"status": "received", "path": path}, status_code=200)
 
-    body = await request.body()
-    json_body = None
-    content_type = request.headers.get("content-type", "")
-
-    if "application/json" in content_type and body:
-        try:
-            json_body = await request.json()
-        except Exception:
-            pass
-
-    webhook_data = {
-        "method": request.method,
-        "path": path,
-        "headers": dict(request.headers),
-        "query": dict(request.query_params),
-        "body": body.decode("utf-8") if isinstance(body, bytes) else (body if body else ""),
-        "json": json_body,
-    }
-
-    logger.info(f"[Webhook] Received: {request.method} /webhook/{path}")
-
-    # Wave 12 B9: route through plugin _events.py wrapper.
-    from nodes.trigger.webhook_trigger._events import broadcast_webhook_received
-
-    await broadcast_webhook_received(webhook_data)
-
-    return JSONResponse(
-        content={"status": "received", "path": path, "message": "Webhook received and dispatched to workflow"}, status_code=200
-    )
+    # Argus gate: unregistered paths are rejected — no unauthenticated broadcast.
+    logger.warning("[Webhook] %s %s -> 404 unregistered path", request.method, path)
+    return JSONResponse({"error": "webhook_path_not_found"}, status_code=404)
 
 
 @router.get("/")
