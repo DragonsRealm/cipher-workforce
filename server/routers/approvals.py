@@ -1,195 +1,23 @@
 """
 CIPHER OS — Human Approval Panel
 
-GET  /approvals           — Serves the HTML approval panel (no auth required; browser page load)
-GET  /api/approvals       — List pending approvals (Bearer token required)
-POST /api/approvals/{id}/approve — Approve a pending dispatch (Bearer token required)
-POST /api/approvals/{id}/reject  — Reject a pending dispatch  (Bearer token required)
+GET /approvals — Serves the HTML approval panel (no auth required; browser page load).
 
-Security (Argus Gate 3): only a human approver holding the correct Bearer token may
-grant or reject. No agent reaches this surface — it is served as a browser page and
-requires interactive token entry.
+The API endpoints (GET/POST /api/approvals/…) are handled by the Argus Gate 3 router
+mounted from server/services/approval/api.py — do NOT duplicate them here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import sqlite3
-import time
-from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ---------------------------------------------------------------------------
-# Auth helper — Bearer token gate
-# ---------------------------------------------------------------------------
-
-# The approval token is set via CIPHER_APPROVAL_TOKEN env var.
-# If unset the surface is disabled (all API calls return 503).
-
-_APPROVAL_TOKEN_ENV = "CIPHER_APPROVAL_TOKEN"
-
-
-def _get_token() -> str | None:
-    return os.environ.get(_APPROVAL_TOKEN_ENV)
-
-
-def _require_bearer(authorization: str = Header(default="")) -> str:
-    token = _get_token()
-    if token is None:
-        raise HTTPException(
-            status_code=503,
-            detail=f"{_APPROVAL_TOKEN_ENV} is not configured on this server.",
-        )
-    scheme, _, provided = authorization.partition(" ")
-    if scheme.lower() != "bearer" or provided.strip() != token:
-        raise HTTPException(status_code=401, detail="Invalid or missing Bearer token.")
-    return provided.strip()
-
-
-# ---------------------------------------------------------------------------
-# DB helpers (read-only path to governor store)
-# ---------------------------------------------------------------------------
-
-_DB_PATH = os.path.expanduser("~/.cipheros/soul_approvals.db")
-
-STATE_PENDING = "PENDING"
-APPROVAL_TTL_SECONDS = 1800  # mirrors governor.py
-
-
-def _open_db() -> sqlite3.Connection:
-    if not os.path.exists(_DB_PATH):
-        return None  # type: ignore[return-value]
-    conn = sqlite3.connect(_DB_PATH, timeout=5, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-def _list_pending() -> List[Dict[str, Any]]:
-    conn = _open_db()
-    if conn is None:
-        return []
-    try:
-        now = time.time()
-        rows = conn.execute(
-            """
-            SELECT approval_id, root_exec_id, soul, state,
-                   created_at, expires_at, notes
-            FROM soul_approvals
-            WHERE state = ?
-              AND expires_at > ?
-            ORDER BY created_at ASC
-            """,
-            (STATE_PENDING, now),
-        ).fetchall()
-        result = []
-        for row in rows:
-            notes: Dict[str, Any] = {}
-            try:
-                notes = json.loads(row["notes"] or "{}")
-            except (json.JSONDecodeError, TypeError):
-                pass
-            result.append(
-                {
-                    "approval_id": row["approval_id"],
-                    "root_exec_id": row["root_exec_id"],
-                    "soul": row["soul"],
-                    "state": row["state"],
-                    "created_at": row["created_at"],
-                    "expires_at": row["expires_at"],
-                    "autonomy": notes.get("autonomy", "write"),
-                    "context": notes.get("context", {}),
-                }
-            )
-        return result
-    finally:
-        conn.close()
-
-
-def _set_state(approval_id: str, new_state: str) -> bool:
-    """Transition a PENDING row to new_state. Returns True on success."""
-    conn = _open_db()
-    if conn is None:
-        return False
-    try:
-        with conn:
-            cur = conn.execute(
-                "UPDATE soul_approvals SET state=? "
-                "WHERE approval_id=? AND state=?",
-                (new_state, approval_id, STATE_PENDING),
-            )
-            return cur.rowcount == 1
-    except sqlite3.Error as exc:
-        logger.error("approval state update failed: %s", exc)
-        return False
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
-# API routes
-# ---------------------------------------------------------------------------
-
-
-@router.get("/api/approvals", response_class=JSONResponse)
-async def list_approvals(_token: str = Depends(_require_bearer)):
-    """Return all pending (non-expired) approval requests."""
-    return {"approvals": _list_pending()}
-
-
-@router.post("/api/approvals/{approval_id}/approve", response_class=JSONResponse)
-async def approve_dispatch(
-    approval_id: str,
-    _token: str = Depends(_require_bearer),
-):
-    """Approve a pending soul dispatch."""
-    pending = _list_pending()
-    matching = [r for r in pending if r["approval_id"] == approval_id]
-    if not matching:
-        raise HTTPException(
-            status_code=409,
-            detail="Approval not found or already actioned.",
-        )
-    soul = matching[0]["soul"]
-    ok = _set_state(approval_id, "APPROVED")
-    if not ok:
-        raise HTTPException(status_code=409, detail="Already actioned.")
-    logger.info("Approval APPROVED: %s (soul=%s)", approval_id, soul)
-    return {"status": "approved", "approval_id": approval_id, "soul": soul}
-
-
-@router.post("/api/approvals/{approval_id}/reject", response_class=JSONResponse)
-async def reject_dispatch(
-    approval_id: str,
-    _token: str = Depends(_require_bearer),
-):
-    """Reject (deny) a pending soul dispatch."""
-    pending = _list_pending()
-    matching = [r for r in pending if r["approval_id"] == approval_id]
-    if not matching:
-        raise HTTPException(
-            status_code=409,
-            detail="Approval not found or already actioned.",
-        )
-    soul = matching[0]["soul"]
-    ok = _set_state(approval_id, "DENIED")
-    if not ok:
-        raise HTTPException(status_code=409, detail="Already actioned.")
-    logger.info("Approval DENIED: %s (soul=%s)", approval_id, soul)
-    return {"status": "rejected", "approval_id": approval_id, "soul": soul}
-
-
-# ---------------------------------------------------------------------------
-# Browser panel — GET /approvals
-# ---------------------------------------------------------------------------
 
 _PANEL_HTML = r"""<!doctype html>
 <html lang="en">

@@ -12,7 +12,7 @@ Security contract (non-negotiable):
 
 Smoke-test curl examples (set TOKEN and SERVER as appropriate):
 
-  TOKEN="your-secret-here"
+  TOKEN="$CIPHER_APPROVAL_TOKEN"
   SERVER="http://localhost:5678"
 
   # List pending approvals
@@ -52,7 +52,7 @@ router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 # Auth helpers
 # ---------------------------------------------------------------------------
 
-_UNCONFIGURED_DETAIL = "Approval surface not configured — set APPROVAL_SURFACE_SECRET"
+_UNCONFIGURED_DETAIL = "Approval surface not configured — set CIPHER_APPROVAL_TOKEN"
 
 
 def _check_auth(authorization: Optional[str]) -> None:
@@ -63,7 +63,7 @@ def _check_auth(authorization: Optional[str]) -> None:
     - header missing or wrong token → 401
     Never returns without raising when auth fails.
     """
-    secret = os.environ.get("APPROVAL_SURFACE_SECRET")
+    secret = os.environ.get("CIPHER_APPROVAL_TOKEN")
     if not secret:
         raise HTTPException(status_code=503, detail=_UNCONFIGURED_DETAIL)
 
