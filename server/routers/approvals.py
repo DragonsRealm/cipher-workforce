@@ -340,22 +340,11 @@ const REFRESH_INTERVAL = 20;
   tickClock();
   setInterval(tickClock, 1000);
 
-  // Prefer URL param, then sessionStorage
-  const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get("token") || "";
+  // Token must be provided via the on-screen input and is stored in sessionStorage only.
+  // URL ?token= parameter has been removed — tokens must never appear in access logs.
   const stored = (() => { try { return sessionStorage.getItem("cipher_approval_token") || ""; } catch { return ""; } })();
 
-  if (urlToken) {
-    _token = urlToken;
-    // Clean the token from the URL without reload
-    const clean = new URL(window.location.href);
-    clean.searchParams.delete("token");
-    history.replaceState(null, "", clean.toString());
-    saveToken(_token);
-    showPanel();
-    loadApprovals();
-    startCountdown();
-  } else if (stored) {
+  if (stored) {
     _token = stored;
     showPanel();
     loadApprovals();

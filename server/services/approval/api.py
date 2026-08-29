@@ -29,6 +29,7 @@ Smoke-test curl examples (set TOKEN and SERVER as appropriate):
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -71,7 +72,7 @@ def _check_auth(authorization: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or parts[1] != secret:
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not hmac.compare_digest(secret, parts[1]):
         raise HTTPException(status_code=401, detail="Invalid or missing Bearer token")
 
 
