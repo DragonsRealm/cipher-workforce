@@ -611,21 +611,34 @@ class ApprovalGovernor:
 # ---------------------------------------------------------------------------
 
 def _contains_path_escape(value: str) -> bool:
-    """Return True if value contains path traversal or absolute-path indicators."""
+    """Return True if value contains path traversal or absolute-path indicators.
+
+    Rejects:
+    - Directory traversal sequences (``../``, ``..\\``)
+    - Null bytes
+    - Percent-encoded traversal/separator characters
+    - Strings that start with ``/`` or ``\`` (absolute paths)
+
+    Does NOT reject every string containing a forward slash — task briefs
+    legitimately contain URLs, Unix-style arguments, and file paths.
+    """
     if not isinstance(value, str):
         return True
-    checks = (
+    traversal_checks = (
         "../",
         ".." + os.sep,
-        "/",
-        "\\",
         "\x00",
         "%2e",
         "%2f",
         "%5c",
     )
     lower = value.lower()
-    return any(c in lower for c in checks)
+    if any(c in lower for c in traversal_checks):
+        return True
+    # Reject absolute-path inputs (start with / or \).
+    if value.startswith("/") or value.startswith("\\"):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------

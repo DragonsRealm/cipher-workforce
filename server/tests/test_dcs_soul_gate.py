@@ -335,6 +335,119 @@ def test_path_escape_refused(tmp_path, soul, task, label):
 
 
 # ---------------------------------------------------------------------------
+# F1: Concurrency lock durable across dispatch lifecycle
+# ---------------------------------------------------------------------------
+
+def test_f1_spawn_calls_proc_wait(tmp_path, monkeypatch):
+    """F1: _spawn_soul_dispatch calls proc.wait() so the lock is held for the
+    full dispatch lifecycle and cannot be raced by a second approval.
+    """
+    import inspect
+    import nodes.agent.dcs_soul as soul_mod
+
+    src = inspect.getsource(soul_mod._spawn_soul_dispatch)
+    assert "proc.wait()" in src, (
+        "F1: _spawn_soul_dispatch must call proc.wait() to hold the "
+        "concurrency lock for the full dispatch lifecycle"
+    )
+
+
+def test_f1_lock_busy_during_dispatch(tmp_path):
+    """F1: The soul dispatch lock is busy while _spawn_soul_dispatch is running.
+
+    A real subprocess that sleeps 2 seconds is spawned.  During that sleep
+    the lock must be un-acquirable from a second process.
+    """
+    import sys
+    import time
+    import nodes.agent.dcs_soul as soul_mod
+    import services.approval.governor as gov_mod
+
+    # Patch lock path to the test tmp dir
+    orig_lock_path = gov_mod._LOCK_PATH
+    gov_mod._LOCK_PATH = tmp_path / "soul_dispatch.lock"
+
+    # Patch dispatch script to a tiny sleep script
+    sleep_script = tmp_path / "slow_dispatch.py"
+    sleep_script.write_text("import time; time.sleep(2)\n")
+    orig_dispatch = soul_mod._DISPATCH_SCRIPT
+    orig_argv = soul_mod._ARGV_TEMPLATE[:]
+    soul_mod._DISPATCH_SCRIPT = sleep_script
+    soul_mod._ARGV_TEMPLATE = [sys.executable, str(sleep_script)]
+
+    lock_was_busy = []
+
+    def _run_dispatch():
+        with gov_mod._soul_lock(blocking=True) as acquired:
+            assert acquired
+            soul_mod._spawn_soul_dispatch(
+                soul="maren",
+                task="test task",
+                context={},
+                task_id="tid_f1",
+                approval_id="appr_f1",
+                row={"root_exec_id": "root_f1"},
+            )
+
+    dispatch_thread = threading.Thread(target=_run_dispatch, daemon=True)
+    dispatch_thread.start()
+
+    # Give the dispatch time to start and hold the lock
+    time.sleep(0.4)
+
+    # Attempt a non-blocking lock acquire — must fail while dispatch runs
+    with gov_mod._soul_lock(blocking=False) as acquired2:
+        lock_was_busy.append(not acquired2)
+
+    dispatch_thread.join(timeout=10)
+
+    # Restore
+    gov_mod._LOCK_PATH = orig_lock_path
+    soul_mod._DISPATCH_SCRIPT = orig_dispatch
+    soul_mod._ARGV_TEMPLATE = orig_argv
+
+    assert any(lock_was_busy), (
+        "F1: Lock was NOT busy during dispatch — fix did not hold the lock "
+        "across the full dispatch lifecycle"
+    )
+
+
+# ---------------------------------------------------------------------------
+# F2: Path-escape guard allows legitimate task text containing /
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value,expect_escape,label", [
+    # Traversal — must be detected
+    ("../etc/passwd", True, "double_dot_slash"),
+    ("../../secrets", True, "double_dot_slash_deep"),
+    ("foo\x00bar", True, "null_byte"),
+    ("%2e%2e%2f", True, "pct_encoded_traversal"),
+    # Absolute paths — must be detected
+    ("/etc/passwd", True, "absolute_posix"),
+    ("\\windows\\system32", True, "absolute_windows"),
+    # Legitimate task content containing / — must NOT be detected
+    ("use /usr/bin/python to run the script", False, "path_in_task_text"),
+    ("fetch https://example.com/api/v1/data and parse it", False, "url_in_task"),
+    ("write a script that reads from /tmp/out.txt", False, "path_in_middle"),
+    ("run grep -r foo /var/log/syslog", False, "unix_arg_in_task"),
+    # Plain task with no special chars
+    ("analyze the codebase and write tests", False, "plain_task"),
+    ("maren", False, "plain_soul_name"),
+])
+def test_f2_path_escape_guard_precision(value, expect_escape, label):
+    """F2: _contains_path_escape catches traversal/absolute-path indicators
+    without refusing legitimate task briefs that contain forward slashes.
+    """
+    from services.approval.governor import _contains_path_escape
+
+    result = _contains_path_escape(value)
+    assert result == expect_escape, (
+        f"[{label}] _contains_path_escape({value!r}) returned {result}, "
+        f"expected {expect_escape}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Bonus: tools.py inheritance defect fix (C3)
 # ---------------------------------------------------------------------------
 

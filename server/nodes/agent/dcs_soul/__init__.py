@@ -376,7 +376,10 @@ def _spawn_soul_dispatch(
             ),
         }
 
-    # Spawn — non-blocking, daemon process
+    # Spawn and wait — hold the concurrency lock for the full dispatch lifecycle.
+    # proc.wait() blocks until the dispatch process exits, which keeps the
+    # caller's _soul_lock held.  Without this, the lock drops the instant
+    # Popen returns and a second approval can race through immediately.
     try:
         proc = subprocess.Popen(
             argv,
@@ -386,6 +389,8 @@ def _spawn_soul_dispatch(
             start_new_session=True,
         )
         logger.info("Dispatched soul=%s pid=%d task_id=%s", soul, proc.pid, task_id)
+        proc.wait()
+        logger.info("Dispatch complete soul=%s pid=%d task_id=%s", soul, proc.pid, task_id)
     except OSError as exc:
         logger.error("Failed to spawn dispatch process: %s", exc)
         return {
