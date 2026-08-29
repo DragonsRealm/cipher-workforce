@@ -240,10 +240,14 @@ class NodeExecutionActivities:
 
         try:
             # Each activity gets its own WebSocket connection from the pool
+            from services.authz.ws_gate import INTERNAL_TOKEN_HEADER, internal_ws_token
+
+            _token = internal_ws_token()
             async with self.session.ws_connect(
                 self.ws_url,
                 heartbeat=30,
                 receive_timeout=None,  # No receive timeout — we handle liveness via heartbeats
+                headers={INTERNAL_TOKEN_HEADER: _token} if _token else {},
             ) as ws:
                 await ws.send_json(message)
 

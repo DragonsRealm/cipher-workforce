@@ -1598,6 +1598,17 @@ async def websocket_status_endpoint(websocket: WebSocket):
     # Authenticate via cookie before accepting connection
     settings = container.settings()
 
+    # Handshake gate FIRST — loopback Host + trusted Origin (or shared token).
+    # This runs regardless of VITE_AUTH_ENABLED: with auth disabled the cookie
+    # branch below is skipped entirely, so without this a cross-origin page
+    # could open this socket and dispatch execute_node as the owner (CSWSH ->
+    # RCE). Fail-closed: no proof of same origin, no connection.
+    from services.authz.ws_gate import authorize_status_ws, refuse
+
+    if not authorize_status_ws(websocket, int(settings.port)):
+        await refuse(websocket, "unauthorized websocket origin")
+        return
+
     # Check if auth is disabled (VITE_AUTH_ENABLED=false)
     auth_disabled = settings.vite_auth_enabled and settings.vite_auth_enabled.lower() == "false"
 
@@ -1726,11 +1737,19 @@ async def websocket_status_endpoint(websocket: WebSocket):
 async def websocket_internal_endpoint(websocket: WebSocket):
     """Internal WebSocket endpoint for Temporal workers.
 
-    This endpoint bypasses authentication and is intended for internal
-    service-to-service communication (e.g., Temporal activity -> OpenCompany).
-
-    Security: Should only be exposed on localhost/internal network.
+    Service-to-service only (Temporal activity -> OpenCompany). It is in
+    ``PUBLIC_PATHS``, so the cookie middleware never sees it — the gate below is
+    the only thing standing between an arbitrary local client and the
+    ``execute_node`` dispatch this socket still exposes. Loopback Host + shared
+    per-host token + no Origin; anything else is refused before accept.
     """
+    from services.authz.ws_gate import authorize_internal_ws, refuse
+
+    settings = container.settings()
+    if not authorize_internal_ws(websocket, int(settings.port)):
+        await refuse(websocket, "unauthorized internal websocket")
+        return
+
     get_status_broadcaster()
     await websocket.accept()
 
