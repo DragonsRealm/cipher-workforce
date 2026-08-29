@@ -171,7 +171,11 @@ def _load_token() -> Optional[str]:
         if line.startswith("#") or "=" not in line:
             continue
         key, _, val = line.partition("=")
-        if key.strip() == "CIPHERD_APPROVAL_TOKEN":
+        key = key.strip()
+        # Strip 'export ' prefix so 'export KEY=val' is parsed the same as 'KEY=val'.
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key == "CIPHERD_APPROVAL_TOKEN":
             return val.strip()
     return None
 
@@ -258,39 +262,47 @@ class HumanApprovalQueue:
     def poll(self, approval_id: str) -> str:
         """Return the current state of an approval row.
 
-        Calls GET /approvals/{approval_id} directly and returns the state
-        field from the response.  Returns PENDING on 404 (fail-closed: treat
-        unknown id as not-yet-approved).  Raises RuntimeError on any other
-        error.
+        Calls GET /approvals/{approval_id} and returns the status field from
+        the response.
+
+        Returns STATE_DENIED if the server responds 403 (row was denied).
+        Raises RuntimeError with a clear "not_found" message on 404 so
+        callers can distinguish a missing row from a pending one.
+        Raises RuntimeError on any other error.
         """
         try:
             result = _http("GET", f"/approvals/{approval_id}")
-            return result["state"]
+            # Server returns {"status": "<state>", ...}.
+            return result["status"].upper()
         except RuntimeError as exc:
-            if "HTTP 404" in str(exc):
-                logger.warning(
-                    "poll(): approval_id %s not found (404); treating as PENDING",
-                    approval_id,
-                )
-                return STATE_PENDING
+            msg = str(exc)
+            if "HTTP 403" in msg:
+                # Server returns 403 for DENIED rows.
+                return STATE_DENIED
+            if "HTTP 404" in msg:
+                raise RuntimeError(
+                    f"poll(): approval_id {approval_id!r} not found on server"
+                ) from exc
             raise
 
     def atomic_consume(self, approval_id: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Atomic CAS APPROVED → CONSUMED.
 
-        Returns (True, row_data) on success or (False, None) on any failure.
+        Returns (True, row_data) on successful consume.
+        Returns (False, {"reason": "already_consumed"}) when the server reports
+        the row was already consumed (replay defence).
+        Raises RuntimeError on transport/availability failures so the caller
+        can distinguish a genuine replay defence from a network error.
         This is the security-critical operation: one approval, one spawn, no replay.
         """
-        try:
-            result = _http("POST", f"/approvals/{approval_id}/consume")
-            if result.get("ok"):
-                return True, result.get("row")
-            return False, None
-        except RuntimeError:
-            logger.error(
-                "Approval store unavailable during consume of %s", approval_id
-            )
-            return False, None
+        result = _http("POST", f"/approvals/{approval_id}/consume")
+        if result.get("ok"):
+            return True, result.get("row")
+        # Server returned ok=False — the row was already consumed or in a
+        # non-consumable state.  This is a legitimate replay defence, NOT a
+        # transport failure.
+        reason = result.get("reason", "already_consumed")
+        return False, {"reason": reason}
 
 
 # ---------------------------------------------------------------------------
@@ -410,8 +422,11 @@ class ApprovalGovernor:
             state = self._queue.poll(approval_id)
 
             if state == STATE_APPROVED:
-                consumed, row = self._queue.atomic_consume(approval_id)
-                if consumed and row:
+                # atomic_consume raises RuntimeError on transport failure;
+                # evaluate() catches that as governor_error → REFUSED, so
+                # transport failures are never misreported as replay attacks.
+                consumed, detail = self._queue.atomic_consume(approval_id)
+                if consumed:
                     _audit({
                         "decision": "APPROVED",
                         "reason": "approval_consumed",
@@ -419,7 +434,7 @@ class ApprovalGovernor:
                         "root_exec_id": root_exec_id,
                         "approval_id": approval_id,
                     })
-                    return {"action": "APPROVED", "approval_id": approval_id, "row": row}
+                    return {"action": "APPROVED", "approval_id": approval_id, "row": detail}
                 _audit({
                     "decision": "REFUSED",
                     "reason": "approval_already_consumed",
