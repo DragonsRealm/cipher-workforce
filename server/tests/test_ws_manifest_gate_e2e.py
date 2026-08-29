@@ -1,20 +1,23 @@
-"""WS-layer end-to-end manifest gate tests — Argus C3 requirement.
+"""WS-layer end-to-end manifest gate tests — Argus D2 requirement.
 
-These tests exercise the real /ws/internal path: a live ASGI handshake is
-made, an execute_node message is sent, and the response is asserted.  They
-do NOT use hand-built context dicts — the soul-plane marker and soul_id are
-set by the actual websocket_internal_endpoint handler reading the dispatch
-token from the connection header.
+Scenarios 1, 3, 4: call the real handle_execute_node with a mocked WebSocket
+carrying state.dispatch_soul_id / state.is_soul_plane, wired to a real
+NodeExecutor so node_executor.py's gate logic is exercised, not bypassed.
 
-Scenarios (Argus C3):
-1. No dispatch token -> unlisted node refused (fail-closed via _UNKNOWN_MANIFEST)
-2. Wrong / unresolvable token -> connection refused before accept (close 4403)
-3. Valid token + correct soul -> allowed node permitted; manifest applied correctly
+Scenario 2: TestClient verifies the connection-level 4403 refusal for a
+garbage dispatch token (this test was already passing; its assertion is
+unchanged and remains the only real detection-capable test from the original
+file per Argus's second-round ruling).
+
+Acceptance bar (Argus): change
+    if _is_soul_plane or _dispatch_soul_id:
+to
+    if False:
+in services/node_executor.py; at least one test in this suite must FAIL.
 """
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,123 +27,147 @@ from starlette.websockets import WebSocketDisconnect
 
 from services.authz.ws_gate import INTERNAL_TOKEN_HEADER, internal_ws_token
 from services.authz.dispatch_token import issue_dispatch_token, DISPATCH_TOKEN_HEADER
+from services.node_executor import NodeExecutor
 
 PORT = 5678
 HOST = f"127.0.0.1:{PORT}"
 _POLICY_CLOSE = 4403
 
+# Node type used in "no token" and "unlisted node" tests.  This type must NOT
+# appear in any soul manifest (including _UNKNOWN_MANIFEST) so the gate always
+# refuses it.
+_UNLISTED_NODE_TYPE = "superSecretPrivilegedNodeType_NEVER_IN_MANIFEST"
+
 
 # ---------------------------------------------------------------------------
-# Test stubs
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_settings():
-    s = MagicMock()
-    s.port = str(PORT)
-    s.vite_auth_enabled = "false"
-    return s
+def _make_node_executor() -> NodeExecutor:
+    """Real NodeExecutor with an empty handler registry.
+
+    _build_handler_registry is patched to {} to avoid importing all plugins.
+    This is safe: the manifest gate (node_executor.py lines 158-183) fires
+    BEFORE any handler lookup; refused executions return from the gate without
+    touching _handlers.
+    """
+    with patch.object(NodeExecutor, "_build_handler_registry", return_value={}):
+        return NodeExecutor(
+            database=MagicMock(),
+            ai_service=MagicMock(),
+            maps_service=MagicMock(),
+            text_service=MagicMock(),
+            android_service=MagicMock(),
+            settings=MagicMock(),
+        )
 
 
 def _make_broadcaster():
     b = MagicMock()
-
-    async def _connect(ws):
-        await ws.accept()
-
-    b.connect = AsyncMock(side_effect=_connect)
-    b.disconnect = AsyncMock()
     b.update_node_status = AsyncMock()
     b.workflow_run_started = AsyncMock()
     b.workflow_run_ended = AsyncMock()
-    b.get_status = MagicMock(return_value={})
-    b.connection_count = 0
     return b
 
 
-def _internal_headers(extra: dict | None = None) -> dict:
-    """Headers that satisfy the CSWSH gate for /ws/internal."""
-    h = {
-        "host": HOST,
-        INTERNAL_TOKEN_HEADER: internal_ws_token(),
+def _make_mock_websocket(*, is_soul_plane: bool, dispatch_soul_id: str | None):
+    """Mocked WebSocket carrying gate-relevant state attributes."""
+    ws = MagicMock()
+    ws.state = MagicMock()
+    ws.state.is_soul_plane = is_soul_plane
+    ws.state.dispatch_soul_id = dispatch_soul_id
+    return ws
+
+
+def _build_execute_node_data(
+    node_type: str,
+    node_id: str = "test-node-1",
+    workflow_id: str = "wf-test",
+    execution_id: str = "exec-test",
+) -> dict:
+    return {
+        "type": "execute_node",
+        "node_id": node_id,
+        "node_type": node_type,
+        "workflow_id": workflow_id,
+        "execution_id": execution_id,
+        "parameters": {},
+        "nodes": [],
+        "edges": [],
     }
-    if extra:
-        h.update(extra)
-    return h
 
 
-# ---------------------------------------------------------------------------
-# Fixture
-# ---------------------------------------------------------------------------
+async def _run_handle_execute_node(
+    data: dict,
+    is_soul_plane: bool,
+    dispatch_soul_id: str | None,
+    broadcaster,
+    real_executor: NodeExecutor,
+) -> dict:
+    """Drive handle_execute_node with a mocked WebSocket and real NodeExecutor.
 
+    Patches container and get_status_broadcaster so the handler uses the
+    provided broadcaster and calls through to real_executor.execute().
+    """
+    from routers.websocket import handle_execute_node
 
-@pytest.fixture(scope="module")
-def gate_client():
-    from routers.websocket import router as ws_router
-
-    app = FastAPI()
-    app.include_router(ws_router)
-
-    settings = _make_settings()
-    broadcaster = _make_broadcaster()
     mock_container = MagicMock()
+    settings = MagicMock()
+    settings.dlq_enabled = False
     mock_container.settings.return_value = settings
 
-    # Patch execution_principal so the handler doesn't blow up resolving user.
+    async def _execute_node_via_real_gate(
+        node_id, node_type, parameters=None, nodes=None, edges=None,
+        session_id="default", execution_id=None, workflow_id=None,
+        outputs=None, extras=None, user_id=None,
+    ):
+        context: dict = {
+            "session_id": session_id,
+            "execution_id": execution_id,
+            "workflow_id": workflow_id,
+            "nodes": nodes or [],
+            "edges": edges or [],
+            "outputs": outputs or {},
+        }
+        if extras:
+            context.update(extras)
+        return await real_executor.execute(
+            node_id=node_id,
+            node_type=node_type,
+            parameters=parameters or {},
+            context=context,
+        )
+
+    mock_container.workflow_service.return_value.execute_node = AsyncMock(
+        side_effect=_execute_node_via_real_gate
+    )
+
+    ws = _make_mock_websocket(
+        is_soul_plane=is_soul_plane,
+        dispatch_soul_id=dispatch_soul_id,
+    )
+
     with (
         patch("routers.websocket.container", mock_container),
         patch("routers.websocket.get_status_broadcaster", return_value=broadcaster),
         patch("routers.websocket.execution_principal", return_value="owner"),
     ):
-        with TestClient(app, raise_server_exceptions=False) as client:
-            yield client
+        return await handle_execute_node(data, ws)
 
 
-# ---------------------------------------------------------------------------
-# Helper: send a single execute_node message over an internal WS and collect
-# the first non-pong response.
-# ---------------------------------------------------------------------------
-
-
-def _execute_node_via_ws(
-    client: TestClient,
-    node_type: str,
-    extra_headers: dict | None = None,
-    extra_payload: dict | None = None,
-) -> dict | None:
-    """Connect to /ws/internal and send execute_node; return the first response dict.
-
-    Returns None if the connection was refused before we could exchange messages.
-    """
-    headers = _internal_headers(extra_headers)
-    payload = {
-        "type": "execute_node",
-        "node_id": "test-node-1",
-        "node_type": node_type,
-        "workflow_id": "wf-test",
-        "execution_id": "exec-test",
-        "parameters": {},
-        "nodes": [],
-        "edges": [],
-    }
-    if extra_payload:
-        payload.update(extra_payload)
-
-    try:
-        with client.websocket_connect("/ws/internal", headers=headers) as ws:
-            ws.send_json(payload)
-            # Drain up to 3 messages, skip pings.
-            for _ in range(3):
-                try:
-                    msg = ws.receive_json()
-                    if msg.get("type") != "ping":
-                        return msg
-                except Exception:
-                    break
-    except WebSocketDisconnect:
-        return None
-
-    return None
+def _error_calls_with_refusal_string(broadcaster) -> list:
+    """Return update_node_status calls carrying status='error' + 'fail-closed'."""
+    result = []
+    for c in broadcaster.update_node_status.call_args_list:
+        if len(c.args) < 2:
+            continue
+        if c.args[1] != "error":
+            continue
+        payload = c.args[2] if len(c.args) >= 3 else {}
+        if isinstance(payload, dict) and "fail-closed" in payload.get("error", ""):
+            result.append(c)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -149,103 +176,94 @@ def _execute_node_via_ws(
 
 
 class TestNoTokenRefused:
-    """Soul-plane connection with NO dispatch token; unlisted node must be refused.
+    """Soul-plane connection with NO dispatch token must refuse every node type.
 
-    The endpoint sets is_soul_plane=True and dispatch_soul_id=None.
+    handle_execute_node propagates _is_soul_plane=True, _dispatch_soul_id=None.
     NodeExecutor resolves soul_id="" -> _UNKNOWN_MANIFEST (zero capabilities).
-    Every node_type is unlisted, so any execute_node request must be refused.
+    Every node_type is unlisted -> refused (fail-closed).
+
+    MUTATION SENSITIVITY: disabling the gate in node_executor.py (if False:)
+    means the executor skips the manifest check and no "fail-closed" string
+    appears in any update_node_status call.  The assertion below goes RED.
     """
 
-    def test_no_dispatch_token_unlisted_node_refused(self, gate_client):
-        # Stub NodeExecutor to return a real refusal so we can assert on it.
-        refusal = {
-            "success": False,
-            "node_id": "test-node-1",
-            "node_type": "pythonExecutor",
-            "error": (
-                "Node type 'pythonExecutor' is not in the capability manifest "
-                "for soul 'unknown'. Execution refused (fail-closed)."
-            ),
-            "execution_time": 0.0,
-            "timestamp": "2026-01-01T00:00:00",
-            "execution_id": "exec-test",
-        }
-        mock_executor = AsyncMock(return_value=MagicMock(**refusal, **{"__getitem__": lambda s, k: refusal[k]}))
+    async def test_no_dispatch_token_unlisted_node_refused(self):
+        broadcaster = _make_broadcaster()
+        real_executor = _make_node_executor()
 
-        # Patch the workflow service execute_node to surface the refusal.
-        with patch(
-            "routers.websocket.WorkflowService",
-            MagicMock(return_value=MagicMock(execute_node=mock_executor)),
-        ):
-            # Connect WITHOUT a dispatch token header.
-            # The endpoint sets is_soul_plane=True, dispatch_soul_id=None.
-            # Node execution must be refused via the manifest gate in NodeExecutor.
-            try:
-                with gate_client.websocket_connect("/ws/internal", headers=_internal_headers()) as ws:
-                    ws.send_json({
-                        "type": "execute_node",
-                        "node_id": "test-node-1",
-                        "node_type": "pythonExecutor",
-                        "workflow_id": "wf-test",
-                        "execution_id": "exec-test",
-                        "parameters": {},
-                        "nodes": [],
-                        "edges": [],
-                    })
-                    # The WS itself stays open (gate refuses at execution level).
-                    # The broadcaster.update_node_status call with "error" is the signal.
-                    # We just verify the connection was accepted and the handler ran.
-            except WebSocketDisconnect:
-                pass  # Connection staying alive is fine; the gate fires inside execute.
+        await _run_handle_execute_node(
+            data=_build_execute_node_data("pythonExecutor"),
+            is_soul_plane=True,
+            dispatch_soul_id=None,
+            broadcaster=broadcaster,
+            real_executor=real_executor,
+        )
 
-        # The is_soul_plane flag was set by the endpoint; NodeExecutor would have
-        # run the manifest gate. In the real path this results in a node_status
-        # "error" broadcast via update_node_status.  Verify the broadcaster saw it.
-        from routers.websocket import get_status_broadcaster
-        broadcaster = get_status_broadcaster()
-        # update_node_status is called with "error" when execution is refused.
-        # Check it was called (the gate ran) — specific args vary by async timing.
-        assert broadcaster.update_node_status.called or True  # gate wired; timing varies
+        refusal_calls = _error_calls_with_refusal_string(broadcaster)
+        assert refusal_calls, (
+            "Expected broadcaster.update_node_status called with status='error' "
+            "and 'fail-closed' in the error string. "
+            "No dispatch token on a soul-plane connection must resolve to "
+            "_UNKNOWN_MANIFEST and refuse every node_type (fail-closed). "
+            "If this fails with 'if False:' mutation, the gate is correctly wired."
+        )
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Wrong / unresolvable token -> connection refused
+# Scenario 2: Wrong / unresolvable token -> connection refused at 4403
 # ---------------------------------------------------------------------------
 
 
 class TestWrongTokenRefused:
-    """A garbage dispatch token must cause connection refusal (4403) before accept."""
+    """A garbage dispatch token must cause WS connection refusal (4403)."""
 
-    def test_wrong_dispatch_token_refused_at_handshake(self, gate_client):
-        headers = _internal_headers({DISPATCH_TOKEN_HEADER: "definitely-not-a-real-token"})
-        try:
-            with gate_client.websocket_connect("/ws/internal", headers=headers) as ws:
-                # Should never get here — endpoint refuses before accept.
-                pytest.fail(
-                    "Expected refusal for garbage dispatch token but connection was accepted."
-                )
-        except WebSocketDisconnect as exc:
-            # Endpoint calls refuse() which closes with the policy code.
-            assert exc.code == _POLICY_CLOSE, (
-                f"Expected close code {_POLICY_CLOSE}, got {exc.code!r}"
-            )
+    def test_wrong_dispatch_token_refused_at_handshake(self):
+        from routers.websocket import router as ws_router
+
+        app = FastAPI()
+        app.include_router(ws_router)
+
+        mock_container = MagicMock()
+        settings = MagicMock()
+        settings.port = str(PORT)
+        settings.vite_auth_enabled = "false"
+        mock_container.settings.return_value = settings
+
+        broadcaster = _make_broadcaster()
+
+        with (
+            patch("routers.websocket.container", mock_container),
+            patch("routers.websocket.get_status_broadcaster", return_value=broadcaster),
+            patch("routers.websocket.execution_principal", return_value="owner"),
+        ):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                headers = {
+                    "host": HOST,
+                    INTERNAL_TOKEN_HEADER: internal_ws_token(),
+                    DISPATCH_TOKEN_HEADER: "definitely-not-a-real-token",
+                }
+                try:
+                    with client.websocket_connect("/ws/internal", headers=headers):
+                        pytest.fail(
+                            "Expected refusal for garbage dispatch token but connection was accepted."
+                        )
+                except WebSocketDisconnect as exc:
+                    assert exc.code == _POLICY_CLOSE, (
+                        f"Expected close code {_POLICY_CLOSE}, got {exc.code!r}"
+                    )
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3: Valid token + correct soul -> permitted, manifest applied
+# Scenario 3: Valid token + soul -> gate permits allowed node (no fail-closed)
 # ---------------------------------------------------------------------------
 
 
 class TestValidTokenPermitted:
-    """Issue a real dispatch token bound to a known soul; the node_type in that
-    soul's manifest is permitted.  A node_type outside the manifest is refused.
-    """
+    """Valid dispatch token for a known soul; an allowed node must not be refused."""
 
-    def test_valid_token_allowed_node_passes_gate(self, gate_client):
+    async def test_valid_token_allowed_node_passes_gate(self):
         from services.soul_manifest import get_manifest
 
-        # Pick a soul that has at least one enabled node_type.
-        # Use "zane" (fullstack soul) which should have pythonExecutor.
         soul_id = "zane"
         manifest = get_manifest(soul_id)
         enabled = manifest.enabled_node_types()
@@ -253,71 +271,55 @@ class TestValidTokenPermitted:
             pytest.skip(f"Soul {soul_id!r} has no enabled node_types; cannot test permitted path")
 
         node_type = next(iter(enabled))
+        broadcaster = _make_broadcaster()
+        real_executor = _make_node_executor()
 
-        # Issue a real one-use token for this soul.
-        token = issue_dispatch_token(soul_id)
+        await _run_handle_execute_node(
+            data=_build_execute_node_data(node_type),
+            is_soul_plane=True,
+            dispatch_soul_id=soul_id,
+            broadcaster=broadcaster,
+            real_executor=real_executor,
+        )
 
-        # The endpoint will call resolve_token, consume the token, set dispatch_soul_id=soul_id.
-        # handle_execute_node will propagate _is_soul_plane=True and _dispatch_soul_id=soul_id.
-        # NodeExecutor will find node_type in the manifest and NOT refuse.
-        headers = _internal_headers({DISPATCH_TOKEN_HEADER: token})
-        accepted = False
-        try:
-            with gate_client.websocket_connect("/ws/internal", headers=headers) as ws:
-                accepted = True
-                ws.send_json({
-                    "type": "execute_node",
-                    "node_id": "test-node-1",
-                    "node_type": node_type,
-                    "workflow_id": "wf-test",
-                    "execution_id": "exec-test",
-                    "parameters": {},
-                    "nodes": [],
-                    "edges": [],
-                })
-        except WebSocketDisconnect as exc:
-            if not accepted:
-                pytest.fail(
-                    f"Connection was refused (code {exc.code}) for valid token + soul {soul_id!r}. "
-                    "Dispatch token resolution or is_soul_plane wiring is broken."
-                )
+        # The gate must NOT produce a fail-closed refusal for an allowed node.
+        refusal_calls = _error_calls_with_refusal_string(broadcaster)
+        assert not refusal_calls, (
+            f"Manifest gate produced a fail-closed refusal for soul {soul_id!r} "
+            f"attempting an allowed node_type '{node_type}'. "
+            f"Gate or soul_id binding is broken. Calls: {refusal_calls!r}"
+        )
 
-        # Reaching here means the connection was accepted (token resolved correctly).
-        assert accepted, "Connection must be accepted for a valid dispatch token"
+    async def test_valid_token_unlisted_node_refused_via_manifest(self):
+        """Valid soul token, but node_type NOT in manifest -> gate refuses.
 
-    def test_valid_token_unlisted_node_refused_via_manifest(self, gate_client):
-        """Valid soul token, but node_type NOT in soul manifest -> manifest gate refuses."""
+        MUTATION SENSITIVITY: disabling the gate (if False:) means no
+        "fail-closed" string appears, and the assertion below goes RED.
+        """
         from services.soul_manifest import get_manifest
 
         soul_id = "zane"
         manifest = get_manifest(soul_id)
-        # Use a node_type guaranteed not in any soul manifest.
-        unlisted_node = "superSecretPrivilegedNodeType_NEVER_IN_MANIFEST"
-        assert unlisted_node not in manifest.enabled_node_types()
+        assert _UNLISTED_NODE_TYPE not in manifest.enabled_node_types(), (
+            f"Test invariant violated: {_UNLISTED_NODE_TYPE!r} must not appear "
+            f"in soul {soul_id!r}'s manifest."
+        )
 
-        token = issue_dispatch_token(soul_id)
-        headers = _internal_headers({DISPATCH_TOKEN_HEADER: token})
+        broadcaster = _make_broadcaster()
+        real_executor = _make_node_executor()
 
-        accepted = False
-        try:
-            with gate_client.websocket_connect("/ws/internal", headers=headers) as ws:
-                accepted = True
-                ws.send_json({
-                    "type": "execute_node",
-                    "node_id": "test-node-1",
-                    "node_type": unlisted_node,
-                    "workflow_id": "wf-test",
-                    "execution_id": "exec-test",
-                    "parameters": {},
-                    "nodes": [],
-                    "edges": [],
-                })
-        except WebSocketDisconnect:
-            pass  # Fine — either the handshake or execution was refused.
+        await _run_handle_execute_node(
+            data=_build_execute_node_data(_UNLISTED_NODE_TYPE),
+            is_soul_plane=True,
+            dispatch_soul_id=soul_id,
+            broadcaster=broadcaster,
+            real_executor=real_executor,
+        )
 
-        # Connection accepted means the token resolved (C2/C3 wired).
-        # Execution refusal happens inside NodeExecutor (not at WS close level).
-        # The update_node_status "error" broadcast is the observable artifact.
-        from routers.websocket import get_status_broadcaster
-        broadcaster = get_status_broadcaster()
-        assert broadcaster.update_node_status.called or accepted
+        refusal_calls = _error_calls_with_refusal_string(broadcaster)
+        assert refusal_calls, (
+            "Expected broadcaster.update_node_status called with status='error' "
+            f"and 'fail-closed' in the error string for soul {soul_id!r} "
+            f"attempting unlisted node_type '{_UNLISTED_NODE_TYPE}'. "
+            "Manifest gate is not wired."
+        )
