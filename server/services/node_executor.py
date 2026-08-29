@@ -140,18 +140,27 @@ class NodeExecutor:
 
         try:
             # ----------------------------------------------------------------
-            # Manifest gate (Condition 1 / Orion Phase-2 pre-condition).
-            # If this execution runs on behalf of a DCS soul, the soul's
-            # manifest is the authoritative capability allowlist.  Any
-            # node_type not explicitly listed is refused fail-closed.
+            # Manifest gate — Argus conditions C1/C2.
             #
-            # soul_id MUST come from the gate-authenticated dispatch record
-            # (_dispatch_soul_id), never from caller-supplied parameters.
+            # C1: soul_id flows from websocket.state.dispatch_soul_id (bound
+            #     at /ws/internal handshake from the one-use dispatch token),
+            #     never from anything the caller can inject into the message
+            #     payload.  The WS handler sets _is_soul_plane=True and
+            #     _dispatch_soul_id=<server-bound value or None>.
+            #
+            # C2: fail-CLOSED — on a soul-plane connection (_is_soul_plane),
+            #     the manifest check runs unconditionally.  A missing soul_id
+            #     (no token presented) resolves to _UNKNOWN_MANIFEST (zero
+            #     capabilities), which refuses every node_type rather than
+            #     skipping the check.  The old ``if _dispatch_soul_id:`` guard
+            #     was the fail-open path; it is gone.
             # ----------------------------------------------------------------
             _dispatch_soul_id = context.get("_dispatch_soul_id")
-            if _dispatch_soul_id:
+            _is_soul_plane = context.get("_is_soul_plane", False)
+            if _is_soul_plane or _dispatch_soul_id:
                 from services.soul_manifest import get_manifest as _get_manifest
-                _manifest = _get_manifest(_dispatch_soul_id)
+                # C2: None or "" → _UNKNOWN_MANIFEST (zero capabilities) → refused
+                _manifest = _get_manifest(_dispatch_soul_id or "")
                 if node_type not in _manifest.enabled_node_types():
                     logger.warning(
                         "Manifest gate: node_type refused for soul",
@@ -165,7 +174,8 @@ class NodeExecutor:
                         node_type=node_type,
                         error=(
                             f"Node type '{node_type}' is not in the capability manifest "
-                            f"for soul '{_dispatch_soul_id}'. Execution refused (fail-closed)."
+                            f"for soul '{_dispatch_soul_id or 'unknown'}'. "
+                            "Execution refused (fail-closed)."
                         ),
                         execution_id=execution_id,
                         execution_time=time.time() - start_time,
