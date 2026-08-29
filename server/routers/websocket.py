@@ -463,8 +463,6 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
         )
         if key in data
     }
-<<<<<<< Updated upstream
-=======
     # Manifest gate — Argus conditions C1/C2/C3.
     #
     # C1: Read the authoritative soul_id from connection state bound at
@@ -500,7 +498,6 @@ async def handle_execute_node(data: Dict[str, Any], websocket: WebSocket) -> Dic
         invocation_extras["_dispatch_soul_id"] = _conn_soul_id  # may be None
     elif _conn_soul_id:
         invocation_extras["_dispatch_soul_id"] = _conn_soul_id
->>>>>>> Stashed changes
     user_id = execution_principal(data, websocket)
 
     await broadcaster.update_node_status(
@@ -1471,6 +1468,15 @@ from services.ws_handler_registry import get_ws_handlers
 
 
 from services.authz import execution_principal, resolve_internal_handler  # noqa: E402
+from services.authz.dispatch_token import (  # noqa: E402
+    DISPATCH_TOKEN_HEADER,
+    resolve_dispatch_token as _resolve_dispatch_token,
+)
+
+
+def _ws_header(websocket: WebSocket, name: str) -> Optional[str]:
+    """Read a single WebSocket upgrade-request header (case-insensitive)."""
+    return websocket.headers.get(name.lower())
 
 
 def _resolve_handler(msg_type: str):
@@ -1788,8 +1794,6 @@ async def websocket_internal_endpoint(websocket: WebSocket):
         await refuse(websocket, "unauthorized internal websocket")
         return
 
-<<<<<<< Updated upstream
-=======
     # Dispatch-token gate: if a soul process presents a dispatch token it was
     # issued at _spawn_soul_dispatch time, validate and consume it, then bind
     # the soul_id to connection state so handle_execute_node can read it
@@ -1812,7 +1816,7 @@ async def websocket_internal_endpoint(websocket: WebSocket):
     # capabilities → every node_type refused).
     websocket.state.is_soul_plane = True
 
->>>>>>> Stashed changes
+
     get_status_broadcaster()
     await websocket.accept()
 
