@@ -171,3 +171,17 @@ server/tests/_test_opencompany_root/
 # =============================================================================
 server/experiments/
 .env.cipher
+
+# =============================================================================
+# CIPHER OS — isolated credential env (NEVER commit)
+# The real file lives at ~/.cipheros/workforce/.env (outside this repo).
+# These patterns catch any accidental in-repo copy.
+# =============================================================================
+.cipheros/
+workforce.env
+.workforce.env
+workforce/.env
+**/workforce/.env
+# Belt-and-suspenders: any .env file that might carry CIPHER_ secrets.
+.env.workforce
+.env.cipheros

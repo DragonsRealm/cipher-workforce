@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from services.plugin import ActionNode, NodeContext, Operation, TaskQueue
-from services.approval.governor import (
+from services.cipherd_approval import (
     ApprovalGovernor,
     SOUL_ALLOWLIST,
     MAX_DISPATCH_DEPTH,

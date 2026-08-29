@@ -1,0 +1,66 @@
+{
+  "id": "dcs_pm_reeve_soul_dispatch",
+  "name": "DCS PM Reeve Soul Dispatch",
+  "description": "Seed workflow for Reeve (dcs-pm). Wires TaskManager + simpleMemory into an AI Agent, giving Reeve durable task tracking and per-soul memory. Requires a Claude model node connected to input-model.",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Reeve — DCS PM"}
+    },
+    {
+      "id": "taskManager_1",
+      "type": "taskManager",
+      "position": {"x": 360, "y": 420},
+      "data": {"label": "Task Manager"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 600, "y": 420},
+      "data": {"label": "Reeve Memory"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_task_agent",
+      "source": "taskManager_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Reeve, DCS Program Manager at Dragon Concept Studios. You coordinate cross-venture builds, manage guild capacity, and keep the DCS build system moving. You have access to a Task Manager for durable task tracking and Memory for retaining key information across sessions. Always check memory before answering questions about active projects or team state.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "dcs-pm"
+    }
+  },
+  "version": "0.0.1"
+}

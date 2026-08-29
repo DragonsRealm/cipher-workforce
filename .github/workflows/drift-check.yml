@@ -1,0 +1,52 @@
+name: Upstream Drift Check
+
+# Runs weekly on Monday at 09:00 UTC and can be triggered manually.
+# Checks whether the zeenie-ai/OpenCompany upstream has new commits since
+# the fork baseline SHA recorded in scripts/check_upstream_drift.py.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # Monday 09:00 UTC
+  workflow_dispatch:        # Manual trigger from the Actions tab
+
+jobs:
+  drift-check:
+    name: Check upstream drift
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run drift check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/check_upstream_drift.py --json | tee drift-report.json
+          # Surface new-commit count in the summary.
+          NEW=$(python3 -c "import json,sys; d=json.load(open('drift-report.json')); print(d.get('new_commits',0))")
+          echo "### Upstream drift report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$NEW" -eq "0" ]; then
+            echo "No new commits on upstream since baseline. Fork is current." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo ":warning: **${NEW} new commit(s)** detected on zeenie-ai/OpenCompany since fork baseline." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Review and cherry-pick security fixes manually. See \`scripts/check_upstream_drift.py\` for details." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat drift-report.json
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: drift-report.json
+          retention-days: 30

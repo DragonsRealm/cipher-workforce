@@ -27,6 +27,12 @@ logger = get_logger(__name__)
 
 MAX_PROCESSES = 10  # Default limit, configurable via Settings panel
 
+# Shared allowlist — consumed by start() to prevent host secrets from leaking
+# into user-authored workflow processes. Use build_safe_env() for the actual
+# dict; this import is lazy to avoid circular-import risk at module load time.
+# The name is preserved for test introspection (test_env_scrubbing.py).
+from services.safe_env import SAFE_ENV_KEYS as _PROC_SAFE_ENV_KEYS  # noqa: E402
+
 
 # (stream_name, line) -> awaitable. Invoked once per decoded stdout/stderr line.
 LineHandler = Callable[[str, str], Awaitable[None]]
@@ -146,7 +152,8 @@ class ProcessService:
                 "error": (f"Command not found: '{argv[0] if argv else ''}'. " "Check spelling or ensure the binary is on PATH."),
             }
         argv[0] = resolved
-        env = {**os.environ, **(extra_env or {}), "PYTHONUNBUFFERED": "1"}
+        from services.safe_env import build_safe_env
+        env = {**build_safe_env(), **(extra_env or {}), "PYTHONUNBUFFERED": "1"}
         requested_ports = self._requested_ports(argv, ports or [], extra_env or {})
         from core.config import Settings
         from core.paths import daemons_dir
