@@ -93,6 +93,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 2: search tools
             _cap("braveSearch"),
             _cap("perplexitySearch"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
         ),
         _manifest(
             "maren",
@@ -113,6 +118,31 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("telegramSend"),
             # Phase 2: GitHub (backend/infra VCS)
             _cap("githubAction"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
+            # Phase 5: Stripe payment event handling.
+            # Dragon-gated: set WORKFORCE_STRIPE_WEBHOOK_SECRET and
+            # WORKFORCE_STRIPE_RESTRICTED_KEY (WORKFORCE_STRIPE_* prefix only —
+            # never the bare STRIPE_* prefix) to activate.
+            _cap(
+                "stripeAction",
+                enabled=False,
+                note=(
+                    "Dragon-gated: requires WORKFORCE_STRIPE_RESTRICTED_KEY env var. "
+                    "Never use the bare STRIPE_* prefix."
+                ),
+            ),
+            _cap(
+                "stripeReceive",
+                enabled=False,
+                note=(
+                    "Dragon-gated: requires WORKFORCE_STRIPE_WEBHOOK_SECRET env var. "
+                    "Never use the bare STRIPE_* prefix."
+                ),
+            ),
         ),
         _manifest(
             "cael",
@@ -135,6 +165,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 5: vision — UI review from screenshots, visual design analysis.
             # Image input uses FileRef transport, never inline base64.
             _cap("visionAnalyze"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
         ),
         _manifest(
             "argus",
@@ -151,6 +186,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 1: persistent recall + outbound Telegram
             _cap("simpleMemory"),
             _cap("telegramSend"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
         ),
         _manifest(
             "vera",
@@ -175,6 +215,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             # Phase 5: vision — visual QA, screenshot comparison, visual regression.
             # Image input uses FileRef transport, never inline base64.
             _cap("visionAnalyze"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
         ),
         _manifest(
             "reeve",
@@ -191,6 +236,11 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("simpleMemory"),
             _cap("taskManager"),
             _cap("telegramSend"),
+            # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
+            # vectorStore enforces soul_<name> namespace isolation via
+            # reject_caller_soul_prefix() in the node itself.
+            _cap("vectorStore"),
+            _cap("documentParser"),
         ),
         _manifest(
             "zane",
