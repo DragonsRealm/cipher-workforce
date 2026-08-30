@@ -130,6 +130,7 @@ class DcsSoulNode(ActionNode):
 
     type = "dcsSoul"
     display_name = "DCS Soul"
+    description = "Dispatch a named DCS soul through the human approval gate."
     group: tuple = ("agent",)
     component_kind = "agent"
     task_queue = TaskQueue.AI_HEAVY
