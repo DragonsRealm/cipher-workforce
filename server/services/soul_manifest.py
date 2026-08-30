@@ -156,9 +156,8 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("emailSend"),
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
-            # Phase 1: persistent recall + outbound Telegram
+            # Phase 1: persistent recall (no telegramSend — scoped to reeve/maren/orion)
             _cap("simpleMemory"),
-            _cap("telegramSend"),
             # Phase 2: GitHub + Vercel (frontend VCS + deploy context); no code executor added
             _cap("githubAction"),
             _cap("vercelAction"),
@@ -183,9 +182,8 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("cronScheduler"),
-            # Phase 1: persistent recall + outbound Telegram
+            # Phase 1: persistent recall (no telegramSend — scoped to reeve/maren/orion)
             _cap("simpleMemory"),
-            _cap("telegramSend"),
             # Phase 5: RAG pipeline — ChromaDB vector store + document parsing.
             # vectorStore enforces soul_<name> namespace isolation via
             # reject_caller_soul_prefix() in the node itself.
@@ -202,9 +200,8 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("ragQuery"),
             _cap("emailRead"),
             _cap("emailSend"),
-            # Phase 1: persistent recall + outbound Telegram
+            # Phase 1: persistent recall (no telegramSend — scoped to reeve/maren/orion)
             _cap("simpleMemory"),
-            _cap("telegramSend"),
             # Phase 2: browser harness for E2E tests and visual QA
             _cap("browser"),
             _cap("browserHarness"),
@@ -255,9 +252,8 @@ _REGISTRY: dict[str, SoulManifest] = {
             _cap("calendarListEvents"),
             _cap("calendarGetEvent"),
             _cap("webhookTrigger"),
-            # Phase 1: persistent recall + outbound Telegram
+            # Phase 1: persistent recall (no telegramSend — scoped to reeve/maren/orion)
             _cap("simpleMemory"),
-            _cap("telegramSend"),
         ),
     ]
 }
