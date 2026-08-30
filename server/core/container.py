@@ -103,8 +103,35 @@ def _build_maps_service(auth_service, settings):
     return _build_registered_service("maps", auth_service=auth_service, settings=settings)
 
 
+class _NullAndroidService:
+    """Fail-safe stand-in for a missing ``android`` plugin.
+
+    ``server/nodes/android/`` was decommissioned but ``WorkflowService``
+    / ``NodeExecutor`` still take ``android_service`` as a required
+    constructor dependency. Without this fallback, every DI resolution
+    of ``android_service`` raises at construction time (see
+    ``_build_registered_service``), which crashes execution for *all*
+    node types, not just android ones. Any attribute access instead
+    raises lazily, only if an android node/tool is actually invoked.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        def _unavailable(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError(
+                "Android service is unavailable: the 'server/nodes/android/' "
+                "plugin is not installed in this deployment."
+            )
+
+        return _unavailable
+
+
 def _build_android_service():
-    return _build_registered_service("android")
+    from services.plugin.service_factories import get_service_factory
+
+    factory = get_service_factory("android")
+    if factory is None:
+        return _NullAndroidService()
+    return factory()
 
 
 class Container(containers.DeclarativeContainer):
