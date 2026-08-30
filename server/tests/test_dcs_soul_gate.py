@@ -466,3 +466,18 @@ def test_tools_c3_fix_uses_resolved_limits():
                         for a in getattr(val_node, "args", [])
                     )
                 ), "C3: max_delegation_depth still uses literal fallback 2"
+
+
+def test_local_approval_governor_no_longer_importable():
+    """services.approval is retired — Gate 3 authority lives in cipherd only.
+
+    Guards against the local governor/queue/router silently reappearing.
+    """
+    with pytest.raises(ModuleNotFoundError):
+        import services.approval  # noqa: F401
+
+    with pytest.raises(ModuleNotFoundError):
+        import services.approval.governor  # noqa: F401
+
+    with pytest.raises(ModuleNotFoundError):
+        import services.approval.api  # noqa: F401
