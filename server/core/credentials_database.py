@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import Field, SQLModel, select
 
 from core.encryption import EncryptionService
+from core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +271,15 @@ class CredentialsDatabase:
         async with self.get_session() as session:
             row = await session.get(EncryptedAPIKey, key_id)
             if not row:
+                # Fall back to env-sourced keys for known providers
+                if provider == "anthropic":
+                    env_key = Settings().anthropic_api_key
+                    if env_key:
+                        return env_key
+                elif provider == "openai":
+                    env_key = Settings().openai_api_key
+                    if env_key:
+                        return env_key
                 return None
             try:
                 return self.encryption.decrypt(row.key_encrypted)

@@ -283,6 +283,10 @@ class NodeExecutor:
                 key = await self.ai_service.auth.get_api_key(provider, "default")
                 if key:
                     result["api_key"] = key
+                elif provider == "anthropic" and self.settings.anthropic_api_key:
+                    result["api_key"] = self.settings.anthropic_api_key
+                elif provider == "openai" and self.settings.openai_api_key:
+                    result["api_key"] = self.settings.openai_api_key
             if not result.get("model"):
                 models = await self.ai_service.auth.get_stored_models(provider, "default")
                 if models:

@@ -1,0 +1,105 @@
+{
+  "id": "dcs_cto_orion_soul_dispatch",
+  "name": "DCS CTO Orion Soul Dispatch",
+  "description": "Seed workflow for Orion (dcs-cto). Wires research, code execution, RAG, and memory into an AI Agent for architectural decisions and technical direction.",
+  "version": "0.0.1",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Orion — CTO"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Send to Dragon"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 200, "y": 420},
+      "data": {"label": "Orion Memory"}
+    },
+    {
+      "id": "pythonExecutor_1",
+      "type": "pythonExecutor",
+      "position": {"x": 360, "y": 420},
+      "data": {"label": "Python Executor"}
+    },
+    {
+      "id": "braveSearch_1",
+      "type": "braveSearch",
+      "position": {"x": 520, "y": 420},
+      "data": {"label": "Brave Search"}
+    },
+    {
+      "id": "ragStore_1",
+      "type": "ragStore",
+      "position": {"x": 680, "y": 420},
+      "data": {"label": "RAG Store"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_python_agent",
+      "source": "pythonExecutor_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_brave_agent",
+      "source": "braveSearch_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_rag_agent",
+      "source": "ragStore_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Orion, CTO at Dragon Concept Studios. You own system architecture, stack decisions, and technical direction across all DCS ventures. You build for six months from now — right, not just fast. Use your tools to research, execute code, and query memory before making architectural recommendations.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "dcs-cto"
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "id": "dcs_fullstack_zane_soul_dispatch",
+  "name": "DCS Fullstack Zane Soul Dispatch",
+  "description": "Seed workflow for Zane (fullstack). Wires code execution, webhooks, and memory into an AI Agent for cross-cutting full-stack delivery and root-cause debugging.",
+  "version": "0.0.1",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Zane — Full-Stack"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Send to Dragon"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 200, "y": 420},
+      "data": {"label": "Zane Memory"}
+    },
+    {
+      "id": "pythonExecutor_1",
+      "type": "pythonExecutor",
+      "position": {"x": 360, "y": 420},
+      "data": {"label": "Python Executor"}
+    },
+    {
+      "id": "webhookTrigger_1",
+      "type": "webhookTrigger",
+      "position": {"x": 520, "y": 420},
+      "data": {"label": "Webhook Trigger"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_python_agent",
+      "source": "pythonExecutor_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_webhook_agent",
+      "source": "webhookTrigger_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Zane, Senior Full-Stack Engineer at Dragon Concept Studios. You live in the seams — root cause, not surface patch. You own full-stack delivery across frontend and backend. Check memory before diving into a codebase.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "fullstack"
+    }
+  }
+}

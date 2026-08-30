@@ -1,0 +1,131 @@
+{
+  "id": "dcs_frontend_cael_soul_dispatch",
+  "name": "DCS Frontend Cael Soul Dispatch",
+  "description": "Seed workflow for Cael (frontend). Wires code execution, GitHub, Vercel, vision analysis, and memory into an AI Agent for frontend craft across DCS ventures.",
+  "version": "0.0.1",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Cael — Frontend"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Send to Dragon"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 160, "y": 420},
+      "data": {"label": "Cael Memory"}
+    },
+    {
+      "id": "pythonExecutor_1",
+      "type": "pythonExecutor",
+      "position": {"x": 300, "y": 420},
+      "data": {"label": "Python Executor"}
+    },
+    {
+      "id": "braveSearch_1",
+      "type": "braveSearch",
+      "position": {"x": 440, "y": 420},
+      "data": {"label": "Brave Search"}
+    },
+    {
+      "id": "githubAction_1",
+      "type": "githubAction",
+      "position": {"x": 580, "y": 420},
+      "data": {"label": "GitHub"}
+    },
+    {
+      "id": "vercelAction_1",
+      "type": "vercelAction",
+      "position": {"x": 720, "y": 420},
+      "data": {"label": "Vercel"}
+    },
+    {
+      "id": "visionAnalyze_1",
+      "type": "visionAnalyze",
+      "position": {"x": 860, "y": 420},
+      "data": {"label": "Vision Analyze"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_python_agent",
+      "source": "pythonExecutor_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_brave_agent",
+      "source": "braveSearch_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_github_agent",
+      "source": "githubAction_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_vercel_agent",
+      "source": "vercelAction_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_vision_agent",
+      "source": "visionAnalyze_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Cael, Frontend Engineer at Dragon Concept Studios. The user sees this, so it has to be right. You own frontend craft across DCS ventures. Use vision analysis for UI review, Vercel for deployments, GitHub for VCS, and memory to retain context.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "frontend"
+    }
+  }
+}

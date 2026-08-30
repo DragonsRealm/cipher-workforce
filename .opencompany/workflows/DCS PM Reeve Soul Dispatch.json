@@ -26,6 +26,12 @@
       "type": "simpleMemory",
       "position": {"x": 600, "y": 420},
       "data": {"label": "Reeve Memory"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Notify Dragon"}
     }
   ],
   "edges": [
@@ -49,6 +55,13 @@
       "target": "aiAgent_1",
       "sourceHandle": "output-main",
       "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
     }
   ],
   "nodeParameters": {

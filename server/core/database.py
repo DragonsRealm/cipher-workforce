@@ -249,6 +249,14 @@ class Database:
                         await conn.execute(text(f"ALTER TABLE user_settings ADD COLUMN {col} BOOLEAN DEFAULT 0"))
                         logger.info(f"Added {col} column to user_settings")
 
+                # Auto-mark added_key if env supplies an API key so the UI
+                # checklist item clears without the user entering keys manually.
+                if self.settings.anthropic_api_key or self.settings.openai_api_key:
+                    await conn.execute(
+                        text("UPDATE user_settings SET getting_started_added_key = 1 WHERE getting_started_added_key = 0")
+                    )
+                    logger.info("Auto-marked getting_started_added_key: env API key detected")
+
                 # Migrate token_usage_metrics table - add cost columns
                 result = await conn.execute(text("PRAGMA table_info(token_usage_metrics)"))
                 columns = {row[1] for row in result.fetchall()}

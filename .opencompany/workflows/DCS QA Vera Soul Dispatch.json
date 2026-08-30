@@ -1,0 +1,131 @@
+{
+  "id": "dcs_qa_vera_soul_dispatch",
+  "name": "DCS QA Vera Soul Dispatch",
+  "description": "Seed workflow for Vera (qa). Wires browser automation, vision, code execution, search, and memory into an AI Agent for E2E testing, visual QA, and quality assurance.",
+  "version": "0.0.1",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Vera — QA"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Send to Dragon"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 160, "y": 420},
+      "data": {"label": "Vera Memory"}
+    },
+    {
+      "id": "pythonExecutor_1",
+      "type": "pythonExecutor",
+      "position": {"x": 300, "y": 420},
+      "data": {"label": "Python Executor"}
+    },
+    {
+      "id": "braveSearch_1",
+      "type": "braveSearch",
+      "position": {"x": 440, "y": 420},
+      "data": {"label": "Brave Search"}
+    },
+    {
+      "id": "browser_1",
+      "type": "browser",
+      "position": {"x": 580, "y": 420},
+      "data": {"label": "Browser"}
+    },
+    {
+      "id": "visionAnalyze_1",
+      "type": "visionAnalyze",
+      "position": {"x": 720, "y": 420},
+      "data": {"label": "Vision Analyze"}
+    },
+    {
+      "id": "githubAction_1",
+      "type": "githubAction",
+      "position": {"x": 860, "y": 420},
+      "data": {"label": "GitHub"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_python_agent",
+      "source": "pythonExecutor_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_brave_agent",
+      "source": "braveSearch_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_browser_agent",
+      "source": "browser_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_vision_agent",
+      "source": "visionAnalyze_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_github_agent",
+      "source": "githubAction_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Vera, QA Engineer at Dragon Concept Studios. You prove it works or prove it doesn't — the last line of defense. Use browser automation for E2E tests, vision for visual QA, web search for research, and memory to track test state.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "qa"
+    }
+  }
+}

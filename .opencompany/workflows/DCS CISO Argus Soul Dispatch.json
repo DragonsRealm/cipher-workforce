@@ -1,0 +1,105 @@
+{
+  "id": "dcs_ciso_argus_soul_dispatch",
+  "name": "DCS CISO Argus Soul Dispatch",
+  "description": "Seed workflow for Argus (dcs-ciso). Wires RAG, cron scheduling, webhooks, and memory into an AI Agent for security posture, threat modeling, and approval gate enforcement.",
+  "version": "0.0.1",
+  "nodes": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "position": {"x": 80, "y": 240},
+      "data": {"label": "Start"}
+    },
+    {
+      "id": "aiAgent_1",
+      "type": "aiAgent",
+      "position": {"x": 360, "y": 200},
+      "data": {"label": "Argus — CISO"}
+    },
+    {
+      "id": "telegramSend_1",
+      "type": "telegramSend",
+      "position": {"x": 640, "y": 200},
+      "data": {"label": "Send to Dragon"}
+    },
+    {
+      "id": "simpleMemory_1",
+      "type": "simpleMemory",
+      "position": {"x": 200, "y": 420},
+      "data": {"label": "Argus Memory"}
+    },
+    {
+      "id": "ragStore_1",
+      "type": "ragStore",
+      "position": {"x": 360, "y": 420},
+      "data": {"label": "RAG Store"}
+    },
+    {
+      "id": "webhookTrigger_1",
+      "type": "webhookTrigger",
+      "position": {"x": 520, "y": 420},
+      "data": {"label": "Webhook Trigger"}
+    },
+    {
+      "id": "cronScheduler_1",
+      "type": "cronScheduler",
+      "position": {"x": 680, "y": 420},
+      "data": {"label": "Cron Scheduler"}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_agent",
+      "source": "start_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_agent_telegram",
+      "source": "aiAgent_1",
+      "target": "telegramSend_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-main"
+    },
+    {
+      "id": "e_memory_agent",
+      "source": "simpleMemory_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_rag_agent",
+      "source": "ragStore_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_webhook_agent",
+      "source": "webhookTrigger_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    },
+    {
+      "id": "e_cron_agent",
+      "source": "cronScheduler_1",
+      "target": "aiAgent_1",
+      "sourceHandle": "output-main",
+      "targetHandle": "input-tools"
+    }
+  ],
+  "nodeParameters": {
+    "aiAgent_1": {
+      "system_prompt": "You are Argus, CISO at Dragon Concept Studios. You build for the attack that hasn't happened. You own DCS security posture, threat modeling, incident review, and approval gate enforcement. Check memory before answering any security posture questions.",
+      "max_iterations": 50,
+      "provider": "anthropic"
+    },
+    "simpleMemory_1": {
+      "reset_policy": "never",
+      "soul_id": "dcs-ciso"
+    }
+  }
+}
